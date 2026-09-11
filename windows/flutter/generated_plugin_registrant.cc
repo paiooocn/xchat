@@ -6,9 +6,9 @@
 
 #include "generated_plugin_registrant.h"
 
-#include <webview_all_windows/webview_all_windows_plugin.h>
+#include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
-  WebviewAllWindowsPluginRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("WebviewAllWindowsPlugin"));
+  FlutterInappwebviewWindowsPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
 }
