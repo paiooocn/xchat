@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XChat</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/theme.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="js/bridge.js"></script>
+<script src="js/markdown_katex.js"></script>
+<script src="js/markdown_mermaid.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/modal.js"></script>
+<script src="js/router.js"></script>
+<script src="js/pages/session_list.js"></script>
+<script src="js/pages/wizard.js"></script>
+<script src="js/pages/chat.js"></script>
+<script src="js/pages/cost_panel.js"></script>
+<script src="js/pages/templates.js"></script>
+<script src="js/pages/projects.js"></script>
+<script src="js/pages/providers.js"></script>
+<script src="js/pages/settings.js"></script>
+<script src="js/theme.js"></script>
+<!-- 顺序敏感: 上面是页面 IIFE 注册路由,下面是首次渲染 -->
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  // 主题先于 Router.init 应用,避免首屏闪一下默认色
+  if (window.XchatTheme && XchatTheme.apply) XchatTheme.apply();
+  Router.init();
+  // 给 webview 一帧时间让 console / native 通道就绪,
+  // 避免极少数情况下 #main 还没绘制就 hashchange。
+  requestAnimationFrame(() => Router.go(location.hash || '#/sessions'));
+});
+</script>
+</body>
+</html>

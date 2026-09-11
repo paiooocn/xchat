@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shell_blocklist version="1">
+  <layer_a name="完全禁止">
+    <rule pattern="\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r)\s+/" note="rm -rf / 类递归删除根目录"/>
+    <rule pattern="\bsudo\b" note="sudo 提权"/>
+    <rule pattern="\bmkfs(\.\w+)?\b" note="格式化文件系统"/>
+    <rule pattern="\bdd\s+.*\bif=" note="dd 覆盖设备"/>
+    <rule pattern="\b(shutdown|reboot|poweroff|halt)\b" note="关机/重启"/>
+    <rule pattern="\b:\(\)\s*\{.*\};:" note="fork 炸弹"/>
+    <rule pattern=">(>?)\s*/dev/(sd|nvme|hd|mmcblk)" note="重定向到块设备"/>
+    <rule pattern="\bchmod\s+(-[a-zA-Z]*\s+)?[0-7]*7[0-7]\b" note="chmod 777"/>
+    <rule pattern="\bsu\s+" note="切换用户"/>
+    <rule pattern="\b(fdisk|parted)\b" note="分区工具"/>
+  </layer_a>
+  <layer_b name="需授权">
+    <rule pattern="\b(npm|pnpm|yarn)\s+(install|i|add)\b" note="安装 Node 包"/>
+    <rule pattern="\b(pip|pip3)\s+install\b" note="安装 Python 包"/>
+    <rule pattern="\bcargo\s+(build|install)\b" note="cargo 构建/安装"/>
+    <rule pattern="\bgo\s+(install|get)\b" note="Go 安装"/>
+    <rule pattern="\bgem\s+install\b" note="Ruby gem 安装"/>
+    <rule pattern="\b(apt|apt-get|yum|dnf)\s+(install|remove|purge)\b" note="系统包管理"/>
+    <rule pattern="\bsystemctl\s+(start|stop|restart|enable|disable)\b" note="系统服务控制"/>
+    <rule pattern="\bgit\s+(push|reset\s+--hard|clean\s+-fd)\b" note="危险 git 操作"/>
+    <rule pattern="\b(docker|podman)\s+(run|rm|rmi|system\s+prune)\b" note="容器危险操作"/>
+    <rule pattern="\b(rsync|scp|ssh)\b" note="远程传输/登录"/>
+    <rule pattern="\bkill(-all)?\s+-?9\b|\bkillall\b" note="强杀进程"/>
+  </layer_b>
+  <layer_b_exceptions name="yolo 拒绝但其他模式允许">
+    <rule pattern="\brm\s+-rf\s+/\b" note="绝对禁止路径删除"/>
+    <rule pattern="\b(curl|wget)\s+[^|]*\|\s*(bash|sh|zsh)\b" note="远程脚本直执行"/>
+  </layer_b_exceptions>
+</shell_blocklist>
