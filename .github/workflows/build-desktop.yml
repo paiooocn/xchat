@@ -33,6 +33,20 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          else
+            VERSION_NAME="dev"
+          fi
+          VERSION_NUMBER="1"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "number=$VERSION_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION_NAME (build $VERSION_NUMBER)"
+
       - name: Install Linux system deps
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -63,11 +77,11 @@ jobs:
 
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
-        run: flutter build linux --release
+        run: flutter build linux --release --build-name=${{ steps.version.outputs.name }} --build-number=${{ steps.version.outputs.number }}
 
       - name: Build Windows
         if: matrix.os == 'windows-latest'
-        run: flutter build windows --release
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.name }} --build-number=${{ steps.version.outputs.number }}
         env:
           CPPFLAGS: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
           CFLAGS: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
@@ -76,13 +90,13 @@ jobs:
 
       - name: Build macOS
         if: matrix.os == 'macos-latest'
-        run: flutter build macos --release
+        run: flutter build macos --release --build-name=${{ steps.version.outputs.name }} --build-number=${{ steps.version.outputs.number }}
 
       - name: Package Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p dist
-          tar -C build/linux/x64/release -czf dist/${{ matrix.artifact }}.tar.gz bundle
+          tar -C build/linux/x64/release -czf dist/${{ matrix.artifact }}-${{ steps.version.outputs.name }}.tar.gz bundle
 
       - name: Package Windows
         if: matrix.os == 'windows-latest'
@@ -90,18 +104,18 @@ jobs:
         run: |
           mkdir -p dist
           cd build/windows/x64/runner/Release
-          7z a "${GITHUB_WORKSPACE}/dist/${{ matrix.artifact }}.zip" "."
+          7z a "${GITHUB_WORKSPACE}/dist/${{ matrix.artifact }}-${{ steps.version.outputs.name }}.zip" "."
 
       - name: Package macOS
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p dist
-          tar -C build/macos/Build/Products/Release -czf dist/${{ matrix.artifact }}.tar.gz xchat.app
+          tar -C build/macos/Build/Products/Release -czf dist/${{ matrix.artifact }}-${{ steps.version.outputs.name }}.tar.gz xchat.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}-${{ steps.version.outputs.name }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
