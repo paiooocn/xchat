@@ -3,6 +3,7 @@
 > XChat 是一个基于 Flutter + H5/WebView 的跨平台 LLM Agent GUI,后端(Dart)+前端(HTML/CSS/JS)全在同仓。
 > 持久化: `~/.xchat/`(config.json / sessions/*.xml / templates/*.xml / projects.json / logs/*.log)。
 > 通信: Dart ↔ WebView 通过 `JavaScriptChannel('XchatNative')`,事件用 `BridgeEvents` 总线,本地 HTTP 服务绕开 WebKit `file://` 限制。
+> 许可证: MIT(见根目录 `LICENSE`,Copyright (c) 2026 XChat Authors)。
 
 ---
 
