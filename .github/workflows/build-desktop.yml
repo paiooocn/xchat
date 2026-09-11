@@ -69,6 +69,11 @@ jobs:
       - name: Build Windows
         if: matrix.os == 'windows-latest'
         run: flutter build windows --release
+        env:
+          CPPFLAGS: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+          CFLAGS: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+          CXXFLAGS: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
 
       - name: Build macOS
         if: matrix.os == 'macos-latest'
