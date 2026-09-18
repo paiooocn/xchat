@@ -1,0 +1,11 @@
+analyzer:
+  language:
+    strict-raw-types: false
+  errors:
+    unused_element: warning
+
+linter:
+  rules:
+    - avoid_empty_else
+    - unnecessary_brace_in_string_interps
+    - unnecessary_this

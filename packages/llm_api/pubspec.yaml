@@ -1,0 +1,13 @@
+name: llm_api
+description: >-
+  Provider-agnostic Dart client for LLM chat APIs: streaming, multi-turn
+  conversations, deep-thinking / reasoning extraction (reasoning_content and
+  inline  thinking tags) and tool calling.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.4.0
+
+dev_dependencies:
+  test: ^1.25.0

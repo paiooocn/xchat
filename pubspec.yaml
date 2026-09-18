@@ -1,0 +1,47 @@
+name: xchat
+description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
+publish_to: 'none'
+version: 1.0.0+1
+license: MIT
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management
+  provider: ^6.1.2
+
+  # LLM client (vendored, provider-agnostic OpenAI-compatible streaming + tools)
+  llm_api:
+    path: packages/llm_api
+
+  # XML (CDATA support)
+  xml: ^6.5.0
+
+  # Paths / storage
+  path_provider: ^2.1.5
+  path: ^1.9.0
+  shared_preferences: ^2.3.4
+
+  # Utils
+  uuid: ^4.5.1
+  http: ^1.2.2
+  html: ^0.15.4
+  intl: ^0.20.0
+
+  # Markdown rendering
+  markdown_widget: ^2.3.2+6
+  highlight: ^0.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
