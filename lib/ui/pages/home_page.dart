@@ -280,23 +280,40 @@ class _EmptyState extends StatelessWidget {
 }
 
 /// Mobile chat page that resolves the session from the store by id.
-class _MobileChatPage extends StatelessWidget {
+class _MobileChatPage extends StatefulWidget {
   const _MobileChatPage({required this.sessionId});
 
   final String sessionId;
 
   @override
+  State<_MobileChatPage> createState() => _MobileChatPageState();
+}
+
+class _MobileChatPageState extends State<_MobileChatPage> {
+  /// Session info / model selector header is hidden by default on mobile to
+  /// reclaim vertical space; toggled from the top bar.
+  bool _showInfo = false;
+
+  @override
   Widget build(BuildContext context) {
-    final session = context.watch<AppState>().sessionById(sessionId);
+    final session = context.watch<AppState>().sessionById(widget.sessionId);
     return Scaffold(
       appBar: AppBar(
         title: Text(session?.title.isNotEmpty == true ? session!.title : '会话'),
+        actions: [
+          IconButton(
+            tooltip: '显示/隐藏会话信息',
+            icon: Icon(_showInfo ? Icons.info : Icons.info_outline),
+            onPressed: () => setState(() => _showInfo = !_showInfo),
+          ),
+        ],
       ),
       body: session == null
           ? const Center(child: Text('会话不存在'))
           : SessionChatPanel(
               key: ValueKey(session.id),
               sessionId: session.id,
+              showHeader: _showInfo,
               onCompressCompleted: (id) {
                 final state = context.read<AppState>();
                 final created = state.sessionById(id);
@@ -772,12 +789,21 @@ class _SessionMenu extends StatelessWidget {
 /// held by [AppState] — so re-opening a session (including a project session)
 /// shows the persisted conversation instead of a stale/empty copy.
 class SessionChatPanel extends StatefulWidget {
-  const SessionChatPanel({super.key, required this.sessionId, this.onCompressCompleted});
+  const SessionChatPanel({
+    super.key,
+    required this.sessionId,
+    this.onCompressCompleted,
+    this.showHeader = true,
+  });
 
   final String sessionId;
 
   /// Called after "compress session" created a new session (to select it).
   final ValueChanged<String>? onCompressCompleted;
+
+  /// Whether to show the session info / model selector header. Mobile hides it
+  /// by default to reclaim vertical space and toggles it from the app bar.
+  final bool showHeader;
 
   @override
   State<SessionChatPanel> createState() => _SessionChatPanelState();
@@ -1005,8 +1031,10 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
 
     return Column(
       children: [
-        _Header(controller: controller),
-        const Divider(height: 1),
+        if (widget.showHeader) ...[
+          _Header(controller: controller),
+          const Divider(height: 1),
+        ],
         Expanded(
           child: ListView.builder(
             controller: _scroll,
