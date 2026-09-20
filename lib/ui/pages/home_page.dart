@@ -1043,31 +1043,6 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
             text: controller.error ?? controller.notice!,
             isError: controller.error != null,
           ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  onPressed: () => _guardedScroll(_scrollToLastUser),
-                  tooltip: '回到最近消息',
-                  iconSize: 20,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.vertical_align_top),
-                ),
-                IconButton(
-                  onPressed: () => _guardedScroll(() async => _scrollToBottom()),
-                  tooltip: '回到底部',
-                  iconSize: 20,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.vertical_align_bottom),
-                ),
-              ],
-            ),
-          ),
-        ),
         InputArea(
           running: controller.isRunning,
           onSend: (text) => controller.send(text),
@@ -1078,6 +1053,8 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           webSearchEnabled: session.webSearchEnabled,
           onWebSearchChanged: (value) => controller.setWebSearch(value),
           onCompress: _compressSession,
+          onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
+          onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
         ),
       ],
     );

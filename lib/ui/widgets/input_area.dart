@@ -27,6 +27,8 @@ class InputArea extends StatefulWidget {
     this.webSearchEnabled = true,
     this.onWebSearchChanged,
     this.onCompress,
+    this.onScrollToRecent,
+    this.onScrollToBottom,
     this.hint = 'Enter 发送，Ctrl+Enter 换行',
   });
 
@@ -43,8 +45,14 @@ class InputArea extends StatefulWidget {
   final bool webSearchEnabled;
   final ValueChanged<bool>? onWebSearchChanged;
 
-  /// Optional "compress session" action shown next to 发送.
+  /// Optional "compress session" action shown in the toolbar.
   final VoidCallback? onCompress;
+
+  /// Optional scroll-to-recent-message action shown in the toolbar.
+  final VoidCallback? onScrollToRecent;
+
+  /// Optional scroll-to-bottom action shown in the toolbar.
+  final VoidCallback? onScrollToBottom;
   final String hint;
 
   @override
@@ -92,45 +100,7 @@ class _InputAreaState extends State<InputArea> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Shortcuts(
-            shortcuts: const <ShortcutActivator, Intent>{
-              SingleActivator(LogicalKeyboardKey.enter): _SendIntent(),
-              SingleActivator(LogicalKeyboardKey.numpadEnter): _SendIntent(),
-              SingleActivator(LogicalKeyboardKey.enter, control: true): _NewlineIntent(),
-              SingleActivator(LogicalKeyboardKey.enter, shift: true): _NewlineIntent(),
-              SingleActivator(LogicalKeyboardKey.enter, alt: true): _NewlineIntent(),
-            },
-            child: Actions(
-              actions: <Type, Action<Intent>>{
-                _SendIntent: CallbackAction<_SendIntent>(
-                  onInvoke: (_) {
-                    _send();
-                    return null;
-                  },
-                ),
-                _NewlineIntent: CallbackAction<_NewlineIntent>(
-                  onInvoke: (_) {
-                    _insertNewline();
-                    return null;
-                  },
-                ),
-              },
-              child: TextField(
-                controller: _controller,
-                focusNode: _focus,
-                minLines: 1,
-                maxLines: 8,
-                textInputAction: TextInputAction.newline,
-                keyboardType: TextInputType.multiline,
-                decoration: InputDecoration(
-                  hintText: widget.hint,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
+          // Toolbar: mode / web search on the left, actions on the right.
           Row(
             children: [
               PopupMenuButton<AgentMode>(
@@ -182,6 +152,69 @@ class _InputAreaState extends State<InputArea> {
                   tooltip: '压缩会话',
                   icon: const Icon(Icons.compress),
                 ),
+              if (widget.onScrollToRecent != null)
+                IconButton(
+                  onPressed: widget.onScrollToRecent,
+                  tooltip: '回到最近消息',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.vertical_align_top),
+                ),
+              if (widget.onScrollToBottom != null)
+                IconButton(
+                  onPressed: widget.onScrollToBottom,
+                  tooltip: '回到底部',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.vertical_align_bottom),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Input row: text field with the send / stop button on its right,
+          // outside the field.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Shortcuts(
+                  shortcuts: const <ShortcutActivator, Intent>{
+                    SingleActivator(LogicalKeyboardKey.enter): _SendIntent(),
+                    SingleActivator(LogicalKeyboardKey.numpadEnter): _SendIntent(),
+                    SingleActivator(LogicalKeyboardKey.enter, control: true): _NewlineIntent(),
+                    SingleActivator(LogicalKeyboardKey.enter, shift: true): _NewlineIntent(),
+                    SingleActivator(LogicalKeyboardKey.enter, alt: true): _NewlineIntent(),
+                  },
+                  child: Actions(
+                    actions: <Type, Action<Intent>>{
+                      _SendIntent: CallbackAction<_SendIntent>(
+                        onInvoke: (_) {
+                          _send();
+                          return null;
+                        },
+                      ),
+                      _NewlineIntent: CallbackAction<_NewlineIntent>(
+                        onInvoke: (_) {
+                          _insertNewline();
+                          return null;
+                        },
+                      ),
+                    },
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focus,
+                      minLines: 1,
+                      maxLines: 8,
+                      textInputAction: TextInputAction.newline,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        hintText: widget.hint,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               if (widget.running)
                 IconButton.filledTonal(
                   onPressed: widget.onStop,
