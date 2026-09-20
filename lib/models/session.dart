@@ -124,43 +124,45 @@ class Session {
     toolCalls = count;
   }
 
-  Session cloneEmpty() => Session(
-        id: newId(),
-        sandbox: sandbox,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        toolCallsLimit: toolCallsLimit,
-        title: title,
-        projectId: projectId,
-        tags: List<String>.of(tags),
-        provider: provider,
-        model: model,
-        mode: mode,
-        thinkingReplyMode: thinkingReplyMode,
-        webSearchEnabled: webSearchEnabled,
-        tools: List<String>.of(tools),
-        params: params.copyWith(),
-      );
+  /// Clone keeping only the configuration (system prompt + settings), i.e. the
+  /// state right before the first turn. Used for "clone before first turn".
+  Session cloneEmpty() => _cloneWith(const <SessionMessage>[]);
 
-  /// Clone that copies `system` + the first user element only.
-  Session cloneToFirstUser() => Session(
-        id: newId(),
-        sandbox: sandbox,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        toolCallsLimit: toolCallsLimit,
-        title: title,
-        projectId: projectId,
-        tags: List<String>.of(tags),
-        provider: provider,
-        model: model,
-        mode: mode,
-        thinkingReplyMode: thinkingReplyMode,
-        webSearchEnabled: webSearchEnabled,
-        tools: List<String>.of(tools),
-        params: params.copyWith(),
-        messages: _messagesToFirstUser(),
-      );
+  /// Clone copying `system` + the first user element only.
+  Session cloneToFirstUser() => _cloneWith(_messagesToFirstUser());
+
+  /// Clone copying `system` + the first full exchange: the first user turn and
+  /// every following message up to (but excluding) the next user turn.
+  Session cloneWithFirstTurn() => _cloneWith(_messagesThroughFirstTurn());
+
+  /// Clone copying the entire conversation verbatim.
+  Session cloneFull() => _cloneWith(_copyAllMessages());
+
+  /// Builds a new session (fresh id) copying this session's configuration and
+  /// the given messages, recomputing the derived counters.
+  Session _cloneWith(List<SessionMessage> messages) {
+    final clone = Session(
+      id: newId(),
+      sandbox: sandbox,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      toolCallsLimit: toolCallsLimit,
+      title: title,
+      projectId: projectId,
+      tags: List<String>.of(tags),
+      provider: provider,
+      model: model,
+      mode: mode,
+      thinkingReplyMode: thinkingReplyMode,
+      webSearchEnabled: webSearchEnabled,
+      tools: List<String>.of(tools),
+      params: params.copyWith(),
+      messages: messages,
+    );
+    clone.recomputeToolCalls();
+    clone.recomputeUsage();
+    return clone;
+  }
 
   List<SessionMessage> _messagesToFirstUser() {
     final out = <SessionMessage>[];
@@ -186,6 +188,50 @@ class Session {
     }
     return out;
   }
+
+  /// `system` messages plus the first user turn and every following message up
+  /// to (but excluding) the next user turn.
+  List<SessionMessage> _messagesThroughFirstTurn() {
+    final out = <SessionMessage>[];
+    var seenUser = false;
+    for (final message in messages) {
+      if (message.role == MessageRole.system) {
+        out.add(_copyMessage(message));
+        continue;
+      }
+      if (message.role == MessageRole.user) {
+        if (seenUser) break; // second user turn starts the next exchange
+        seenUser = true;
+        out.add(_copyMessage(message));
+        continue;
+      }
+      if (seenUser) out.add(_copyMessage(message));
+    }
+    if (out.isEmpty || out.first.role != MessageRole.system) {
+      out.insert(0, SessionMessage(role: MessageRole.system, content: ''));
+    }
+    return out;
+  }
+
+  /// Deep copy of every message (fresh ids, independent tool-call lists).
+  List<SessionMessage> _copyAllMessages() =>
+      [for (final message in messages) _copyMessage(message)];
+
+  static SessionMessage _copyMessage(SessionMessage message) => SessionMessage(
+        role: message.role,
+        id: message.id ?? newShortId(),
+        content: message.content,
+        reasoning: message.reasoning,
+        reasoningMode: message.reasoningMode,
+        toolCalls: [
+          for (final call in message.toolCalls)
+            ToolCallData(id: call.id, name: call.name, arguments: call.arguments),
+        ],
+        toolCallId: message.toolCallId,
+        toolName: message.toolName,
+        isError: message.isError,
+        usage: message.usage,
+      );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
         'id': id,

@@ -229,10 +229,29 @@ class AppState extends ChangeNotifier {
   /// Duplicates a session, keeping only the data that precedes the first turn
   /// (system prompt + settings). The clone gets its own sandbox unless it
   /// belongs to a project.
-  Future<Session> cloneSession(Session source) async {
+  Future<Session> cloneSession(Session source) =>
+      _cloneSession(source, (full) => full.cloneEmpty(), freshSandbox: true);
+
+  /// Duplicates a session including the first exchange (first user turn and the
+  /// assistant reply/tool messages up to the next user turn). The clone keeps
+  /// the source sandbox so any referenced files stay available.
+  Future<Session> cloneSessionWithFirstTurn(Session source) =>
+      _cloneSession(source, (full) => full.cloneWithFirstTurn(),
+          freshSandbox: false);
+
+  /// Duplicates a session with its entire conversation. The clone keeps the
+  /// source sandbox so the copied history stays usable.
+  Future<Session> cloneSessionFull(Session source) =>
+      _cloneSession(source, (full) => full.cloneFull(), freshSandbox: false);
+
+  Future<Session> _cloneSession(
+    Session source,
+    Session Function(Session full) build, {
+    required bool freshSandbox,
+  }) async {
     final full = await loadFullSession(source.id);
-    final clone = full.cloneEmpty();
-    clone.sandbox = full.projectId.isEmpty
+    final clone = build(full);
+    clone.sandbox = (freshSandbox && full.projectId.isEmpty)
         ? paths.sessionSandboxDir(clone.id)
         : full.sandbox;
     await sessionRepository.write(clone);

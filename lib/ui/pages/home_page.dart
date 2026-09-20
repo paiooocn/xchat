@@ -648,7 +648,9 @@ class _SessionMenu extends StatelessWidget {
         PopupMenuItem(value: 'rename', child: Text('重命名')),
         PopupMenuItem(value: 'tags', child: Text('编辑标签')),
         PopupMenuItem(value: 'autoname', child: Text('AI 自动命名')),
-        PopupMenuItem(value: 'clone', child: Text('克隆（到首轮之前）')),
+        PopupMenuItem(value: 'clone_empty', child: Text('克隆（到首轮之前）')),
+        PopupMenuItem(value: 'clone_first', child: Text('克隆（含首次对话）')),
+        PopupMenuItem(value: 'clone_full', child: Text('克隆（完整会话）')),
         PopupMenuItem(value: 'edit_xml', child: Text('用编辑工具打开')),
         PopupMenuItem(value: 'archive', child: Text('归档')),
         PopupMenuItem(value: 'delete', child: Text('删除')),
@@ -669,8 +671,14 @@ class _SessionMenu extends StatelessWidget {
         await _editTags(context);
       case 'autoname':
         await _autoName(context);
-      case 'clone':
+      case 'clone_empty':
         final clone = await state.cloneSession(session);
+        if (context.mounted) _toast(context, '已克隆为 ${clone.id.substring(0, 8)}');
+      case 'clone_first':
+        final clone = await state.cloneSessionWithFirstTurn(session);
+        if (context.mounted) _toast(context, '已克隆为 ${clone.id.substring(0, 8)}');
+      case 'clone_full':
+        final clone = await state.cloneSessionFull(session);
         if (context.mounted) _toast(context, '已克隆为 ${clone.id.substring(0, 8)}');
       case 'edit_xml':
         final path = AppPaths.instance.sessionFile(session.id);

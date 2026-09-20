@@ -46,3 +46,4 @@ app.*.map.json
 
 /dist/*.apk
 /dist/*.log
+/dist/*.deb
