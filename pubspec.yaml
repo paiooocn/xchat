@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.1.4+1
+version: 0.1.5+1
 license: MIT
 
 environment:
@@ -34,6 +34,9 @@ dependencies:
   html: ^0.15.4
   intl: ^0.20.0
 
+  # Desktop window sizing (per-user persisted size, applied on next launch)
+  window_manager: ^0.5.2
+
   # Markdown rendering
   markdown_widget: ^2.3.2+6
   highlight: ^0.7.0
@@ -45,3 +48,23 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Bundled open-source fonts so typography is identical on every platform
+  # (Android / iOS / macOS / Windows / Linux) instead of falling back to each
+  # system's default CJK font.
+  #   - Noto Sans SC  (思源黑体简体, SIL OFL-1.1)  -> UI text
+  #   - JetBrains Mono (SIL OFL-1.1)               -> code / monospace
+  # Files are subset to the full CJK repertoire (basic + ext-A) to cut size.
+  fonts:
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/NotoSansSC/NotoSansSC-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansSC/NotoSansSC-Bold.ttf
+          weight: 700
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono/JetBrainsMono-Bold.ttf
+          weight: 700

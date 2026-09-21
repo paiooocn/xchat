@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,7 +15,9 @@ class _NewlineIntent extends Intent {
 
 /// Bottom input area with send / stop.
 ///
-/// Enter sends; Ctrl+Enter (or Shift+Enter / Alt+Enter) inserts a newline.
+/// On desktop: Enter sends; Ctrl+Enter (or Shift+Enter / Alt+Enter) inserts a
+/// newline. On Android/iOS: Enter always inserts a newline and the message is
+/// sent only via the [发送] button.
 class InputArea extends StatefulWidget {
   const InputArea({
     super.key,
@@ -95,6 +98,13 @@ class _InputAreaState extends State<InputArea> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Enter-to-send is a desktop affordance only: on touch devices the
+    // on-screen keyboard's Enter must insert a newline; sending goes through
+    // the [发送] button.
+    final isTouchPlatform = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+    final hint = isTouchPlatform ? '点击 [发送] 按钮发送，Enter 换行' : widget.hint;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Column(
@@ -176,12 +186,18 @@ class _InputAreaState extends State<InputArea> {
             children: [
               Expanded(
                 child: Shortcuts(
-                  shortcuts: const <ShortcutActivator, Intent>{
-                    SingleActivator(LogicalKeyboardKey.enter): _SendIntent(),
-                    SingleActivator(LogicalKeyboardKey.numpadEnter): _SendIntent(),
-                    SingleActivator(LogicalKeyboardKey.enter, control: true): _NewlineIntent(),
-                    SingleActivator(LogicalKeyboardKey.enter, shift: true): _NewlineIntent(),
-                    SingleActivator(LogicalKeyboardKey.enter, alt: true): _NewlineIntent(),
+                  shortcuts: <ShortcutActivator, Intent>{
+                    if (!isTouchPlatform) ...<ShortcutActivator, Intent>{
+                      const SingleActivator(LogicalKeyboardKey.enter): const _SendIntent(),
+                      const SingleActivator(LogicalKeyboardKey.numpadEnter):
+                          const _SendIntent(),
+                    },
+                    const SingleActivator(LogicalKeyboardKey.enter, control: true):
+                        const _NewlineIntent(),
+                    const SingleActivator(LogicalKeyboardKey.enter, shift: true):
+                        const _NewlineIntent(),
+                    const SingleActivator(LogicalKeyboardKey.enter, alt: true):
+                        const _NewlineIntent(),
                   },
                   child: Actions(
                     actions: <Type, Action<Intent>>{
@@ -206,7 +222,7 @@ class _InputAreaState extends State<InputArea> {
                       textInputAction: TextInputAction.newline,
                       keyboardType: TextInputType.multiline,
                       decoration: InputDecoration(
-                        hintText: widget.hint,
+                        hintText: hint,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),

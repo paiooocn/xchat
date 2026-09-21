@@ -5,6 +5,7 @@ import '../../agent/tools/builtin_tools.dart';
 import '../../models/agent_mode.dart';
 import '../../models/app_config.dart';
 import '../../state/app_state.dart';
+import '../theme/app_fonts.dart';
 import '../widgets/confirm_dialog.dart';
 
 /// Tool management: review available tools, set approval levels, and configure
@@ -238,7 +239,13 @@ class _ShellListsDialogState extends State<_ShellListsDialog> {
                   itemCount: items.length,
                   itemBuilder: (context, index) => ListTile(
                     dense: true,
-                    title: Text(items[index], style: const TextStyle(fontFamily: 'monospace')),
+                    title: Text(
+                      items[index],
+                      style: const TextStyle(
+                        fontFamily: AppFonts.mono,
+                        fontFamilyFallback: AppFonts.monoFallback,
+                      ),
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

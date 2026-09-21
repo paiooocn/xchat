@@ -18,6 +18,7 @@ import '../widgets/message_bubble.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
 import '../widgets/usage_badge.dart';
+import '../theme/app_fonts.dart';
 import 'archive_page.dart';
 import 'compress_prompts_page.dart';
 import 'providers_page.dart';
@@ -750,7 +751,8 @@ class _SessionMenu extends StatelessWidget {
               child: SelectableText(
                 prompt.trim().isEmpty ? '（空）' : prompt,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontFamily: 'monospace',
+                      fontFamily: AppFonts.mono,
+                      fontFamilyFallback: AppFonts.monoFallback,
                       height: 1.5,
                     ),
               ),
@@ -871,7 +873,11 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           child: SingleChildScrollView(
             child: Text(
               arguments.isEmpty ? '(无参数)' : arguments,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: const TextStyle(
+                fontFamily: AppFonts.mono,
+                fontFamilyFallback: AppFonts.monoFallback,
+                fontSize: 12,
+              ),
             ),
           ),
         ),

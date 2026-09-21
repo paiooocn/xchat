@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +9,7 @@ import '../../models/search_engine_config.dart';
 import '../../models/session_params.dart';
 import '../../state/app_state.dart';
 import 'compress_prompts_page.dart';
+import 'font_test_page.dart';
 import '../../util/editor_launcher.dart';
 import '../widgets/confirm_dialog.dart';
 
@@ -286,14 +289,50 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
           const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('窗口尺寸（桌面端，下次启动生效）'),
+          ),
+          const SizedBox(height: 6),
+          SegmentedButton<String>(
+            segments: [
+              for (final size in kWindowSizes)
+                ButtonSegment(value: size, label: Text(size)),
+            ],
+            selected: {config.windowSize},
+            onSelectionChanged: (value) async {
+              config.windowSize = value.first;
+              final messenger = ScaffoldMessenger.of(context);
+              await state.saveConfig();
+              messenger.showSnackBar(
+                SnackBar(content: Text('窗口尺寸已设为 ${value.first}，下次启动生效')),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _editor,
             decoration: const InputDecoration(
               labelText: '外部编辑器命令（{file} 占位，如 code --goto {file}）',
             ),
           ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => showFontTestDialog(context),
+              icon: const Icon(Icons.text_fields),
+              label: const Text('字体显示测试'),
+            ),
+          ),
           _section('关于'),
           const Text('XChat · Flutter · ReAct Agent · XML 会话'),
+          _section('本机信息'),
+          SelectableText(
+            _machineInfo(),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -372,6 +411,27 @@ class _SettingsPageState extends State<SettingsPage> {
       ..snippetSelector = snippet.text.trim();
     if (existing == null) state.config.searchEngines.add(engine);
     await state.saveConfig();
+  }
+
+  /// Local machine info shown at the bottom of the settings page.
+  String _machineInfo() {
+    String safe(String Function() read) {
+      try {
+        return read();
+      } catch (_) {
+        return '未知';
+      }
+    }
+
+    final lines = <String>[
+      '应用版本: 0.1.5',
+      '操作系统: ${safe(() => Platform.operatingSystem)} '
+          '${safe(() => Platform.operatingSystemVersion)}',
+      '主机名: ${safe(() => Platform.localHostname)}',
+      '逻辑处理器: ${safe(() => '${Platform.numberOfProcessors} 核')}',
+      '数据目录: ${AppPaths.isReady ? AppPaths.instance.root : '未初始化'}',
+    ];
+    return lines.join('\n');
   }
 
   Widget _section(String title) => Padding(

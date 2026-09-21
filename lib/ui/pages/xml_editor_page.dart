@@ -6,6 +6,7 @@ import 'package:xml/xml.dart';
 
 import '../../core/app_paths.dart';
 import '../../state/app_state.dart';
+import '../theme/app_fonts.dart';
 
 /// Built-in XML editor for a session file (used when no external editor).
 class XmlEditorPage extends StatefulWidget {
@@ -87,7 +88,11 @@ class _XmlEditorPageState extends State<XmlEditorPage> {
                 controller: _controller,
                 maxLines: null,
                 expands: true,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: const TextStyle(
+                  fontFamily: AppFonts.mono,
+                  fontFamilyFallback: AppFonts.monoFallback,
+                  fontSize: 12,
+                ),
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   alignLabelWithHint: true,

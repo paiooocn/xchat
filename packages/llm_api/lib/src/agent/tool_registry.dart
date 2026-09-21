@@ -31,7 +31,10 @@ abstract class LlmTool {
 
   /// Runs the tool. Whatever is returned is JSON-encoded and fed back to the
   /// model; throwing turns into an error result the model can react to.
-  Future<Object?> call(Map<String, Object?> arguments);
+  ///
+  /// [cancel] lets long-running tools abort early; implementations that can,
+  /// should honor it (e.g. kill a spawned process).
+  Future<Object?> call(Map<String, Object?> arguments, {CancelToken? cancel});
 }
 
 /// A tool backed by a plain Dart function.
@@ -72,7 +75,8 @@ class FunctionTool extends LlmTool {
   final FutureOr<Object?> Function(Map<String, Object?> arguments) handler;
 
   @override
-  Future<Object?> call(Map<String, Object?> arguments) async => handler(arguments);
+  Future<Object?> call(Map<String, Object?> arguments, {CancelToken? cancel}) async =>
+      handler(arguments);
 }
 
 /// Name → tool lookup used by `ChatSession`.
@@ -146,7 +150,17 @@ class ToolRegistry {
     }
 
     try {
-      final value = await tool.call(arguments).timeout(timeout);
+      final future = tool.call(arguments, cancel: cancel);
+      // Race the tool against cancellation so a long-running tool doesn't keep
+      // the agent (and the UI "stop" button) blocked until it finishes.
+      final pending = cancel == null
+          ? future
+          : Future.any<Object?>([
+              future,
+              cancel.whenCancelled.then<Object?>((_) =>
+                  throw RequestCancelledException(cancel.reason?.toString())),
+            ]);
+      final value = await pending.timeout(timeout);
       return ToolResult.text(call.id, _truncate(ToolResult.encode(value)), name: call.name);
     } on TimeoutException {
       return ToolResult.error(

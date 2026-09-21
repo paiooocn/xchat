@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/session_message.dart';
+import '../theme/app_fonts.dart';
 import 'markdown_view.dart';
 
 /// Renders an assistant's tool calls, plus any matching tool results.
@@ -77,7 +78,10 @@ class _ToolCallEntry extends StatelessWidget {
             ),
             child: SelectableText(
               call.arguments.isEmpty ? '{}' : _pretty(call.arguments),
-              style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: AppFonts.mono,
+                fontFamilyFallback: AppFonts.monoFallback,
+              ),
             ),
           ),
         ),

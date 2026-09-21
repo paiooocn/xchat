@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'state/app_state.dart';
 import 'ui/pages/home_page.dart';
+import 'ui/theme/app_fonts.dart';
 
 class XChatApp extends StatelessWidget {
   const XChatApp({super.key});
@@ -21,10 +22,12 @@ class XChatApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: ThemeData(
+        fontFamily: AppFonts.sans,
         colorScheme: ColorScheme.fromSeed(seedColor: seed),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
+        fontFamily: AppFonts.sans,
         colorScheme: ColorScheme.fromSeed(
           seedColor: seed,
           brightness: Brightness.dark,

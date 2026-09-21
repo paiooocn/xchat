@@ -1,13 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 
+import '../theme/app_fonts.dart';
+
 /// Renders assistant/user markdown as a non-scrolling column.
 Widget markdownView(String data, {Color? codeBackground}) {
   if (data.trim().isEmpty) return const SizedBox.shrink();
   return MarkdownBlock(
     data: data,
     selectable: true,
-    config: MarkdownConfig(),
+    config: MarkdownConfig(
+      configs: [
+        // Force the bundled monospace font for fenced code blocks on every
+        // platform (markdown_widget otherwise falls back to a system font).
+        PreConfig(
+          textStyle: const TextStyle(
+            fontFamily: AppFonts.mono,
+            fontFamilyFallback: AppFonts.monoFallback,
+          ),
+        ),
+      ],
+    ),
     generator: MarkdownGenerator(
       generators: [
         // Replace the built-in `pre` node: markdown_widget's CodeBlockNode

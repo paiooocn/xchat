@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -183,36 +184,7 @@ class BuiltinTools {
         },
       );
 
-  static LlmTool _shell(String sandbox) => FunctionTool(
-        name: 'shell',
-        description: '执行 shell 命令并返回标准输出/错误（桌面端）。',
-        parameters: objectSchema(
-          properties: {
-            'command': stringSchema(description: '要执行的命令'),
-            'timeout_seconds': integerSchema(description: '超时秒数', minimum: 1),
-          },
-          required: ['command'],
-        ),
-        handler: (args) async {
-          if (!(Platform.isLinux || Platform.isMacOS || Platform.isWindows)) {
-            return 'ERROR: shell is not available on this platform';
-          }
-          final command = '${args['command'] ?? ''}';
-          if (command.isEmpty) return 'ERROR: command required';
-          final timeout = (args['timeout_seconds'] as num?)?.toInt() ?? 60;
-          final isWindows = Platform.isWindows;
-          final result = await Process.run(
-            isWindows ? 'cmd' : '/bin/bash',
-            isWindows ? ['/c', command] : ['-lc', command],
-            workingDirectory: sandbox,
-          ).timeout(Duration(seconds: timeout));
-          final buffer = StringBuffer();
-          if ('${result.stdout}'.isNotEmpty) buffer.writeln(result.stdout);
-          if ('${result.stderr}'.isNotEmpty) buffer.writeln('[stderr]\n${result.stderr}');
-          buffer.writeln('[exit code] ${result.exitCode}');
-          return buffer.toString();
-        },
-      );
+  static LlmTool _shell(String sandbox) => _ShellTool(sandbox);
 
   static LlmTool _httpFetch(ProxyConfig proxy) => FunctionTool(
         name: 'http_fetch',
@@ -433,4 +405,80 @@ class _SearchEngine {
 
   final String name;
   final Future<List<Map<String, Object?>>> Function(String query, int max) search;
+}
+
+/// Cancellable `shell` tool: kills the spawned child process when the turn is
+/// stopped, so [停止] takes effect immediately instead of waiting for the
+/// command (or its timeout) to finish.
+class _ShellTool extends LlmTool {
+  _ShellTool(this.sandbox);
+
+  final String sandbox;
+
+  @override
+  String get name => 'shell';
+
+  @override
+  String get description => '执行 shell 命令（桌面端，工作目录=沙箱）并返回标准输出/错误。';
+
+  @override
+  Map<String, Object?> get parameters => objectSchema(
+        properties: {
+          'command': stringSchema(description: '要执行的命令'),
+          'timeout_seconds': integerSchema(description: '超时秒数', minimum: 1),
+        },
+        required: ['command'],
+      );
+
+  @override
+  Future<Object?> call(Map<String, Object?> args, {CancelToken? cancel}) async {
+    if (!(Platform.isLinux || Platform.isMacOS || Platform.isWindows)) {
+      return 'ERROR: shell is not available on this platform';
+    }
+    final command = '${args['command'] ?? ''}';
+    if (command.isEmpty) return 'ERROR: command required';
+    final timeout = (args['timeout_seconds'] as num?)?.toInt() ?? 60;
+    final isWindows = Platform.isWindows;
+
+    final process = await Process.start(
+      isWindows ? 'cmd' : '/bin/bash',
+      isWindows ? ['/c', command] : ['-lc', command],
+      workingDirectory: sandbox,
+    );
+    final stdoutBuf = StringBuffer();
+    final stderrBuf = StringBuffer();
+    final out = process.stdout.transform(utf8.decoder).listen(stdoutBuf.write);
+    final err = process.stderr.transform(utf8.decoder).listen(stderrBuf.write);
+
+    void kill() {
+      try {
+        process.kill(ProcessSignal.sigkill);
+      } catch (_) {
+        // Already exited.
+      }
+    }
+
+    unawaited(cancel?.whenCancelled.then((_) => kill()));
+
+    int exitCode;
+    try {
+      exitCode = await process.exitCode.timeout(Duration(seconds: timeout));
+    } on TimeoutException {
+      kill();
+      await out.cancel();
+      await err.cancel();
+      return 'ERROR: command timed out after ${timeout}s';
+    }
+
+    // Turn was stopped → abort the whole agent turn.
+    cancel?.throwIfCancelled();
+    await out.cancel();
+    await err.cancel();
+
+    final buffer = StringBuffer();
+    if (stdoutBuf.isNotEmpty) buffer.writeln(stdoutBuf);
+    if (stderrBuf.isNotEmpty) buffer.writeln('[stderr]\n$stderrBuf');
+    buffer.writeln('[exit code] $exitCode');
+    return buffer.toString();
+  }
 }

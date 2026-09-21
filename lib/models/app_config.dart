@@ -5,6 +5,22 @@ import 'search_engine_config.dart';
 import 'session_message.dart';
 import 'session_params.dart';
 
+/// Preset desktop window sizes (`宽x高`), applied on the next launch.
+const kWindowSizes = <String>['1280x720', '1280x850', '1280x960'];
+
+/// Default window size (matches the native runner default).
+const kDefaultWindowSize = '1280x720';
+
+/// Parses a `宽x高` window-size string; returns `null` when malformed.
+({int width, int height})? parseWindowSize(String value) {
+  final parts = value.split('x');
+  if (parts.length != 2) return null;
+  final width = int.tryParse(parts[0]);
+  final height = int.tryParse(parts[1]);
+  if (width == null || height == null || width <= 0 || height <= 0) return null;
+  return (width: width, height: height);
+}
+
 /// Default auto-continue message sent when a session hits its tool budget.
 const kDefaultContinuePrompt =
     '你本会话已累计调用工具 {n} 次（本轮上限 {limit}）。请判断任务是否已完成：\n'
@@ -40,6 +56,7 @@ class AppConfig {
     SessionParams? defaultParams,
     this.editorCommand = '',
     this.themeMode = 'system',
+    this.windowSize = kDefaultWindowSize,
     this.continueMode = ContinueMode.model,
     this.defaultToolCallsLimit = 20,
     List<String>? defaultTools,
@@ -73,6 +90,9 @@ class AppConfig {
 
   /// system | light | dark
   String themeMode;
+
+  /// Desktop window size preset (`宽x高`), applied on the next launch.
+  String windowSize;
 
   ContinueMode continueMode;
   int defaultToolCallsLimit;
@@ -134,6 +154,7 @@ class AppConfig {
         'default_params': defaultParams.toJson(),
         'editor_command': editorCommand,
         'theme_mode': themeMode,
+        'window_size': windowSize,
         'continue_mode': continueMode.wire,
         'default_tool_calls_limit': defaultToolCallsLimit,
         'default_tools': defaultTools,
@@ -158,6 +179,9 @@ class AppConfig {
       defaultParams: SessionParams.fromJson(json['default_params']),
       editorCommand: asString(json['editor_command']) ?? '',
       themeMode: asString(json['theme_mode']) ?? 'system',
+      windowSize: parseWindowSize(asString(json['window_size']) ?? '') == null
+          ? kDefaultWindowSize
+          : asString(json['window_size'])!,
       continueMode: ContinueMode.parse(asString(json['continue_mode'])),
       defaultToolCallsLimit: asInt(json['default_tool_calls_limit']) ?? 20,
       defaultTools: asStringList(json['default_tools']).isEmpty

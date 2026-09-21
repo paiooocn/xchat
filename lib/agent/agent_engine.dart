@@ -177,7 +177,7 @@ class AgentEngine {
           }
           var denied = forcedDeny;
           if (!forcedDeny && requiresApproval(level, session.mode) && onApproval != null) {
-            final approved = await onApproval!.call(call.name, call.arguments);
+            final approved = await _awaitApproval(call.name, call.arguments, token);
             denied = !approved;
           }
           final result = denied
@@ -241,6 +241,18 @@ class AgentEngine {
       provider.close();
       _cancel = null;
     }
+  }
+
+  /// Waits for the user's tool approval but aborts immediately when the turn
+  /// is stopped, so a pending dialog can't pin the agent.
+  Future<bool> _awaitApproval(String tool, String arguments, llm.CancelToken token) {
+    final approval = onApproval!.call(tool, arguments);
+    return Future.any<bool>([
+      approval,
+      token.whenCancelled.then<bool>(
+        (_) => throw llm.RequestCancelledException(token.reason?.toString()),
+      ),
+    ]);
   }
 
   llm.ReasoningConfig? _reasoningConfig() {
