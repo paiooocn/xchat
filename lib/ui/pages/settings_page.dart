@@ -424,7 +424,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     final lines = <String>[
-      '应用版本: 0.1.5',
+      '应用版本: 0.1.7',
       '操作系统: ${safe(() => Platform.operatingSystem)} '
           '${safe(() => Platform.operatingSystemVersion)}',
       '主机名: ${safe(() => Platform.localHostname)}',

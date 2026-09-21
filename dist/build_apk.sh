@@ -2,13 +2,20 @@
 # Build release APK and copy versioned artifact into dist/.
 set -euo pipefail
 
-export PATH="/home/yimo/.toolchain/flutter/bin:/home/yimo/.toolchain/flutter/bin/cache/dart-sdk/bin:$PATH"
-export ANDROID_SDK_ROOT="/home/yimo/.toolchain/android-sdk"
-export ANDROID_HOME="/home/yimo/.toolchain/android-sdk"
-export JAVA_HOME="/home/yimo/.toolchain/jdk17"
-export PATH="$JAVA_HOME/bin:$PATH"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJ="${PROJ:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
-PROJ="/mnt/kd/dop/pcr/aicoding/ds-xchat"
+# Optional local toolchain overrides (CI provides these via env / setup actions).
+if [ -n "${FLUTTER_BIN:-}" ]; then
+  export PATH="$FLUTTER_BIN:$PATH"
+fi
+if [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+  export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+fi
+if [ -n "${JAVA_HOME:-}" ]; then
+  export PATH="$JAVA_HOME/bin:$PATH"
+fi
+
 cd "$PROJ"
 
 VERSION="$(grep -m1 '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//' | cut -d'+' -f1)"

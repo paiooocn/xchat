@@ -32,6 +32,7 @@ class XChatApp extends StatelessWidget {
           seedColor: seed,
           brightness: Brightness.dark,
         ),
+        scaffoldBackgroundColor: const Color(0xFF171421),
         useMaterial3: true,
       ),
       // Android 15+ draws the app edge-to-edge, so the bottom system inset

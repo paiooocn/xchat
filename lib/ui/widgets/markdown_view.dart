@@ -3,38 +3,89 @@ import 'package:markdown_widget/markdown_widget.dart';
 
 import '../theme/app_fonts.dart';
 
+// Code palette shared by inline `code` spans and fenced code blocks so they
+// stay visually consistent in both brightness modes.
+const _codeMono = TextStyle(
+  fontFamily: AppFonts.mono,
+  fontFamilyFallback: AppFonts.monoFallback,
+);
+const _codeBgDark = Color(0xCC3A3F4B);
+const _codeBgLight = Color(0xCCeff1f3);
+const _codeFgDark = Color(0xFFE6E6E6);
+const _codeFgLight = Color(0xFF24292F);
+
 /// Renders assistant/user markdown as a non-scrolling column.
 Widget markdownView(String data, {Color? codeBackground}) {
   if (data.trim().isEmpty) return const SizedBox.shrink();
-  return MarkdownBlock(
-    data: data,
-    selectable: true,
-    config: MarkdownConfig(
-      configs: [
-        // Force the bundled monospace font for fenced code blocks on every
-        // platform (markdown_widget otherwise falls back to a system font).
-        PreConfig(
-          textStyle: const TextStyle(
-            fontFamily: AppFonts.mono,
-            fontFamilyFallback: AppFonts.monoFallback,
-          ),
+  return Builder(
+    builder: (context) {
+      final dark = Theme.of(context).brightness == Brightness.dark;
+      // Fenced code blocks: reuse markdown_widget's dark preset (dark syntax
+      // theme) in dark mode, otherwise the default light preset. Only the
+      // bundled monospace font and the background are overridden.
+      final preConfig = (dark ? PreConfig.darkConfig : const PreConfig()).copy(
+        textStyle: _codeMono,
+        decoration: BoxDecoration(
+          color: dark ? _codeBgDark : _codeBgLight,
+          borderRadius: BorderRadius.circular(6),
         ),
-      ],
-    ),
-    generator: MarkdownGenerator(
-      generators: [
-        // Replace the built-in `pre` node: markdown_widget's CodeBlockNode
-        // dereferences `attributes['class']!` for every fence without a
-        // language, logging "get language error:Null check operator used on a
-        // null value". This node reads the language defensively instead.
-        SpanNodeGeneratorWithTag(
-          tag: MarkdownTag.pre.name,
-          generator: (e, config, visitor) =>
-              _SafeCodeBlockNode(e, config.pre, visitor, codeBackground),
+      );
+      return MarkdownBlock(
+        data: data,
+        selectable: true,
+        config: MarkdownConfig(
+          configs: [
+            preConfig,
+            // Inline `code` spans. markdown_widget's default background is a
+            // light grey, which leaves dark-mode text (light) invisible.
+            CodeConfig(
+              style: _codeMono.copyWith(
+                backgroundColor: dark ? _codeBgDark : _codeBgLight,
+                color: dark ? _codeFgDark : _codeFgLight,
+              ),
+            ),
+            // Block quotes (`>`). The default text color is a dark grey that is
+            // unreadable on the dark surface (and vanishes under the selection
+            // highlight), so use the light-on-dark palette in dark mode.
+            dark ? BlockquoteConfig.darkConfig : const BlockquoteConfig(),
+          ],
         ),
-      ],
-    ),
+        generator: MarkdownGenerator(
+          generators: [
+            // Replace the built-in `pre` node: markdown_widget's CodeBlockNode
+            // dereferences `attributes['class']!` for every fence without a
+            // language, logging "get language error:Null check operator used on a
+            // null value". This node reads the language defensively instead.
+            SpanNodeGeneratorWithTag(
+              tag: MarkdownTag.pre.name,
+              generator: (e, config, visitor) =>
+                  _SafeCodeBlockNode(e, config.pre, visitor, codeBackground),
+            ),
+            // Render `>` block quotes in italic. BlockquoteConfig has no font
+            // style knob, so subclass the node and tweak its inherited style.
+            SpanNodeGeneratorWithTag(
+              tag: MarkdownTag.blockquote.name,
+              generator: (e, config, visitor) =>
+                  _ItalicBlockquoteNode(config.blockquote, visitor),
+            ),
+          ],
+        ),
+      );
+    },
   );
+}
+
+/// Like [BlockquoteNode], but forces italic text for `>` block quotes.
+class _ItalicBlockquoteNode extends BlockquoteNode {
+  _ItalicBlockquoteNode(super.config, super.visitor);
+
+  @override
+  TextStyle? get style {
+    final base = super.style;
+    return base == null
+        ? const TextStyle(fontStyle: FontStyle.italic)
+        : base.copyWith(fontStyle: FontStyle.italic);
+  }
 }
 
 class _SafeCodeBlockNode extends ElementNode {
@@ -105,5 +156,23 @@ class _SafeCodeBlockNode extends ElementNode {
   }
 
   @override
-  TextStyle get style => preConfig.textStyle.merge(parentStyle);
+  TextStyle get style {
+    // Drop the inherited color: it would otherwise override the syntax theme
+    // (and, in dark mode, paint the app's light body color on the light code
+    // background). Plain code text then inherits the ambient text color, which
+    // already matches the background brightness.
+    final merged = preConfig.textStyle.merge(parentStyle);
+    return TextStyle(
+      inherit: merged.inherit,
+      fontFamily: merged.fontFamily,
+      fontFamilyFallback: merged.fontFamilyFallback,
+      fontSize: merged.fontSize,
+      fontWeight: merged.fontWeight,
+      fontStyle: merged.fontStyle,
+      letterSpacing: merged.letterSpacing,
+      wordSpacing: merged.wordSpacing,
+      height: merged.height,
+      decoration: merged.decoration,
+    );
+  }
 }

@@ -2,9 +2,12 @@
 # Build the Linux release bundle and package it as dist/xchat-v{x.y.z}.deb.
 set -euo pipefail
 
-PROJ="/mnt/kd/dop/pcr/aicoding/ds-xchat"
-FLUTTER_BIN="${FLUTTER_BIN:-/home/yimo/.toolchain/flutter/bin}"
-export PATH="$FLUTTER_BIN:$PATH"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJ="${PROJ:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+if [ -n "${FLUTTER_BIN:-}" ]; then
+  export PATH="$FLUTTER_BIN:$PATH"
+fi
 
 cd "$PROJ"
 

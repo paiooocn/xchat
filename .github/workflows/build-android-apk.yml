@@ -1,4 +1,4 @@
-name: Build Linux (deb)
+name: Build Android (apk)
 
 on:
   push:
@@ -6,13 +6,19 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux-deb:
+  build-android-apk:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -23,32 +29,26 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
-      - name: Install Linux build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev
-
       - name: Pub get
         run: flutter pub get
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos
 
-      - name: Build Linux + package deb
-        run: bash dist/build_deb.sh
+      - name: Build APK
+        run: bash dist/build_apk.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xchat-linux-deb
-          path: dist/xchat-v*.deb
+          name: xchat-android-apk
+          path: dist/xchat-v*.apk
           if-no-files-found: error
 
       - name: Attach to release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/xchat-v*.deb
+          files: dist/xchat-v*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
