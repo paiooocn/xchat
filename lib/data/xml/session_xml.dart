@@ -144,7 +144,7 @@ class SessionXml {
     if (rawSandbox.isEmpty) {
       sandbox = _dirname(filePath);
     } else if (!p.isAbsolute(rawSandbox) && AppPaths.isReady) {
-      sandbox = p.join(AppPaths.instance.projectsDir, rawSandbox);
+      sandbox = AppPaths.instance.resolveSandbox(rawSandbox);
     } else {
       sandbox = rawSandbox;
     }

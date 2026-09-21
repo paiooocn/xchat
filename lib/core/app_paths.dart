@@ -75,6 +75,17 @@ class AppPaths {
   /// Default (and inherited) working dir for a project.
   String projectSandboxDir(String id) => p.join(projectsDir, id);
 
+  /// Resolves a user-supplied sandbox path to an absolute one.
+  ///
+  /// A relative path is anchored at `projects/`, so `foo/bar` always means
+  /// `<root>/projects/foo/bar`. An empty input is returned unchanged.
+  String resolveSandbox(String sandbox) {
+    final raw = sandbox.trim();
+    if (raw.isEmpty) return raw;
+    if (p.isAbsolute(raw)) return p.normalize(raw);
+    return p.normalize(p.join(projectsDir, raw));
+  }
+
   Future<void> ensureDirs() async {
     for (final dir in <String>[
       root,

@@ -1,5 +1,7 @@
+import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
+import '../../core/app_paths.dart';
 import '../../models/project.dart';
 import 'cdata.dart';
 import 'xml_writer.dart';
@@ -47,11 +49,21 @@ class ProjectXml {
     final id = readTextOrEmpty(root, 'id');
     final createdAt =
         DateTime.tryParse(readTextOrEmpty(root, 'created_at')) ?? DateTime.now();
+    final rawSandbox = root.getAttribute('sandbox') ?? '';
+    // A relative sandbox is resolved against the data directory's `projects/`.
+    final String sandbox;
+    if (rawSandbox.isEmpty) {
+      sandbox = _dirname(filePath);
+    } else if (!p.isAbsolute(rawSandbox) && AppPaths.isReady) {
+      sandbox = AppPaths.instance.resolveSandbox(rawSandbox);
+    } else {
+      sandbox = rawSandbox;
+    }
     return Project(
       id: id.isEmpty ? _basename(filePath) : id,
       name: readTextOrEmpty(root, 'name'),
       description: readTextOrEmpty(root, 'description'),
-      sandbox: root.getAttribute('sandbox') ?? _dirname(filePath),
+      sandbox: sandbox,
       createdAt: createdAt,
       updatedAt: DateTime.tryParse(readTextOrEmpty(root, 'updated_at')) ?? createdAt,
       provider: readTextOrEmpty(root, 'provider'),

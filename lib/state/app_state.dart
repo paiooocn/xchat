@@ -176,7 +176,7 @@ class AppState extends ChangeNotifier {
     final id = newId();
     final project = resolvedProject.isEmpty ? null : projectById(resolvedProject);
     final resolvedSandbox = (sandbox != null && sandbox.trim().isNotEmpty)
-        ? sandbox.trim()
+        ? paths.resolveSandbox(sandbox)
         : (project != null ? project.sandbox : paths.sessionSandboxDir(id));
     final session = Session(
       id: id,
@@ -387,7 +387,7 @@ class AppState extends ChangeNotifier {
       name: name.isEmpty ? '新项目' : name,
       description: description,
       sandbox: (sandbox != null && sandbox.trim().isNotEmpty)
-          ? sandbox.trim()
+          ? paths.resolveSandbox(sandbox)
           : paths.projectSandboxDir(id),
       createdAt: now,
       updatedAt: now,
@@ -400,6 +400,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveProject(Project project) async {
+    project.sandbox = paths.resolveSandbox(project.sandbox);
+    if (project.sandbox.isEmpty) {
+      project.sandbox = paths.projectSandboxDir(project.id);
+    }
     project.updatedAt = DateTime.now();
     await projectRepository.write(project);
     await refreshProjects();
