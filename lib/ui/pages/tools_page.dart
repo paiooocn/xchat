@@ -54,6 +54,79 @@ class _ToolsPageState extends State<ToolsPage> {
     }
   }
 
+  /// Popup panel describing how the shell tool is classified for approval.
+  void _showShellApprovalInfo(BuildContext context, AppConfig config) {
+    final theme = Theme.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('shell 审批详情', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Text(
+                'shell 的基础审批等级固定为 3（不可在工具里调整）。'
+                '每条命令按不区分大小写的正则对整条命令匹配，'
+                '命中多个名单时按 F级 > 2级 > 1级 的优先级取等级。',
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              _infoRow(theme, 'F级（拒绝）', '命中即永不执行，无需审批。'),
+              _infoRow(theme, '2级', '审批等级 2 → 普通/自动模式需审批，托管模式自动执行。'),
+              _infoRow(theme, '1级', '审批等级 1 → 仅普通模式需审批，自动/托管模式自动执行。'),
+              _infoRow(theme, '未命中', '按基础等级 3 → 普通/自动/托管 均需审批；'
+                  '审批弹窗会提示，可将该命令追加到 1级/2级名单以放宽。'),
+              const SizedBox(height: 16),
+              Text(
+                '当前名单：1级 ${config.shellLevel1Commands.length} 条 · '
+                '2级 ${config.shellLevel2Commands.length} 条 · '
+                'F级 ${config.shellDeniedCommands.length} 条。',
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                config.shellCommandsConfigured
+                    ? '任一名单为空时 shell 将被禁用。'
+                    : '存在空名单，shell 工具当前已被禁用。',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: config.shellCommandsConfigured ? null : Colors.orange,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(ThemeData theme, String tag, String detail) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(tag, style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(detail, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -67,7 +140,8 @@ class _ToolsPageState extends State<ToolsPage> {
             padding: EdgeInsets.only(bottom: 12),
             child: Text(
               '审批等级 0..3 决定不同模式（普通/自动/托管）下是否需要在执行前确认：\n'
-              '0 都不审批 · 1 自动/托管审批 · 2 托管审批 · 3 都审批',
+              '0 都不审批 · 1 普通审批 · 2 普通/自动审批 · 3 都审批\n'
+              '（shell 的基础等级固定为 3，点右侧 ⓘ 查看其审批详情）',
               style: TextStyle(fontSize: 12),
             ),
           ),
@@ -77,17 +151,23 @@ class _ToolsPageState extends State<ToolsPage> {
               child: ListTile(
                 title: Text(entry.key),
                 subtitle: Text(entry.value),
-                trailing: DropdownButton<int>(
-                  value: config.toolApprovalLevel(entry.key).clamp(0, 3),
-                  onChanged: (value) async {
-                    config.toolApprovals[entry.key] = value ?? 0;
-                    await state.saveConfig();
-                  },
-                  items: [
-                    for (var level = 0; level <= 3; level++)
-                      DropdownMenuItem(value: level, child: Text(approvalLevelLabel(level))),
-                  ],
-                ),
+                trailing: entry.key == 'shell'
+                    ? IconButton(
+                        tooltip: '审批详情',
+                        icon: const Icon(Icons.info_outline),
+                        onPressed: () => _showShellApprovalInfo(context, config),
+                      )
+                    : DropdownButton<int>(
+                        value: config.toolApprovalLevel(entry.key).clamp(0, 3),
+                        onChanged: (value) async {
+                          config.toolApprovals[entry.key] = value ?? 0;
+                          await state.saveConfig();
+                        },
+                        items: [
+                          for (var level = 0; level <= 3; level++)
+                            DropdownMenuItem(value: level, child: Text(approvalLevelLabel(level))),
+                        ],
+                      ),
               ),
             ),
           const SizedBox(height: 12),

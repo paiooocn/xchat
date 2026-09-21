@@ -862,7 +862,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
   }
 
   /// Asks the user whether to run a tool that requires approval.
-  Future<bool> _requestApproval(String tool, String arguments) async {
+  Future<bool> _requestApproval(String tool, String arguments, String? note) async {
     if (!mounted) return false;
     final approved = await showDialog<bool>(
       context: context,
@@ -871,13 +871,23 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
         content: SizedBox(
           width: 520,
           child: SingleChildScrollView(
-            child: Text(
-              arguments.isEmpty ? '(无参数)' : arguments,
-              style: const TextStyle(
-                fontFamily: AppFonts.mono,
-                fontFamilyFallback: AppFonts.monoFallback,
-                fontSize: 12,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (note != null && note.isNotEmpty) ...[
+                  Text(note, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary)),
+                  const SizedBox(height: 8),
+                ],
+                Text(
+                  arguments.isEmpty ? '(无参数)' : arguments,
+                  style: const TextStyle(
+                    fontFamily: AppFonts.mono,
+                    fontFamilyFallback: AppFonts.monoFallback,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -35,8 +35,9 @@ class AgentEngine {
 
   /// Optional user-consent hook. Returns `true` to run the tool, `false` to
   /// deny it. Invoked for tools whose approval level demands it under the
-  /// session's current [Session.mode].
-  final Future<bool> Function(String tool, String arguments)? onApproval;
+  /// session's current [Session.mode]. [note] carries an optional human-readable
+  /// reason (e.g. which shell list decided the level) for the UI to display.
+  final Future<bool> Function(String tool, String arguments, String? note)? onApproval;
 
   llm.CancelToken? _cancel;
   bool get isRunning => _cancel != null;
@@ -161,9 +162,11 @@ class AgentEngine {
 
         for (final call in calls) {
           token.throwIfCancelled();
-          final baseLevel = config.toolApprovalLevel(call.name);
+          // shell 的基础等级锁定为 3：未命中任一名单的命令默认总是审批。
+          final baseLevel = call.name == 'shell' ? 3 : config.toolApprovalLevel(call.name);
           var level = baseLevel;
           var forcedDeny = false;
+          String? approvalNote;
           if (call.name == 'shell') {
             final classification = classifyShellCommand(
               _shellCommand(call.arguments),
@@ -174,10 +177,18 @@ class AgentEngine {
             );
             forcedDeny = classification.denied;
             level = classification.level;
+            approvalNote = switch (classification.match) {
+              ShellMatch.deny => null,
+              ShellMatch.level2 => '该命令命中 Shell「2级」名单（高影响命令）。',
+              ShellMatch.level1 => '该命令命中 Shell「1级」名单。',
+              ShellMatch.base =>
+                '该命令未命中任何 Shell 名单，按工具默认审批等级（shell=$baseLevel）处理。\n'
+                    '如需更精细控制，可在「工具管理」将该命令追加到 1级/2级名单。',
+            };
           }
           var denied = forcedDeny;
           if (!forcedDeny && requiresApproval(level, session.mode) && onApproval != null) {
-            final approved = await _awaitApproval(call.name, call.arguments, token);
+            final approved = await _awaitApproval(call.name, call.arguments, approvalNote, token);
             denied = !approved;
           }
           final result = denied
@@ -245,8 +256,13 @@ class AgentEngine {
 
   /// Waits for the user's tool approval but aborts immediately when the turn
   /// is stopped, so a pending dialog can't pin the agent.
-  Future<bool> _awaitApproval(String tool, String arguments, llm.CancelToken token) {
-    final approval = onApproval!.call(tool, arguments);
+  Future<bool> _awaitApproval(
+    String tool,
+    String arguments,
+    String? note,
+    llm.CancelToken token,
+  ) {
+    final approval = onApproval!.call(tool, arguments, note);
     return Future.any<bool>([
       approval,
       token.whenCancelled.then<bool>(

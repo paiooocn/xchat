@@ -7,15 +7,25 @@
 /// word, e.g. `\brm\b`.
 library;
 
+/// Source list that decided a shell command's classification.
+enum ShellMatch { deny, level2, level1, base }
+
 /// Outcome of classifying a shell command.
 class ShellClassification {
-  const ShellClassification({required this.denied, required this.level});
+  const ShellClassification({
+    required this.denied,
+    required this.level,
+    required this.match,
+  });
 
   /// `true` when the command matches the F级 (deny) list.
   final bool denied;
 
   /// Effective approval level (0..3) when not denied.
   final int level;
+
+  /// Which list (or the tool's base level) produced [level].
+  final ShellMatch match;
 }
 
 /// Classifies [command] against the configured lists.
@@ -43,8 +53,14 @@ ShellClassification classifyShellCommand(
     return false;
   }
 
-  if (matches(denied)) return const ShellClassification(denied: true, level: 3);
-  if (matches(level2)) return const ShellClassification(denied: false, level: 2);
-  if (matches(level1)) return const ShellClassification(denied: false, level: 1);
-  return ShellClassification(denied: false, level: baseLevel);
+  if (matches(denied)) {
+    return const ShellClassification(denied: true, level: 3, match: ShellMatch.deny);
+  }
+  if (matches(level2)) {
+    return const ShellClassification(denied: false, level: 2, match: ShellMatch.level2);
+  }
+  if (matches(level1)) {
+    return const ShellClassification(denied: false, level: 1, match: ShellMatch.level1);
+  }
+  return ShellClassification(denied: false, level: baseLevel, match: ShellMatch.base);
 }

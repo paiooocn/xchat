@@ -15,18 +15,18 @@ class ProvidersPage extends StatelessWidget {
     final state = context.watch<AppState>();
     return Scaffold(
       appBar: AppBar(title: const Text('模型服务')),
-      body: ListView(
-        children: [
-          for (final provider in state.config.providers)
-            ListTile(
-              leading: Radio<String>(
-                value: provider.id,
-                groupValue: state.config.currentProviderId,
-                onChanged: (value) async {
-                  state.config.currentProviderId = value ?? provider.id;
-                  await state.saveConfig();
-                },
-              ),
+      body: RadioGroup<String>(
+        groupValue: state.config.currentProviderId,
+        onChanged: (value) async {
+          if (value == null) return;
+          state.config.currentProviderId = value;
+          await state.saveConfig();
+        },
+        child: ListView(
+          children: [
+            for (final provider in state.config.providers)
+              ListTile(
+                leading: Radio<String>(value: provider.id),
               title: Text(provider.name),
               subtitle: Text(
                 '${provider.baseUrl} · ${provider.models.length} models',
@@ -57,7 +57,8 @@ class ProvidersPage extends StatelessWidget {
                 ],
               ),
             ),
-        ],
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(context, state, null),

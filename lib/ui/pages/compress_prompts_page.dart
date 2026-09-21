@@ -25,23 +25,25 @@ Future<String?> showCompressDialog(BuildContext context, Session session) async 
               const Text('选择预置压缩提示词：'),
               const SizedBox(height: 8),
               Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final prompt in config.compressPrompts)
-                      RadioListTile<String>(
-                        dense: true,
-                        value: prompt,
-                        groupValue: selected,
-                        title: Text(
-                          prompt,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                child: RadioGroup<String>(
+                  groupValue: selected,
+                  onChanged: (value) =>
+                      setDialogState(() => selected = value ?? selected),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final prompt in config.compressPrompts)
+                        RadioListTile<String>(
+                          dense: true,
+                          value: prompt,
+                          title: Text(
+                            prompt,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        onChanged: (value) =>
-                            setDialogState(() => selected = value ?? selected),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 8),

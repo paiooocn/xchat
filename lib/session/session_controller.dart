@@ -24,8 +24,8 @@ class SessionController extends ChangeNotifier {
   final ProviderConfig Function(String providerId) providerResolver;
 
   /// Set by the UI to ask the user before running a tool. Returns `true` to
-  /// allow, `false` to deny.
-  Future<bool> Function(String tool, String arguments)? approvalHandler;
+  /// allow, `false` to deny. The optional note explains why approval was asked.
+  Future<bool> Function(String tool, String arguments, String? note)? approvalHandler;
 
   Session? _session;
   AgentEngine? _engine;

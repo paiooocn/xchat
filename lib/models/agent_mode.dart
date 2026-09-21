@@ -1,9 +1,10 @@
 /// Session execution mode controlling when tool calls require approval.
 ///
-/// Approval levels (per tool, 0..3) against modes:
+/// Approval levels (per tool, 0..3) against mode values (普通=1, 自动=2, 托管=3).
+/// A call needs approval iff `m <= t` (equivalently NOT `m > t`):
 /// * 0 — never approve (普通/自动/托管).
-/// * 1 — 普通 no, 自动/托管 approve.
-/// * 2 — 普通/自动 no, 托管 approve.
+/// * 1 — 普通 approve.
+/// * 2 — 普通/自动 approve.
 /// * 3 — always approve (普通/自动/托管).
 enum AgentMode {
   normal,
@@ -28,22 +29,18 @@ enum AgentMode {
 /// Whether a tool whose approval [level] is 0..3 needs the user's consent when
 /// the session runs in [mode].
 bool requiresApproval(int level, AgentMode mode) {
-  switch (level.clamp(0, 3)) {
-    case 0:
-      return false;
-    case 1:
-      return mode == AgentMode.auto || mode == AgentMode.managed;
-    case 2:
-      return mode == AgentMode.managed;
-    default:
-      return true; // level 3
-  }
+  final modeValue = switch (mode) {
+    AgentMode.normal => 1,
+    AgentMode.auto => 2,
+    AgentMode.managed => 3,
+  };
+  return modeValue <= level.clamp(0, 3);
 }
 
 /// Human readable description of an approval level.
 String approvalLevelLabel(int level) => switch (level.clamp(0, 3)) {
       0 => '0 · 从不审批',
-      1 => '1 · 自动/托管审批',
-      2 => '2 · 托管审批',
+      1 => '1 · 普通审批',
+      2 => '2 · 普通/自动审批',
       _ => '3 · 总是审批',
     };

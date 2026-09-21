@@ -260,7 +260,7 @@ class AppConfig {
       ];
 
   /// Default approval levels: read-only / network tools run unattended; file
-  /// writes ask in managed mode; shell always asks.
+  /// writes ask in 普通/自动 mode; shell always asks.
   static Map<String, int> defaultToolApprovals() => <String, int>{
         'read_file': 0,
         'list_dir': 0,
@@ -279,8 +279,8 @@ class AppConfig {
   /// whole command. Use `\b…\b` to match a command word (robust against flags
   /// and paths).
   /// * F级 (deny) — never executed;
-  /// * 2级 — high-impact commands needing managed-mode approval;
-  /// * 1级 — side-effecting everyday commands needing auto/managed approval.
+  /// * 2级 — high-impact commands needing 普通/自动-mode approval;
+  /// * 1级 — side-effecting everyday commands needing 普通-mode approval.
   static List<String> defaultShellLevel1Commands() => <String>[
         r'\bgit\b',
         r'\bnpm\b',
