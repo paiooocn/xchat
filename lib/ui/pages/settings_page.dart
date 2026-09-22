@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_paths.dart';
+import '../../core/app_version.dart';
 import '../../models/app_config.dart';
 import '../../models/search_engine_config.dart';
 import '../../models/session_params.dart';
@@ -446,7 +447,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     final lines = <String>[
-      '应用版本: 0.1.8',
+      '应用版本: $kAppVersionFull',
       '操作系统: ${safe(() => Platform.operatingSystem)} '
           '${safe(() => Platform.operatingSystemVersion)}',
       '主机名: ${safe(() => Platform.localHostname)}',

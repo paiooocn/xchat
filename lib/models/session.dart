@@ -126,7 +126,7 @@ class Session {
 
   /// Clone keeping only the configuration (system prompt + settings), i.e. the
   /// state right before the first turn. Used for "clone before first turn".
-  Session cloneEmpty() => _cloneWith(const <SessionMessage>[]);
+  Session cloneEmpty() => _cloneWith(_messagesToSystem());
 
   /// Clone copying `system` + the first user element only.
   Session cloneToFirstUser() => _cloneWith(_messagesToFirstUser());
@@ -159,12 +159,24 @@ class Session {
       params: params.copyWith(),
       // Copy into a growable list: the clone must stay mutable (e.g.
       // `ensureSystem` inserts the system message on save) even when the
-      // caller passes a fixed/const list such as `cloneEmpty`'s `const []`.
+      // caller passes a fixed/const list.
       messages: List<SessionMessage>.of(messages),
     );
     clone.recomputeToolCalls();
     clone.recomputeUsage();
     return clone;
+  }
+
+  /// The leading `system` message only (deep copy), so "clone before first
+  /// turn" keeps the system prompt. Falls back to an empty system message when
+  /// the source has none.
+  List<SessionMessage> _messagesToSystem() {
+    final first = messages.isEmpty ? null : messages.first;
+    return [
+      (first != null && first.role == MessageRole.system)
+          ? _copyMessage(first)
+          : SessionMessage(role: MessageRole.system, content: ''),
+    ];
   }
 
   List<SessionMessage> _messagesToFirstUser() {

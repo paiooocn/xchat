@@ -47,6 +47,37 @@ void main() {
       expect(session.toolCalls, 0);
     });
 
+    test('cloneEmpty keeps the system prompt (clone before first turn)', () {
+      final session = _session();
+      final clone = session.cloneEmpty();
+      expect(clone.id, isNot(session.id));
+      expect(clone.systemPrompt, 'sys');
+      expect(clone.conversation, isEmpty);
+      expect(clone.toolCalls, 0);
+    });
+
+    test('cloneEmpty falls back to an empty system message when missing', () {
+      final session = _session()..messages.removeAt(0);
+      final clone = session.cloneEmpty();
+      expect(clone.messages.length, 1);
+      expect(clone.messages[0].role, MessageRole.system);
+      expect(clone.systemPrompt, '');
+    });
+
+    test('cloneWithFirstTurn keeps the system prompt', () {
+      final session = _session();
+      final clone = session.cloneWithFirstTurn();
+      expect(clone.systemPrompt, 'sys');
+      expect(clone.conversation.length, 3); // user + assistant + tool
+    });
+
+    test('cloneFull keeps the system prompt and whole conversation', () {
+      final session = _session();
+      final clone = session.cloneFull();
+      expect(clone.systemPrompt, 'sys');
+      expect(clone.conversation.length, 4);
+    });
+
     test('cloneToFirstUser copies system + first user only', () {
       final session = _session();
       final clone = session.cloneToFirstUser();
