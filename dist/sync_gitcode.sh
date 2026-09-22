@@ -35,14 +35,17 @@ else
 fi
 
 say "拉取 GitHub 全部分支与标签"
-git fetch --prune origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+# 分支落到临时命名空间 refs/sync/*，避免 git 拒绝更新已检出的分支（main）
+git fetch --prune origin \
+  '+refs/heads/*:refs/sync/heads/*' \
+  '+refs/tags/*:refs/tags/*'
 
 git remote remove gitcode 2>/dev/null || true
 git remote add gitcode "$DEST"
 
 say "推送到 GitCode: $OWNER/$REPO（分支+标签，强制覆盖，删除 GitCode 端多余引用）"
 git "${AUTH[@]}" push --force --prune gitcode \
-  '+refs/heads/*:refs/heads/*' \
+  '+refs/sync/heads/*:refs/heads/*' \
   '+refs/tags/*:refs/tags/*'
 
 say "GITCODE_SYNC_DONE ($OWNER/$REPO)"
