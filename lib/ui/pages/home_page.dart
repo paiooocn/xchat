@@ -719,7 +719,8 @@ class _SessionMenu extends StatelessWidget {
     await state.setSessionTags(session.id, tags);
   }
 
-  /// Asks the configured model to name the session from its conversation.
+  /// Asks the app default model to name the session from its first turn's
+  /// user/assistant messages.
   Future<void> _autoName(BuildContext context) async {
     _toast(context, '正在生成标题…');
     try {
@@ -824,6 +825,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
   final _scroll = ScrollController();
   final _lastUserKey = GlobalKey();
   bool _wasRunning = false;
+  bool _autoNaming = false;
 
   @override
   void initState() {
@@ -915,7 +917,24 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     // over the next frames. Re-pin to the bottom across those frames so the view
     // stays on the freshly finished reply.
     _scheduleScrollToBottom(settle: _wasRunning && !running);
+    // 第一轮对话结束时，若标题仍为空则由会话模型自动命名。
+    if (_wasRunning && !running) _maybeAutoName();
     _wasRunning = running;
+  }
+
+  /// Titles a still-untitled session from its first turn on the session's own
+  /// model (one attempt per turn end; a failed attempt is retried later).
+  Future<void> _maybeAutoName() async {
+    if (_autoNaming || !mounted) return;
+    final session = _controller?.session;
+    if (session == null || session.title.trim().isNotEmpty) return;
+    _autoNaming = true;
+    final state = context.read<AppState>();
+    try {
+      await state.autoNameFirstTurn(session.id);
+    } catch (_) {
+      _autoNaming = false;
+    }
   }
 
   void _scheduleScrollToBottom({bool settle = false}) {

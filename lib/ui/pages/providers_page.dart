@@ -31,10 +31,16 @@ class ProvidersPage extends StatelessWidget {
         onChanged: (value) async {
           if (value == null) return;
           state.config.currentProviderId = value;
+          // 切换服务后，应用功能模型需属于该服务。
+          final models = state.providerById(value).models;
+          if (!models.contains(state.config.currentModel)) {
+            state.config.currentModel = models.isNotEmpty ? models.first : '';
+          }
           await state.saveConfig();
         },
         child: ListView(
           children: [
+            _FeatureModelBanner(state: state),
             for (final provider in state.config.providers)
               ListTile(
                 leading: Radio<String>(value: provider.id),
@@ -143,6 +149,81 @@ class ProvidersPage extends StatelessWidget {
     final provider = existing ?? ProviderConfig(id: 'custom_${state.config.providers.length}', name: '自定义');
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => _ProviderEditorPage(provider: provider)),
+    );
+  }
+}
+
+/// Prominent notice + picker: the selected service/model is the
+/// 「应用功能调用模型」 — the model app features call (the manual「AI 自动命名」
+/// menu, prompt generation/polish, …).
+class _FeatureModelBanner extends StatelessWidget {
+  const _FeatureModelBanner({required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (provider, model) = state.appFeatureTarget;
+    final options = <String>{
+      ...provider.models,
+      if (state.config.currentModel.isNotEmpty) state.config.currentModel,
+    }.toList();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.primary, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.tips_and_updates, size: 18, color: scheme.onPrimaryContainer),
+              const SizedBox(width: 6),
+              Text(
+                '应用功能调用模型',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onPrimaryContainer,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '在此选中的服务与模型即「应用功能调用模型」：会话「更多」菜单的 AI 自动命名、'
+            '模板提示词生成/润色等应用功能都会调用它。'
+            '（对话与第一轮结束后的自动命名使用会话/模板选定的模型）',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onPrimaryContainer),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            key: ValueKey('feature_model_${provider.id}'),
+            initialValue: options.contains(model) ? model : null,
+            decoration: InputDecoration(
+              labelText: '当前生效：${provider.name} · ${model.isEmpty ? '(未选模型)' : model}',
+              border: const OutlineInputBorder(),
+              filled: true,
+              fillColor: scheme.surface,
+            ),
+            items: [
+              for (final id in options)
+                DropdownMenuItem(value: id, child: Text(id)),
+            ],
+            onChanged: (value) async {
+              state.config.currentModel = value ?? '';
+              await state.saveConfig();
+            },
+          ),
+        ],
+      ),
     );
   }
 }

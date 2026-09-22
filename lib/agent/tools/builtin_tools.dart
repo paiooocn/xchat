@@ -341,7 +341,7 @@ class BuiltinTools {
   }
 
   static Future<List<Map<String, Object?>>> _bing(String query, int max, http.Client client) async {
-    final uri = Uri.parse('https://www.bing.com/search?q=${Uri.encodeQueryComponent(query)}&count=$max');
+    final uri = Uri.parse('https://cn.bing.com/search?q=${Uri.encodeQueryComponent(query)}&count=$max');
     final response = await client.get(uri, headers: const {'User-Agent': _ua}).timeout(const Duration(seconds: 20));
     final doc = html_parser.parse(utf8.decode(response.bodyBytes, allowMalformed: true));
     final results = <Map<String, Object?>>[];

@@ -24,7 +24,7 @@ class InputArea extends StatefulWidget {
     required this.onSend,
     required this.onStop,
     required this.running,
-    this.mode = AgentMode.normal,
+    this.mode = AgentMode.auto,
     this.onModeChanged,
     this.webSearchAvailable = false,
     this.webSearchEnabled = true,

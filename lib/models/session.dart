@@ -27,7 +27,7 @@ class Session {
     List<String>? tags,
     this.provider = '',
     this.model = '',
-    this.mode = AgentMode.normal,
+    this.mode = AgentMode.auto,
     this.thinkingReplyMode = ThinkingReplyMode.auto,
     this.webSearchEnabled = true,
     List<String>? tools,
@@ -157,7 +157,10 @@ class Session {
       webSearchEnabled: webSearchEnabled,
       tools: List<String>.of(tools),
       params: params.copyWith(),
-      messages: messages,
+      // Copy into a growable list: the clone must stay mutable (e.g.
+      // `ensureSystem` inserts the system message on save) even when the
+      // caller passes a fixed/const list such as `cloneEmpty`'s `const []`.
+      messages: List<SessionMessage>.of(messages),
     );
     clone.recomputeToolCalls();
     clone.recomputeUsage();

@@ -9,7 +9,10 @@ import '../../state/app_state.dart';
 
 /// Creates a session from a single configuration page, optionally seeded from
 /// a template. Model/params and tools/budget are inherited from the template
-/// (or the global defaults for a blank session) and are not adjusted here.
+/// (or the global defaults for a blank session); provider, model and the
+/// thinking options can be overridden in the "advanced" section. A template
+/// never donates its name as the session title — an empty title is auto-named
+/// by the session's own model after the first turn.
 class SessionWizardPage extends StatefulWidget {
   const SessionWizardPage({super.key, this.initialProjectId});
 
@@ -37,6 +40,9 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   ThinkingSwitch _thinking = ThinkingSwitch.auto;
   ThinkingReplyMode _replyMode = ThinkingReplyMode.auto;
 
+  /// '' = not sent; otherwise a verbatim `reasoning_effort` value.
+  String _effort = '';
+
   @override
   void initState() {
     super.initState();
@@ -55,13 +61,14 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     _tools = List<String>.of(state.config.defaultTools);
     _thinking = state.config.defaultParams.thinking;
     _replyMode = ThinkingReplyMode.auto;
+    _effort = state.config.defaultParams.reasoningEffort ?? '';
   }
 
   void _applyTemplate(SessionTemplate template) {
     final state = context.read<AppState>();
     setState(() {
+      // 模板名不写入标题：留空则创建后由 LLM 自动命名。
       _template = template;
-      _title.text = template.name;
       _system.text = template.systemPrompt;
       _providerId = template.provider.isNotEmpty ? template.provider : state.config.currentProviderId;
       _model = template.model.isNotEmpty
@@ -73,6 +80,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
       _tools = List<String>.of(template.tools);
       _thinking = template.params.thinking;
       _replyMode = template.thinkingReplyMode;
+      _effort = template.params.reasoningEffort ?? '';
     });
   }
 
@@ -89,6 +97,9 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   Future<void> _finish() async {
     final state = context.read<AppState>();
     final extras = _seedMessages();
+    final params = (_template?.params ?? SessionParams()).copyWith()
+      ..thinking = _thinking
+      ..reasoningEffort = _effort.isEmpty ? null : _effort;
     final session = await state.createSession(
       title: _title.text.trim(),
       providerId: _providerId,
@@ -98,11 +109,12 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
       toolCallsLimit: _limit,
       thinkingReplyMode: _replyMode,
       tags: _template != null ? List<String>.of(_template!.tags) : null,
-      params: (_template?.params ?? SessionParams())..thinking = _thinking,
+      params: params,
       projectId: _projectId,
       sandbox: _sandbox.text.trim(),
       extraMessages: extras.isEmpty ? null : extras,
     );
+    // 标题留空时，会在第一轮对话结束后由会话模型自动命名。
     if (mounted) Navigator.of(context).pop(session);
   }
 
@@ -137,7 +149,6 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
                 selected: _template == null,
                 onSelected: (_) => setState(() {
                   _template = null;
-                  _title.text = '';
                   _system.text = '';
                   _seedUser.clear();
                   _seedAssistant.clear();
@@ -157,7 +168,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
             controller: _title,
             decoration: const InputDecoration(
               labelText: '标题',
-              helperText: '标签可在会话的「更多」菜单中设置',
+              helperText: '留空则在第一轮对话结束后由会话模型自动命名；标签可在会话的「更多」菜单中设置',
             ),
           ),
           const SizedBox(height: 12),
@@ -199,8 +210,11 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
           const SizedBox(height: 12),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
-            title: const Text('高级：重新选择提供商和模型'),
-            subtitle: Text('$_providerId · ${_model.isEmpty ? '(未选模型)' : _model}'),
+            title: const Text('高级：提供商、模型与思考设置'),
+            subtitle: Text(
+              '$_providerId · ${_model.isEmpty ? '(未选模型)' : _model} · '
+              '思考=${_thinking.name}${_effort.isEmpty ? '' : ' · 强度=$_effort'}',
+            ),
             childrenPadding: const EdgeInsets.only(top: 4),
             children: [
               DropdownButtonFormField<String>(
@@ -242,6 +256,47 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
                   if (value.trim().isNotEmpty) setState(() => _model = value.trim());
                 },
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ThinkingSwitch>(
+                initialValue: _thinking,
+                decoration: const InputDecoration(labelText: '思考开关'),
+                items: const [
+                  DropdownMenuItem(value: ThinkingSwitch.auto, child: Text('auto（默认）')),
+                  DropdownMenuItem(value: ThinkingSwitch.on, child: Text('on（开启思考）')),
+                  DropdownMenuItem(value: ThinkingSwitch.off, child: Text('off（关闭思考）')),
+                ],
+                onChanged: (value) =>
+                    setState(() => _thinking = value ?? ThinkingSwitch.auto),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: ValueKey('wizard_effort_$_effort'),
+                initialValue: _effort,
+                decoration: const InputDecoration(labelText: '思考强度（reasoning_effort）'),
+                items: [
+                  for (final value in kReasoningEffortOptions)
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text(value.isEmpty ? '（不传入）' : value),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _effort = value ?? ''),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ThinkingReplyMode>(
+                initialValue: _replyMode,
+                decoration: const InputDecoration(labelText: '思考回发方式'),
+                items: const [
+                  DropdownMenuItem(value: ThinkingReplyMode.auto, child: Text('auto（自动识别）')),
+                  DropdownMenuItem(
+                    value: ThinkingReplyMode.reasoningContent,
+                    child: Text('reasoning_content'),
+                  ),
+                  DropdownMenuItem(value: ThinkingReplyMode.thinkTag, child: Text('think_tag')),
+                ],
+                onChanged: (value) =>
+                    setState(() => _replyMode = value ?? ThinkingReplyMode.auto),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -281,7 +336,8 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '模型与参数、工具与预算均沿用模板（或全局默认）配置。',
+            '模型与参数、工具与预算均沿用模板（或全局默认）配置，'
+            '提供商、模型与思考设置可在上方「高级」中调整。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

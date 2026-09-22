@@ -22,7 +22,7 @@ class SessionIndexEntry {
     List<String>? tags,
     this.provider = '',
     this.model = '',
-    this.mode = AgentMode.normal,
+    this.mode = AgentMode.auto,
     this.thinkingReplyMode = ThinkingReplyMode.auto,
     this.webSearchEnabled = true,
     List<String>? tools,

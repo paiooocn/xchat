@@ -1,5 +1,18 @@
 import '../core/json_utils.dart';
 
+/// Reasoning effort options shared by the template editor and the session
+/// wizard ('' = not sent to the endpoint).
+const List<String> kReasoningEffortOptions = <String>[
+  '',
+  'max',
+  'xhigh',
+  'high',
+  'medium',
+  'low',
+  'minimal',
+  'none',
+];
+
 /// Whether thinking is requested from the model.
 enum ThinkingSwitch {
   /// Let the model decide (vendor default).

@@ -11,10 +11,13 @@ enum AgentMode {
   auto,
   managed;
 
+  /// Parses a stored mode value. Missing/unknown values fall back to the
+  /// default [AgentMode.auto]; `normal` is matched explicitly so sessions
+  /// explicitly saved as 普通 are preserved.
   static AgentMode parse(String? value) => switch (value) {
-        'auto' => AgentMode.auto,
+        'normal' => AgentMode.normal,
         'managed' => AgentMode.managed,
-        _ => AgentMode.normal,
+        _ => AgentMode.auto,
       };
 
   String get wire => name;

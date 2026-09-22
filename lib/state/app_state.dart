@@ -119,6 +119,15 @@ class AppState extends ChangeNotifier {
     return config.providerById(id) ?? config.providers.first;
   }
 
+  /// Provider/model used for app-level LLM features (session auto-naming,
+  /// prompt generation/polish): the service & model selected on the 模型服务 page.
+  (ProviderConfig, String) get appFeatureTarget {
+    final provider = providerById(config.currentProviderId);
+    final model =
+        config.currentModel.isNotEmpty ? config.currentModel : _defaultModel(provider);
+    return (provider, model);
+  }
+
   Session? sessionById(String id) {
     for (final session in sessions) {
       if (session.id == id) return session;
@@ -210,7 +219,8 @@ class AppState extends ChangeNotifier {
 
   Future<Session> createFromTemplate(SessionTemplate template) async {
     return createSession(
-      title: template.name,
+      // 模板名不作为会话标题；标题为空时由 LLM 自动命名。
+      title: '',
       providerId: template.provider.isNotEmpty ? template.provider : null,
       model: template.model.isNotEmpty ? template.model : null,
       systemPrompt: template.systemPrompt,
@@ -289,13 +299,23 @@ class AppState extends ChangeNotifier {
     await refreshSessions();
   }
 
-  /// Generates and persists an LLM-derived title for a session.
-  Future<String> autoNameSession(String id) async {
+  /// Generates and persists an LLM-derived title from the session's first turn.
+  ///
+  /// [byAppModel] selects the caller: the automatic naming at the first turn
+  /// runs on the session's own model; the manual「AI 自动命名」menu runs on the
+  /// app default model (the「应用功能调用模型」picked on the 模型服务 page).
+  /// Each side falls back to the other when its model is unconfigured.
+  Future<String> _titleFromFirstTurn(String id, {required bool byAppModel}) async {
     final session = await loadFullSession(id);
-    final providerConfig = providerById(
+    final (appProvider, appModel) = appFeatureTarget;
+    final sessionProvider = providerById(
       session.provider.isNotEmpty ? session.provider : config.currentProviderId,
     );
-    final model = session.model.isNotEmpty ? session.model : _defaultModel(providerConfig);
+    final sessionModel =
+        session.model.isNotEmpty ? session.model : _defaultModel(sessionProvider);
+    final useApp = byAppModel ? appModel.isNotEmpty : sessionModel.isEmpty;
+    final providerConfig = useApp ? appProvider : sessionProvider;
+    final model = useApp ? appModel : sessionModel;
     final title = await generateSessionTitle(
       provider: providerConfig,
       model: model,
@@ -307,6 +327,14 @@ class AppState extends ChangeNotifier {
     await refreshSessions();
     return title;
   }
+
+  ///「AI 自动命名」菜单：首轮对话 user/assistant + 应用默认模型。
+  Future<String> autoNameSession(String id) =>
+      _titleFromFirstTurn(id, byAppModel: true);
+
+  /// 首轮对话结束后的自动命名：首轮对话 user/assistant + 会话自身模型。
+  Future<String> autoNameFirstTurn(String id) =>
+      _titleFromFirstTurn(id, byAppModel: false);
 
   /// Compresses a session via the LLM and creates a new session containing
   /// the same system prompt plus one user/assistant pair:

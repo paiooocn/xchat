@@ -8,6 +8,7 @@ import '../../models/session_params.dart';
 import '../../models/session_template.dart';
 import '../../state/app_state.dart';
 import '../widgets/confirm_dialog.dart';
+import 'template_wizard_page.dart';
 
 /// Lists, edits and creates session templates.
 class TemplatesPage extends StatelessWidget {
@@ -19,7 +20,7 @@ class TemplatesPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('会话模板')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _edit(context, state, null),
+        onPressed: () => _create(context, state),
         icon: const Icon(Icons.add),
         label: const Text('新建模板'),
       ),
@@ -72,6 +73,42 @@ class TemplatesPage extends StatelessWidget {
     );
   }
 
+  /// New-template entry: guided wizard (LLM prompt generation) or the plain
+  /// editor.
+  Future<void> _create(BuildContext context, AppState state) async {
+    final useWizard = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('向导模式'),
+              subtitle: const Text('LLM 生成/润色系统提示词，预置场景一键生成'),
+              onTap: () => Navigator.of(context).pop(true),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('直接编辑'),
+              subtitle: const Text('手动填写全部配置'),
+              onTap: () => Navigator.of(context).pop(false),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (useWizard == null || !context.mounted) return;
+    if (useWizard) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const TemplateWizardPage()),
+      );
+      return;
+    }
+    await _edit(context, state, null);
+  }
+
   Future<void> _edit(BuildContext context, AppState state, SessionTemplate? existing) async {
     final template = existing ??
         SessionTemplate(
@@ -109,17 +146,6 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
 
   /// '' = not sent; otherwise a verbatim `reasoning_effort` value.
   String _effort = '';
-
-  static const _effortOptions = <String>[
-    '',
-    'max',
-    'xhigh',
-    'high',
-    'medium',
-    'low',
-    'minimal',
-    'none',
-  ];
 
   @override
   void initState() {
@@ -245,7 +271,7 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
             initialValue: _effort,
             decoration: const InputDecoration(labelText: 'reasoning_effort'),
             items: [
-              for (final value in _effortOptions)
+              for (final value in kReasoningEffortOptions)
                 DropdownMenuItem(
                   value: value,
                   child: Text(value.isEmpty ? '（不传入）' : value),
