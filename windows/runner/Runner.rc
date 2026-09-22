@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.xchat" "\0"
+            VALUE "CompanyName", "com.yimo" "\0"
             VALUE "FileDescription", "xchat" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "xchat" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.xchat. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.yimo. All rights reserved." "\0"
             VALUE "OriginalFilename", "xchat.exe" "\0"
             VALUE "ProductName", "xchat" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

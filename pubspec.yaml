@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.1.7+1
+version: 0.1.8+1
 license: MIT
 
 environment:
@@ -27,6 +27,7 @@ dependencies:
   path_provider: ^2.1.5
   path: ^1.9.0
   shared_preferences: ^2.3.4
+  permission_handler: ^11.3.1
 
   # Utils
   uuid: ^4.5.1
@@ -48,6 +49,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Trimmed models.dev snapshot: offline fallback for the provider/model
+  # wizard and one-click sync (see DESIGN.md §17).
+  assets:
+    - assets/models_dev/models_dev.json
 
   # Bundled open-source fonts so typography is identical on every platform
   # (Android / iOS / macOS / Windows / Linux) instead of falling back to each

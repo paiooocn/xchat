@@ -5,12 +5,14 @@ import '../core/app_paths.dart';
 import '../core/ids.dart';
 import '../data/config_repository.dart';
 import '../data/index_repository.dart';
+import '../data/models_dev_repository.dart';
 import '../data/project_repository.dart';
 import '../data/session_repository.dart';
 import '../data/template_repository.dart';
 import '../llm/session_compressor.dart';
 import '../llm/session_namer.dart';
 import '../models/app_config.dart';
+import '../models/models_dev.dart';
 import '../models/project.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
@@ -438,6 +440,58 @@ class AppState extends ChangeNotifier {
   }
 
   // --------------------------------------------------------------- providers
+
+  /// models.dev catalog access (cached snapshot + one-click refresh).
+  late final ModelsDevRepository modelsDevRepository = ModelsDevRepository(paths);
+  ModelsDevCatalog? modelsDev;
+
+  /// One-click update of all configured providers from models.dev: fresh model
+  /// lists, per-model parameters (context window, output cap, reasoning) and —
+  /// for untouched endpoints — provider names and base URLs. API keys, headers
+  /// and user-customized endpoints are never touched.
+  Future<ModelsDevSyncResult> syncModelsDev() async {
+    final (catalog, source) = await modelsDevRepository.loadOrRefresh();
+    modelsDev = catalog;
+    var updated = 0;
+    var totalModels = 0;
+    final unmatched = <String>[];
+    for (final provider in config.providers) {
+      final source = catalog.matchFor(provider);
+      if (source == null) {
+        unmatched.add(provider.name);
+        continue;
+      }
+      final result = applyModelsDev(provider, source);
+      updated++;
+      totalModels += result.models;
+    }
+    await saveConfig();
+    return ModelsDevSyncResult(
+      updatedProviders: updated,
+      totalModels: totalModels,
+      unmatched: unmatched,
+      source: source,
+    );
+  }
+
+  /// Catalog snapshot for pickers/wizards: network refresh with cache fallback.
+  Future<ModelsDevCatalog> loadModelsDev() async {
+    final catalog = modelsDev ?? (await modelsDevRepository.loadOrRefresh()).$1;
+    modelsDev = catalog;
+    return catalog;
+  }
+
+  /// Builds a models.dev-filled copy of [draft] for the provider editor
+  /// (`full` fill: name, endpoint and reasoning parameters are overwritten and
+  /// reviewed before saving). `null` when no catalog entry matches.
+  Future<ProviderConfig?> fillFromModelsDev(ProviderConfig draft) async {
+    final catalog = await loadModelsDev();
+    final source = catalog.matchFor(draft);
+    if (source == null) return null;
+    final filled = draft.copyWith();
+    applyModelsDev(filled, source, full: true);
+    return filled;
+  }
 
   Future<void> upsertProvider(ProviderConfig provider) async {
     final index = config.providers.indexWhere((p) => p.id == provider.id);

@@ -18,6 +18,9 @@ import 'state/app_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Android: ask (once) for shared-storage access so data lands in the
+  // externally readable {shared}/com.yimo.xchat/data.
+  await AppPaths.requestSharedAccess();
   final paths = await AppPaths.init();
   final index = IndexRepository(paths);
   final state = AppState(
@@ -28,7 +31,13 @@ Future<void> main() async {
     projectRepository: ProjectRepository(paths, index),
     indexRepository: index,
   );
-  await state.load();
+  try {
+    await state.load();
+  } catch (error) {
+    // Startup must survive an unreadable/broken data root or file; the user can
+    // pick a working directory from the settings page.
+    debugPrint('启动加载数据失败: $error');
+  }
 
   // Desktop only: restore the user-selected window size on launch.
   if (!kIsWeb && (Platform.isLinux || Platform.isMacOS || Platform.isWindows)) {

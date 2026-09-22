@@ -8,7 +8,7 @@
 PRODUCT_NAME = xchat
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.xchat.xchat
+PRODUCT_BUNDLE_IDENTIFIER = com.yimo.xchat
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.xchat. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 com.yimo. All rights reserved.

@@ -87,24 +87,46 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _section('数据目录'),
           Text(PathsSection.label(PathsSection.current)),
+          const Text(
+            '目标: {外部存储}/com.yimo.xchat/data（外部可读；Android 11+ 需“所有文件访问”权限，'
+            '未授权时回退应用私有目录）',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           TextField(
             controller: _root,
             decoration: const InputDecoration(labelText: 'XChat 根目录'),
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               OutlinedButton(
                 onPressed: () async {
-                  await AppPaths.setRoot(_root.text.trim());
+                  try {
+                    await AppPaths.setRoot(_root.text.trim());
+                  } catch (error) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('目录不可用，未保存: $error')),
+                      );
+                    }
+                    return;
+                  }
                   if (context.mounted) setState(() {});
                 },
                 child: const Text('应用新目录'),
               ),
-              const SizedBox(width: 8),
               OutlinedButton(
                 onPressed: () => openInEditor(AppPaths.instance.configFile, config.editorCommand),
                 child: const Text('打开 config.json'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  await AppPaths.requestSharedAccess(force: true);
+                  if (context.mounted) setState(() {});
+                },
+                child: const Text('申请外部存储权限'),
               ),
             ],
           ),
@@ -424,7 +446,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     final lines = <String>[
-      '应用版本: 0.1.7',
+      '应用版本: 0.1.8',
       '操作系统: ${safe(() => Platform.operatingSystem)} '
           '${safe(() => Platform.operatingSystemVersion)}',
       '主机名: ${safe(() => Platform.localHostname)}',

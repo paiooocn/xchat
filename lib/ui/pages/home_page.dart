@@ -1203,7 +1203,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = controller.session!;
     final usage = controller.cumulativeUsage;
-    final contextWindow = controller.activeProvider.contextWindow;
+    final contextWindow = controller.activeProvider.contextWindowFor(session.model);
     final contextTokens = controller.contextTokens;
     final ratio = (contextWindow != null && contextWindow > 0 && contextTokens != null)
         ? (contextTokens / contextWindow).clamp(0.0, 1.0)

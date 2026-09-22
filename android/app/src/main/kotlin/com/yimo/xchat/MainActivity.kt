@@ -1,4 +1,4 @@
-package com.xchat.xchat
+package com.yimo.xchat
 
 import io.flutter.embedding.android.FlutterActivity
 

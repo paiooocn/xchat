@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.xchat.xchat"
+    namespace = "com.yimo.xchat"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.xchat.xchat"
+        applicationId = "com.yimo.xchat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

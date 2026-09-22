@@ -136,6 +136,7 @@ ds-xchat/
 ```
 Documents/XChat/
 ├── config.json          # 应用配置（provider、默认参数、编辑器命令、主题、语言…）
+├── models_dev.json      # models.dev 目录快照（提供商/模型元数据缓存）
 ├── sessions/            # 默认 sandbox：会话 XML 文件（<uuid>.xml）
 │   ├── 550e8400-....xml
 │   └── ...
@@ -588,3 +589,41 @@ user 输入
 5. **M5 UI**：聊天页 + 会话列表 + 消息/思考/工具/用量组件。
 6. **M6 会话功能**：创建向导、模板、克隆、编辑重发、外部/内置编辑器。
 7. **M7 收尾**：设置页、Provider 管理、多平台编译验证（先 Android）。
+
+---
+
+## 17. models.dev 集成（模型参数与一键更新）
+
+模型/提供商元数据（端点、模型清单、上下文窗口、输出上限、思考参数、工具支持）来自开源
+数据库 [models.dev](https://models.dev)，避免内置默认值随上游漂移。
+
+- **数据源**：`https://models.dev/api.json?type=all`（含全部模型类型）；
+  解析为 `ModelsDevCatalog`（`lib/models/models_dev.dart`）。
+- **快照与回退链**（`ModelsDevRepository.loadOrRefresh`）：
+  1. 实时拉取 models.dev 并缓存为 `models_dev.json`；
+  2. 网络失败 → 上次缓存的 `models_dev.json`；
+  3. 无缓存 → **内置预置快照** `assets/models_dev/models_dev.json`（打包随应用分发）。
+  三者都失败才报错。内置快照是 models.dev 数据的裁剪版：仅保留带 OpenAI 兼容端点
+  （或内置预设）的提供商，剔除专用/已弃用模型，每提供商最多保留发布最新 50 个模型、
+  描述截断 200 字符，只保留应用实际读取的字段（约 1.2MB）。联网成功后自动恢复完整目录。
+- **一键更新**（模型服务页 AppBar ⟳）：对每个已配置服务按 **ID → 端点 host → 内置预设别名**
+  匹配目录条目，然后：
+  - 模型清单：保留用户已有条目与顺序（未知 id 视为自定义部署，保留）；剔除目录中标记
+    `deprecated` / 专用类型（如 `decision`）的条目；按发布日期从新到旧追加支持工具调用的新模型。
+  - 模型参数：为每个模型写入 `model_specs`（上下文窗口、最大输出、reasoning/tool 能力），
+    上下文条按 **当前模型** 的窗口计算（`ProviderConfig.contextWindowFor`），
+    服务级 `context_window` 取所有模型的最大值。
+  - 端点/名称：仅当为空、同 host 或仍为内置默认值时改写（Base URL 会归一化补 `/v1`）；
+    自定义镜像网关、API Key、Headers、预设与思考回发设置永不覆盖。
+  - 思考参数：由 `reasoning_options`（`budget_tokens`/`effort`/`toggle`）与 `interleaved`
+    推导 `reasoning_style` / `reasoning_source`；仅对 `custom` 服务补全未设置项，
+    预设服务的调优值保持不变。
+- **编辑页「从 models.dev 填充」**：按同一匹配规则整表填充（含名称/端点/思考参数），
+  用户核对后保存；未匹配时提示先填写正确的 ID 或 Base URL。
+- **添加向导（模型服务页 ➕ → 从 models.dev 添加）**：
+  1. 搜索并挑选提供商（展示端点 host、协议、模型数量；非 OpenAI 兼容协议仅提供模型信息，
+     端点不自动填充）；
+  2. 勾选模型（默认预选最新 10 个支持工具调用的模型，支持搜索/全选/清空，展示上下文、
+     输出上限与思考/工具能力，已剔除 deprecated 与专用类型）；
+  3. 生成预填服务（ID 自动去重；命中内置预设则沿用其预设与思考回发方式；模型参数、
+     推导的思考参数、归一化端点均已填好）并转到编辑页，补填 API Key 后保存。

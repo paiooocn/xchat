@@ -1,8 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Shared storage for the data dir (<shared>/com.yimo.xchat/data): legacy
+         read/write on Android 10, "all files access" on Android 11+. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <application
         android:label="XChat"
         android:name="${applicationName}"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
