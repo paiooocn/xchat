@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      gitcode_tag:
+        description: '手动发布到 GitCode Release 的 tag（如 v0.1.10），留空则不发布'
+        required: false
+        default: ''
 
 jobs:
   build-linux-deb:
@@ -54,13 +59,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach to GitCode release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.gitcode_tag != ''
         shell: bash
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_ACCESS_KEY }}
           GITCODE_OWNER: ${{ vars.GITCODE_OWNER || 'yimopub' }}
           GITCODE_REPO: ${{ vars.GITCODE_REPO || 'xchat' }}
-          TAG_NAME: ${{ github.ref_name }}
-          RELEASE_NAME: XChat ${{ github.ref_name }}
-          RELEASE_BODY: Automated release ${{ github.ref_name }}
+          TAG_NAME: ${{ inputs.gitcode_tag || github.ref_name }}
+          RELEASE_NAME: XChat ${{ inputs.gitcode_tag || github.ref_name }}
+          RELEASE_BODY: Automated release ${{ inputs.gitcode_tag || github.ref_name }}
         run: bash dist/gitcode_release.sh dist/xchat-v*.deb
