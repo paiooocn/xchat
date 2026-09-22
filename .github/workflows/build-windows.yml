@@ -65,8 +65,8 @@ jobs:
         shell: bash
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_ACCESS_KEY }}
-          GITCODE_OWNER: ${{ vars.GITCODE_OWNER || github.repository_owner }}
-          GITCODE_REPO: ${{ vars.GITCODE_REPO || github.event.repository.name }}
+          GITCODE_OWNER: ${{ vars.GITCODE_OWNER || 'yimopub' }}
+          GITCODE_REPO: ${{ vars.GITCODE_REPO || 'xchat' }}
           TAG_NAME: ${{ github.ref_name }}
           RELEASE_NAME: XChat ${{ github.ref_name }}
           RELEASE_BODY: Automated release ${{ github.ref_name }}
