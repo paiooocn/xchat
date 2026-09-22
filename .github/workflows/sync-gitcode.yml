@@ -1,0 +1,28 @@
+name: Sync to GitCode
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  workflow_dispatch:
+
+# 序列化同步，避免并发推送互相覆盖
+concurrency:
+  group: sync-gitcode
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push mirror to GitCode
+        env:
+          GITCODE_ACCESS_KEY: ${{ secrets.GITCODE_ACCESS_KEY }}
+          GITCODE_OWNER: yimopub
+          GITCODE_REPO: xchat
+        run: bash dist/sync_gitcode.sh
