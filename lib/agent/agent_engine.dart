@@ -298,13 +298,25 @@ class AgentEngine {
         cache: usage.cachedInputTokens,
       );
 
-  AgentEvent? _mapStreamEvent(llm.ChatEvent event) => switch (event) {
-        llm.ReasoningDelta(:final text) => AgentReasoningDelta(text),
-        llm.ContentDelta(:final text) => AgentContentDelta(text),
-        llm.ToolCallStarted(:final id, :final name) =>
-          AgentToolCallStarted(id: id ?? '', name: name ?? ''),
-        _ => null,
-      };
+  AgentEvent? _mapStreamEvent(llm.ChatEvent event) {
+    switch (event) {
+      case llm.ReasoningDelta(:final text):
+        return AgentReasoningDelta(text);
+      case llm.ContentDelta(:final text):
+        return AgentContentDelta(text);
+      case llm.ToolCallStarted(:final index, :final id, :final name):
+        final callId = id ?? '';
+        final callName = name ?? '';
+        // Drop empty placeholder fragments some gateways stream (id and name
+        // both blank) so they can't surface as blank tool-call boxes.
+        if (callId.isEmpty && callName.isEmpty) return null;
+        return AgentToolCallStarted(index: index, id: callId, name: callName);
+      case llm.ToolCallArgumentsDelta(:final index, :final fragment):
+        return AgentToolCallArgumentsDelta(index: index, fragment: fragment);
+      default:
+        return null;
+    }
+  }
 
   /// Extracts the `command` argument from a shell tool call's raw JSON.
   String _shellCommand(String arguments) {

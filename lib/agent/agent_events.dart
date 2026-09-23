@@ -25,10 +25,28 @@ class AgentContentDelta extends AgentEvent {
 }
 
 class AgentToolCallStarted extends AgentEvent {
-  const AgentToolCallStarted({required this.id, required this.name});
+  const AgentToolCallStarted({
+    required this.index,
+    required this.id,
+    required this.name,
+  });
 
+  /// Stream slot of the call inside the assistant message (0-based). Some
+  /// gateways re-send `id`/`name` on every fragment; consumers must key by
+  /// [index] and upsert instead of appending.
+  final int index;
   final String id;
   final String name;
+}
+
+class AgentToolCallArgumentsDelta extends AgentEvent {
+  const AgentToolCallArgumentsDelta({
+    required this.index,
+    required this.fragment,
+  });
+
+  final int index;
+  final String fragment;
 }
 
 class AgentToolResult extends AgentEvent {

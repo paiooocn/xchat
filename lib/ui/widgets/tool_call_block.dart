@@ -19,7 +19,11 @@ class ToolCallBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (calls.isEmpty && results.isEmpty) return const SizedBox.shrink();
+    // Defensive: drop empty placeholder entries (no name, no arguments) that
+    // some gateways emit as blank stream fragments.
+    final visible =
+        calls.where((c) => c.name.isNotEmpty || c.arguments.isNotEmpty);
+    if (visible.isEmpty && results.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -32,7 +36,7 @@ class ToolCallBlock extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final call in calls)
+              for (final call in visible)
                 _ToolCallEntry(call: call),
               for (final line in results)
                 Padding(
