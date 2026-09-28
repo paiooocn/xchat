@@ -2,15 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ddgs/ddgs.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
 import 'package:llm_api/llm_api.dart';
 import 'package:path/path.dart' as p;
 
 import '../../models/proxy_config.dart';
 import '../../models/search_engine_config.dart';
+import 'browser_session.dart';
 import 'path_guard.dart';
+import 'tavily_api.dart';
 
 /// The catalogue of built-in tools and their metadata.
 class BuiltinTools {
@@ -199,18 +200,14 @@ class BuiltinTools {
         handler: (args) async {
           final url = '${args['url'] ?? ''}';
           if (url.isEmpty) return 'ERROR: url required';
-          final client = _client(proxy.applyToHttpFetch ? proxy : ProxyConfig());
+          final session = BrowserSession(proxy: proxy.applyToHttpFetch ? proxy : ProxyConfig());
           try {
-            final response = await client.get(
-              Uri.parse(url),
-              headers: const {'User-Agent': _ua},
-            ).timeout(const Duration(seconds: 30));
-            if (response.statusCode >= 400) {
-              return 'ERROR: HTTP ${response.statusCode}';
+            final page = await _fetchPage(session, Uri.parse(url));
+            if (page.statusCode >= 400) {
+              return 'ERROR: HTTP ${page.statusCode}';
             }
-            final contentType = response.headers['content-type'] ?? '';
-            var text = utf8.decode(response.bodyBytes, allowMalformed: true);
-            if (contentType.contains('html')) {
+            var text = page.body;
+            if (page.contentType.contains('html')) {
               text = html_parser.parse(text).body?.text ?? text;
             }
             final max = (args['max_chars'] as num?)?.toInt() ?? 20000;
@@ -219,14 +216,14 @@ class BuiltinTools {
             }
             return text;
           } finally {
-            client.close();
+            session.close();
           }
         },
       );
 
   static LlmTool _webSearch(List<SearchEngineConfig> searchEngines, ProxyConfig proxy) => FunctionTool(
         name: 'web_search',
-        description: '联网搜索并返回标题/链接/摘要。',
+        description: '联网搜索并返回标题/链接/摘要。query 请用精炼关键词（不要整句长问题），结果已过滤广告/跳转链接/无关内容。',
         parameters: objectSchema(
           properties: {
             'query': stringSchema(description: '搜索关键词'),
@@ -235,31 +232,60 @@ class BuiltinTools {
           required: ['query'],
         ),
         handler: (args) async {
-          final query = '${args['query'] ?? ''}';
+          final query = '${args['query'] ?? ''}'.trim();
           if (query.isEmpty) return 'ERROR: query required';
           final max = (args['max_results'] as num?)?.toInt() ?? 8;
-          final proxied = _client(proxy);
-          final direct = _client(ProxyConfig());
+          final proxied = BrowserSession(proxy: proxy);
+          final direct = BrowserSession();
           try {
             final errors = <String>[];
-            for (final engine in searchEngines.where((e) => e.enabled)) {
-              final client = (engine.useProxy && !proxy.isEmpty) ? proxied : direct;
-              final searcher = _engineFor(engine, client);
-              try {
-                final results = await searcher.search(query, max);
-                if (results.isNotEmpty) {
-                  return const JsonEncoder.withIndent('  ').convert({
-                    'query': query,
-                    'engine': searcher.name,
-                    'results': results,
-                  });
+
+            /// Tries every enabled engine against [q]; keeps only usable,
+            /// relevant, de-duplicated results (HTML scrapers frequently get
+            /// served cloaked SEO-spam that parses like real results).
+            Future<Map<String, Object?>> run(String q) async {
+              final seen = <String>{};
+              for (final engine in searchEngines.where((e) => e.enabled && e.isReady)) {
+                final session = (engine.useProxy && !proxy.isEmpty) ? proxied : direct;
+                final searcher = _engineFor(engine, session, proxy);
+                try {
+                  final raw = await searcher.search(q, max * 3);
+                  final kept = _usable(q, raw, max, seen: seen);
+                  final dropped = raw.length - kept.length;
+                  if (kept.isNotEmpty) {
+                    return {'engine': searcher.name, 'query': q, 'results': kept, 'dropped': dropped};
+                  }
+                  errors.add('${searcher.name}: no relevant results (raw ${raw.length}, dropped $dropped)');
+                } catch (error) {
+                  errors.add('${searcher.name}: $error');
                 }
-                errors.add('${searcher.name}: no results');
-              } catch (error) {
-                errors.add('${searcher.name}: $error');
+              }
+              return {'engine': '', 'query': q, 'results': const <Map<String, Object?>>[], 'dropped': 0};
+            }
+
+            var outcome = await run(query);
+            if ((outcome['results'] as List).isEmpty) {
+              // Long natural-language queries are the easiest target for
+              // scraper-cloaking; retry once with a keyword-only query.
+              final compact = _compactQuery(query);
+              if (compact.isNotEmpty && compact != query) {
+                errors.add('no usable results for the original query, retrying with keywords: $compact');
+                final retry = await run(compact);
+                if ((retry['results'] as List).isNotEmpty) outcome = retry;
               }
             }
-            return 'ERROR: all search engines failed:\n${errors.join('\n')}';
+            final results = outcome['results'] as List;
+            if (results.isEmpty) {
+              return 'ERROR: all search engines failed:\n${errors.join('\n')}';
+            }
+            final dropped = outcome['dropped'] as int;
+            return const JsonEncoder.withIndent('  ').convert({
+              'query': outcome['query'],
+              'engine': outcome['engine'],
+              'results': results,
+              if ('${outcome['query']}' != query) 'note': '原 query 未命中，已退化为精炼关键词检索',
+              if (dropped > 0) 'filtered': 'dropped $dropped junk/irrelevant/duplicate items',
+            });
           } finally {
             proxied.close();
             direct.close();
@@ -281,28 +307,158 @@ class BuiltinTools {
         },
       );
 
-  static const _ua =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
-
-  /// Binds one configured engine to [client].
-  static _SearchEngine _engineFor(SearchEngineConfig engine, http.Client client) {
-    switch (engine.kind) {
-      case 'bing':
-        return _SearchEngine(engine.name, (q, m) => _bing(q, m, client));
-      case 'duckduckgo':
-        return _SearchEngine(engine.name, (q, m) => _duckDuckGo(q, m, client));
-      default:
-        return _SearchEngine(engine.name, (q, m) => _custom(engine, q, m, client));
+  /// Throws when the engine answered with a captcha / bot-challenge page —
+  /// such pages still contain parsable blocks and would silently turn into
+  /// garbage "results".
+  static void _ensureNotBlocked(String body, String engine) {
+    if (body.trim().length < 200) {
+      throw StateError('$engine: empty or truncated response');
+    }
+    if (BrowserSession.looksBlocked(body)) {
+      throw StateError('$engine: captcha / bot-challenge page returned');
     }
   }
 
-  /// Builds an HTTP client honoring the configured proxy + bypass list.
-  static http.Client _client(ProxyConfig proxy) {
+  /// Resolves [href] against [base] and unwraps engine redirectors
+  /// (DuckDuckGo `/l/?uddg=…`, Bing `/ck/a?…&u=a1<base64url>`).
+  static String _unwrapLink(String href, Uri base) {
+    final raw = href.trim();
+    if (raw.isEmpty) return '';
+    final Uri uri;
     try {
-      return IOClient(buildProxiedHttpClient(proxy));
+      uri = base.resolveUri(Uri.parse(raw));
     } catch (_) {
-      return http.Client();
+      return raw;
     }
+    if (uri.host.endsWith('duckduckgo.com') && uri.path.startsWith('/l/')) {
+      final target = uri.queryParameters['uddg'] ?? '';
+      if (target.isNotEmpty) return target;
+    }
+    if (uri.host.endsWith('bing.com') && uri.path.startsWith('/ck/')) {
+      final u = uri.queryParameters['u'] ?? '';
+      final payload = u.startsWith('a1') ? u.substring(2) : u;
+      if (payload.isNotEmpty) {
+        try {
+          final decoded =
+              utf8.decode(base64Url.decode(base64Url.normalize(payload)), allowMalformed: true);
+          if (decoded.startsWith('http')) return decoded;
+        } catch (_) {
+          // Not decodable — keep the redirect URL as-is.
+        }
+      }
+    }
+    return uri.toString();
+  }
+
+  /// Junk / duplicate / irrelevant filter + snippet capping, shared by the
+  /// engine tier and the outer run loop. [seen] may span engines for
+  /// cross-engine de-duplication.
+  static List<Map<String, Object?>> _usable(
+    String query,
+    List<Map<String, Object?>> raw,
+    int max, {
+    Set<String>? seen,
+  }) {
+    final urls = seen ?? <String>{};
+    final kept = <Map<String, Object?>>[];
+    for (final item in raw) {
+      final title = '${item['title'] ?? ''}'.trim();
+      final url = '${item['url'] ?? ''}'.trim();
+      final snippet = '${item['snippet'] ?? ''}'.trim();
+      if (_isJunk(title, url) || !urls.add(url) || !_relevant(query, title, snippet)) continue;
+      kept.add({
+        'title': title,
+        'url': url,
+        'snippet': snippet.length > 300 ? '${snippet.substring(0, 300)}…' : snippet,
+      });
+      if (kept.length >= max) break;
+    }
+    return kept;
+  }
+
+  /// Drops unusable entries: empty, in-page anchors, engine-internal links.
+  static bool _isJunk(String title, String url) {
+    if (title.isEmpty || url.isEmpty) return true;
+    if (url.startsWith('javascript:') || url.startsWith('#')) return true;
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    return host.endsWith('bing.com') || host.endsWith('duckduckgo.com');
+  }
+
+  /// Latin words plus CJK bigrams — a language-agnostic relevance vocabulary.
+  static Set<String> _terms(String text) {
+    final out = <String>{};
+    for (final m in RegExp(r'[a-zA-Z]{2,}').allMatches(text)) {
+      out.add(m.group(0)!.toLowerCase());
+    }
+    for (final m in RegExp(r'[\u4e00-\u9fff]+').allMatches(text)) {
+      final run = m.group(0)!;
+      if (run.length == 1) {
+        out.add(run);
+      } else {
+        for (var i = 0; i + 1 < run.length; i++) {
+          out.add(run.substring(i, i + 2));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Cheap relevance gate: a usable result must share some vocabulary with the
+  /// query — cloaked SEO-spam (e.g. 磨粉机站群) shares none of it.
+  static bool _relevant(String query, String title, String snippet) {
+    final wanted = _terms(query);
+    if (wanted.isEmpty) return true;
+    final got = _terms('$title $snippet');
+    if (got.isEmpty) return false;
+    var hits = 0;
+    for (final term in wanted) {
+      if (got.contains(term)) hits++;
+    }
+    return hits >= 2 || (wanted.length <= 3 && hits >= 1);
+  }
+
+  /// Strips digits/punctuation → keyword-only fallback query.
+  static String _compactQuery(String query) {
+    final compact = query
+        .replaceAll(RegExp(r'[^a-zA-Z\u4e00-\u9fff]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return compact.length > 40 ? compact.substring(0, 40).trim() : compact;
+  }
+
+  /// Binds one configured engine to [session] / [proxy].
+  static _SearchEngine _engineFor(
+      SearchEngineConfig engine, BrowserSession session, ProxyConfig proxy) {
+    switch (engine.kind) {
+      case 'ddgs':
+        return _SearchEngine(engine.name, (q, m) => _ddgs(engine, q, m, proxy));
+      case 'tavily':
+        return _SearchEngine(engine.name, (q, m) => _tavily(engine, q, m, session));
+      case 'bing':
+        return _SearchEngine(engine.name, (q, m) => _bing(q, m, session));
+      case 'duckduckgo':
+        return _SearchEngine(engine.name, (q, m) => _duckDuckGo(q, m, session));
+      default:
+        return _SearchEngine(engine.name, (q, m) => _custom(engine, q, m, session));
+    }
+  }
+
+  /// Browser-tier fetch: plain HTTP first; when the answer is a JS/captcha
+  /// wall and a local Chromium exists, falls back to real headless rendering.
+  static Future<BrowserPage> _fetchPage(BrowserSession session, Uri uri) async {
+    var page = await session.get(uri);
+    if (BrowserSession.looksBlocked(page.body) && session.canRender) {
+      final dom = await session.render(page.uri);
+      if (dom.trim().isNotEmpty) {
+        page = BrowserPage(
+          uri: page.uri,
+          statusCode: page.statusCode,
+          contentType: 'text/html',
+          body: dom,
+        );
+      }
+    }
+    return page;
   }
 
   /// Generic custom search: URL template + CSS selectors.
@@ -310,70 +466,231 @@ class BuiltinTools {
     SearchEngineConfig engine,
     String query,
     int max,
-    http.Client client,
+    BrowserSession session,
   ) async {
     final template = engine.urlTemplate.trim();
-    if (template.isEmpty) return const <Map<String, Object?>>[];
+    if (!template.contains('{query}')) {
+      throw StateError('自定义引擎「${engine.name}」的 URL 模板缺少 {query} 占位符（否则每次搜索都返回同一页面）');
+    }
+    final resultSelector = engine.resultSelector.trim();
+    if (resultSelector.isEmpty) {
+      throw StateError('自定义引擎「${engine.name}」缺少结果条目选择器（避免抓到导航/页脚链接）');
+    }
     final uri = Uri.parse(template.replaceAll('{query}', Uri.encodeQueryComponent(query)));
-    final response = await client.get(uri, headers: const {'User-Agent': _ua}).timeout(const Duration(seconds: 20));
-    final doc = html_parser.parse(utf8.decode(response.bodyBytes, allowMalformed: true));
-    final nodes = engine.resultSelector.trim().isEmpty
-        ? doc.querySelectorAll('a')
-        : doc.querySelectorAll(engine.resultSelector.trim());
+    final page = await _fetchPage(session, uri);
+    if (page.statusCode >= 400) throw StateError('HTTP ${page.statusCode}');
+    _ensureNotBlocked(page.body, engine.name);
+    final doc = html_parser.parse(page.body);
     final results = <Map<String, Object?>>[];
-    for (final node in nodes) {
-      final anchor = engine.linkSelector.trim().isEmpty
-          ? node.querySelector('a')
-          : node.querySelector(engine.linkSelector.trim());
-      final titleNode = engine.titleSelector.trim().isEmpty
-          ? anchor
-          : node.querySelector(engine.titleSelector.trim());
-      final url = anchor?.attributes['href'] ?? titleNode?.attributes['href'] ?? '';
-      final title = titleNode?.text.trim() ?? anchor?.text.trim() ?? '';
-      final snippet = engine.snippetSelector.trim().isEmpty
-          ? ''
-          : (node.querySelector(engine.snippetSelector.trim())?.text.trim() ?? '');
+    for (final node in doc.querySelectorAll(resultSelector)) {
+      final linkSelector = engine.linkSelector.trim();
+      var anchor = linkSelector.isEmpty ? node.querySelector('a') : node.querySelector(linkSelector);
+      if (anchor == null && node.localName == 'a') anchor = node;
+      final titleSelector = engine.titleSelector.trim();
+      final titleNode = titleSelector.isEmpty ? anchor : node.querySelector(titleSelector);
+      final url = _unwrapLink(anchor?.attributes['href'] ?? titleNode?.attributes['href'] ?? '', page.uri);
+      final title = (titleNode?.text ?? anchor?.text ?? '').trim();
+      final snippetSelector = engine.snippetSelector.trim();
+      final snippet = snippetSelector.isEmpty ? '' : (node.querySelector(snippetSelector)?.text ?? '').trim();
       if (url.isEmpty && title.isEmpty) continue;
       results.add({'title': title, 'url': url, 'snippet': snippet});
-      if (results.length >= max) break;
+      if (results.length >= max * 3) break;
     }
     return results;
   }
 
-  static Future<List<Map<String, Object?>>> _bing(String query, int max, http.Client client) async {
-    final uri = Uri.parse('https://cn.bing.com/search?q=${Uri.encodeQueryComponent(query)}&count=$max');
-    final response = await client.get(uri, headers: const {'User-Agent': _ua}).timeout(const Duration(seconds: 20));
-    final doc = html_parser.parse(utf8.decode(response.bodyBytes, allowMalformed: true));
+  /// Bing in three tiers: the clean RSS feed first, then a browser-consistent
+  /// HTML scrape, and finally a real headless render of the SERP.
+  static Future<List<Map<String, Object?>>> _bing(String query, int max, BrowserSession session) async {
+    Object? lastError;
+
+    // L1 — RSS feed (`format=rss`): an XML endpoint meant for feed readers,
+    // hence not served the cloaked / SEO-spam HTML SERP.
+    try {
+      final usable = _usable(query, await _bingRss(query, max, session), max);
+      if (usable.isNotEmpty) return usable;
+    } catch (error) {
+      lastError = error;
+    }
+
+    // L2 — HTML SERP scraped like a browser: the same URL params (form /
+    // refig / pc) plus the warmed-up visitor cookies they must agree with.
+    try {
+      await _bingWarmUp(session);
+      final uri = _bingUri(query, session);
+      final page = await _fetchPage(session, uri);
+      if (page.statusCode >= 400) throw StateError('HTTP ${page.statusCode}');
+      _ensureNotBlocked(page.body, 'bing');
+      final usable = _usable(query, _parseBingDom(page.body, page.uri, max * 3), max);
+      if (usable.isNotEmpty) return usable;
+    } catch (error) {
+      lastError = error;
+    }
+
+    // L3 — the SERP executed in real headless Chrome: the JS that mints the
+    // visitor tokens runs there, so the page cannot be cloaked to it.
+    try {
+      if (session.canRender) {
+        final uri = _bingUri(query, session);
+        final dom = await session.render(uri);
+        final usable = _usable(query, _parseBingDom(dom, uri, max * 3), max);
+        if (usable.isNotEmpty) return usable;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (lastError != null) throw lastError;
+    return const <Map<String, Object?>>[];
+  }
+
+  /// The SERP URL exactly as a browser builds it: search host, entry-form id,
+  /// UI-config code and the per-visitor `refig` hash — Bing cross-checks these
+  /// against its visitor cookies for consistency.
+  static Uri _bingUri(String query, BrowserSession session) => Uri.https('cn.bing.com', '/search', {
+        'q': query,
+        'form': 'ANNNB1',
+        'refig': session.refig,
+        'pc': 'U531',
+      });
+
+  /// First visit to the search host: harvests the visitor cookies (MUID /
+  /// _EDGE_S) that the `form`/`refig`/`pc` params must stay consistent with.
+  static Future<void> _bingWarmUp(BrowserSession session) async {
+    if (session.hasCookiesFor('bing.com')) return;
+    try {
+      await session.get(Uri.https('cn.bing.com', '/'));
+    } catch (_) {
+      // Warm-up is best-effort.
+    }
+  }
+
+  /// L1 source: Bing's RSS endpoint — clean XML items, no `ck/a` redirects.
+  static Future<List<Map<String, Object?>>> _bingRss(
+      String query, int max, BrowserSession session) async {
+    final uri = Uri.https('www.bing.com', '/search', {
+      'q': query,
+      'format': 'rss',
+      'count': '$max',
+    });
+    final page = await session.get(uri);
+    if (page.statusCode >= 400) return const <Map<String, Object?>>[];
+    final results = <Map<String, Object?>>[];
+    for (final m in RegExp(r'<item>([\s\S]*?)</item>').allMatches(page.body)) {
+      final item = m.group(1) ?? '';
+      results.add({
+        'title': _rssField(item, 'title'),
+        'url': _rssField(item, 'link'),
+        'snippet': _rssField(item, 'description'),
+      });
+      if (results.length >= max * 2) break;
+    }
+    return results;
+  }
+
+  /// Extracts one RSS tag's text. Regex-based on purpose: `<link>` is a void
+  /// element for the HTML parser and would swallow the URL.
+  static String _rssField(String item, String tag) {
+    final m = RegExp('<$tag>([\\s\\S]*?)</$tag>').firstMatch(item);
+    var text = m?.group(1) ?? '';
+    text = text.replaceAll(RegExp(r'^\s*<!\[CDATA\[|\]\]>\s*$'), '').trim();
+    return (html_parser.parseFragment(text).text ?? text).trim();
+  }
+
+  static List<Map<String, Object?>> _parseBingDom(String html, Uri base, int limit) {
+    final doc = html_parser.parse(html);
     final results = <Map<String, Object?>>[];
     for (final node in doc.querySelectorAll('li.b_algo')) {
+      if (node.className.contains('b_ad')) continue; // sponsored blocks
       final anchor = node.querySelector('h2 a');
       if (anchor == null) continue;
       results.add({
         'title': anchor.text.trim(),
-        'url': anchor.attributes['href'] ?? '',
-        'snippet': node.querySelector('.b_caption p')?.text.trim() ?? '',
+        'url': _unwrapLink(anchor.attributes['href'] ?? '', base),
+        'snippet': node.querySelector('.b_caption p')?.text.trim() ??
+            node.querySelector('.b_caption')?.text.trim() ??
+            '',
       });
-      if (results.length >= max) break;
+      if (results.length >= limit) break;
     }
     return results;
   }
 
-  static Future<List<Map<String, Object?>>> _duckDuckGo(String query, int max, http.Client client) async {
-    final uri = Uri.parse('https://html.duckduckgo.com/html/?q=${Uri.encodeQueryComponent(query)}');
-    final response = await client.get(uri, headers: const {'User-Agent': _ua}).timeout(const Duration(seconds: 20));
-    final doc = html_parser.parse(utf8.decode(response.bodyBytes, allowMalformed: true));
+  static Future<List<Map<String, Object?>>> _duckDuckGo(String query, int max, BrowserSession session) async {
+    final uri = Uri.https('html.duckduckgo.com', '/html/', {'q': query});
+    final page = await _fetchPage(session, uri);
+    if (page.statusCode >= 400) throw StateError('HTTP ${page.statusCode}');
+    _ensureNotBlocked(page.body, 'duckduckgo');
+    final doc = html_parser.parse(page.body);
     final results = <Map<String, Object?>>[];
     for (final node in doc.querySelectorAll('.result')) {
       final anchor = node.querySelector('.result__a');
       if (anchor == null) continue;
       results.add({
         'title': anchor.text.trim(),
-        'url': anchor.attributes['href'] ?? '',
+        'url': _unwrapLink(anchor.attributes['href'] ?? '', page.uri),
         'snippet': node.querySelector('.result__snippet')?.text.trim() ?? '',
       });
-      if (results.length >= max) break;
+      if (results.length >= max * 3) break;
     }
     return results;
+  }
+
+  /// Multi-engine meta search via `package:ddgs` (no API key): several scraped
+  /// backends cross-check each other, diluting single-engine cloaking.
+  static Future<List<Map<String, Object?>>> _ddgs(
+    SearchEngineConfig engine,
+    String query,
+    int max,
+    ProxyConfig proxy,
+  ) async {
+    final backends = engine.backend
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (backends.isEmpty) backends.add('duckduckgo');
+    final ddgs = DDGS(proxy: _proxyUrl(proxy), timeout: const Duration(seconds: 15));
+    final results = <Map<String, Object?>>[];
+    final seen = <String>{};
+    try {
+      for (final backend in backends) {
+        try {
+          final items = await ddgs.text(query, maxResults: max, backend: backend);
+          for (final item in items) {
+            final url = '${item['href'] ?? item['url'] ?? ''}'.trim();
+            if (url.isEmpty || !seen.add(url)) continue;
+            results.add({
+              'title': '${item['title'] ?? ''}'.trim(),
+              'url': url,
+              'snippet': '${item['body'] ?? item['snippet'] ?? ''}'.trim(),
+            });
+          }
+        } catch (_) {
+          // One backend failing / rate-limited must not kill the aggregate.
+        }
+        if (results.length >= max) break;
+      }
+    } finally {
+      ddgs.close();
+    }
+    return results;
+  }
+
+  /// Tavily Search API (`POST /search`, 1 credit per call).
+  static Future<List<Map<String, Object?>>> _tavily(
+    SearchEngineConfig engine,
+    String query,
+    int max,
+    BrowserSession session,
+  ) =>
+      TavilyApi.search(session, engine.apiKey.trim(), query, max);
+
+  static String? _proxyUrl(ProxyConfig proxy) {
+    final raw = proxy.httpsProxy.trim().isNotEmpty
+        ? proxy.httpsProxy.trim()
+        : proxy.httpProxy.trim();
+    return raw.isEmpty ? null : 'http://${proxyHostPort(raw)}';
   }
 
   static RegExp _globToRegExp(String glob) {

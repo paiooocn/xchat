@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../agent/tools/browser_session.dart';
+import '../../agent/tools/tavily_api.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
 import '../../models/app_config.dart';
@@ -195,9 +197,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     ListTile(
                       title: Text(engine.name),
-                      subtitle: Text(engine.isBuiltin
-                          ? '内置 · ${engine.kind}'
-                          : '自定义 · ${engine.urlTemplate}'),
+                      subtitle: Text(_engineSubtitle(engine)),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -215,20 +215,25 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ? null
                                 : () => _moveEngine(state, i, 1),
                           ),
-                          if (!engine.isBuiltin) ...[
+                          if (engine.kind == 'tavily' && engine.apiKey.isNotEmpty)
                             IconButton(
-                              tooltip: '编辑',
+                              tooltip: '本月剩余额度',
                               iconSize: 18,
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _editEngine(state, i),
+                              icon: const Icon(Icons.hourglass_top),
+                              onPressed: () => _showTavilyQuota(engine.apiKey),
                             ),
-                            IconButton(
-                              tooltip: '删除',
-                              iconSize: 18,
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _removeEngine(state, i),
-                            ),
-                          ],
+                          IconButton(
+                            tooltip: '编辑',
+                            iconSize: 18,
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => _editEngine(state, i),
+                          ),
+                          IconButton(
+                            tooltip: '删除',
+                            iconSize: 18,
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => _removeEngine(state, i),
+                          ),
                         ],
                       ),
                     ),
@@ -382,6 +387,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final existing = index >= 0 ? state.config.searchEngines[index] : null;
     final engine = existing ?? SearchEngineConfig(id: 'custom_${state.config.searchEngines.length}', name: '自定义');
     final name = TextEditingController(text: engine.name);
+    var kind = engine.kind;
+    final apiKey = TextEditingController(text: engine.apiKey);
+    final backend = TextEditingController(text: engine.backend);
     final url = TextEditingController(text: engine.urlTemplate);
     final result = TextEditingController(text: engine.resultSelector);
     final title = TextEditingController(text: engine.titleSelector);
@@ -389,7 +397,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final snippet = TextEditingController(text: engine.snippetSelector);
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
         title: Text(existing == null ? '添加搜索引擎' : '编辑搜索引擎'),
         content: SizedBox(
           width: 560,
@@ -399,6 +408,40 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 TextField(controller: name, decoration: const InputDecoration(labelText: '名称')),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: kind,
+                  decoration: const InputDecoration(labelText: '类型'),
+                  items: const [
+                    DropdownMenuItem(value: 'ddgs', child: Text('DDGS 多引擎聚合（免 key）')),
+                    DropdownMenuItem(value: 'tavily', child: Text('Tavily API（需 key）')),
+                    DropdownMenuItem(value: 'bing', child: Text('Bing HTML（兜底）')),
+                    DropdownMenuItem(value: 'duckduckgo', child: Text('DuckDuckGo HTML（兜底）')),
+                    DropdownMenuItem(value: 'custom', child: Text('自定义（URL 模板 + CSS 选择器）')),
+                  ],
+                  onChanged: (value) => setState(() => kind = value ?? 'custom'),
+                ),
+                const SizedBox(height: 12),
+                if (kind == 'ddgs')
+                  TextField(
+                    controller: backend,
+                    decoration: const InputDecoration(labelText: '后端引擎（逗号分隔，按序回退合并）'),
+                  ),
+                if (kind == 'tavily') ...[
+                  TextField(
+                    controller: apiKey,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'API Key（tvly-…）'),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.hourglass_top, size: 18),
+                      label: const Text('查询本月剩余额度'),
+                      onPressed: () => _showTavilyQuota(apiKey.text.trim()),
+                    ),
+                  ),
+                ],
+                if (kind == 'custom') ...[
                 TextField(
                   controller: url,
                   decoration: const InputDecoration(
@@ -413,20 +456,37 @@ class _SettingsPageState extends State<SettingsPage> {
                 TextField(controller: link, decoration: const InputDecoration(labelText: '链接选择器（CSS）')),
                 const SizedBox(height: 12),
                 TextField(controller: snippet, decoration: const InputDecoration(labelText: '摘要选择器（CSS）')),
+                ],
               ],
             ),
           ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('确定')),
+          FilledButton(
+            onPressed: () {
+              // Without a {query} placeholder every search would fetch the
+              // same fixed page — reject it up front.
+              if (kind == 'custom' && !url.text.trim().contains('{query}')) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('搜索 URL 模板必须包含 {query} 占位符')),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text('确定'),
+          ),
         ],
+        ),
       ),
     );
     if (ok != true) return;
     engine
       ..name = name.text.trim().isEmpty ? '自定义' : name.text.trim()
-      ..kind = 'custom'
+      ..kind = kind
+      ..apiKey = apiKey.text.trim()
+      ..backend = backend.text.trim().isEmpty ? SearchEngineConfig.defaultBackend : backend.text.trim()
       ..urlTemplate = url.text.trim()
       ..resultSelector = result.text.trim()
       ..titleSelector = title.text.trim()
@@ -434,6 +494,47 @@ class _SettingsPageState extends State<SettingsPage> {
       ..snippetSelector = snippet.text.trim();
     if (existing == null) state.config.searchEngines.add(engine);
     await state.saveConfig();
+  }
+
+  String _engineSubtitle(SearchEngineConfig engine) {
+    switch (engine.kind) {
+      case 'ddgs':
+        return 'DDGS 多引擎 · ${engine.backend}';
+      case 'tavily':
+        return engine.apiKey.isEmpty ? 'Tavily API · 未配置 key' : 'Tavily API · 已配置 key';
+      default:
+        return engine.isBuiltin ? '内置 · ${engine.kind}' : '自定义 · ${engine.urlTemplate}';
+    }
+  }
+
+  /// Shows the Tavily billing-cycle quota (monthly remaining credits).
+  Future<void> _showTavilyQuota(String apiKey) async {
+    if (apiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先填写 Tavily API Key')),
+      );
+      return;
+    }
+    final session = BrowserSession();
+    String message;
+    try {
+      message = (await TavilyApi.usage(session, apiKey)).describe();
+    } catch (error) {
+      message = '查询失败：$error';
+    } finally {
+      session.close();
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tavily 本月用量'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('确定')),
+        ],
+      ),
+    );
   }
 
   /// Local machine info shown at the bottom of the settings page.

@@ -24,6 +24,20 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onRegenerate;
 
+  /// Copies the message's **raw** text — never the rendered widget — so the
+  /// clipboard holds the original Markdown source and can be pasted verbatim
+  /// into another editor/chat.
+  static Future<void> copyRaw(BuildContext context, String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text('已复制 Markdown 原文'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     switch (message.role) {
@@ -47,8 +61,18 @@ class MessageBubble extends StatelessWidget {
     }
   }
 
+  Widget _copyButton(BuildContext context, String text, {String tooltip = '复制 Markdown 原文'}) =>
+      IconButton(
+        tooltip: tooltip,
+        iconSize: 16,
+        visualDensity: VisualDensity.compact,
+        onPressed: text.isEmpty ? null : () => copyRaw(context, text),
+        icon: const Icon(Icons.copy_all_outlined),
+      );
+
   Widget _userBubble(BuildContext context) {
     final theme = Theme.of(context);
+    final text = message.content ?? '';
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -62,20 +86,12 @@ class MessageBubble extends StatelessWidget {
                 color: theme.colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: markdownView(message.content ?? ''),
+              child: markdownView(text),
             ),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  tooltip: '复制',
-                  iconSize: 16,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => Clipboard.setData(
-                    ClipboardData(text: message.content ?? ''),
-                  ),
-                  icon: const Icon(Icons.copy_all_outlined),
-                ),
+                _copyButton(context, text),
                 if (isLastUser)
                   IconButton(
                     tooltip: '编辑并重发',
@@ -100,6 +116,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _assistantBubble(BuildContext context) {
+    final text = message.content ?? '';
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
@@ -110,12 +127,29 @@ class MessageBubble extends StatelessWidget {
             if (message.hasReasoning)
               ThinkingBlock(text: message.reasoning ?? ''),
             if (message.hasToolCalls) ToolCallBlock(calls: message.toolCalls),
-            if ((message.content ?? '').trim().isNotEmpty)
-              markdownView(message.content ?? ''),
+            if (text.trim().isNotEmpty)
+              markdownView(text),
             if (message.usage.isNotEmpty) ...[
               const SizedBox(height: 4),
               UsageBadge(usage: message.usage),
             ],
+            // The reply is copied from its Markdown source, never from the
+            // rendered (syntax-highlighted) view.
+            if (text.isNotEmpty || message.hasReasoning)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _copyButton(context, text),
+                  if (onDelete != null)
+                    IconButton(
+                      tooltip: '删除',
+                      iconSize: 16,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                ],
+              ),
           ],
         ),
       ),

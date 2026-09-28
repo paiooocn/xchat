@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.1.12+1
+version: 0.1.13+1
 license: MIT
 
 environment:
@@ -34,6 +34,9 @@ dependencies:
   http: ^1.2.2
   html: ^0.15.4
   intl: ^0.20.0
+
+  # Web search (multi-engine meta search: DDG/Google/Bing/Brave/…)
+  ddgs: ^0.3.2
 
   # Desktop window sizing (per-user persisted size, applied on next launch)
   window_manager: ^0.5.2

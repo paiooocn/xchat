@@ -22,6 +22,9 @@ Future<String?> showCompressDialog(BuildContext context, Session session) async 
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Text('压缩说明：所选提示词会与整段对话记录一起发给模型，'
+                  '模型只返回一份可继续对话的 Markdown 摘要。'),
+              const SizedBox(height: 12),
               const Text('选择预置压缩提示词：'),
               const SizedBox(height: 8),
               Flexible(

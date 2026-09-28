@@ -215,7 +215,13 @@ class AppConfig {
   static List<SearchEngineConfig> _decodeSearchEngines(Map<String, Object?> json) {
     final list = asList(json['search_engines']);
     if (list.isNotEmpty) {
-      return list.map(SearchEngineConfig.fromJson).toList();
+      final engines = list.map(SearchEngineConfig.fromJson).toList();
+      final legacyPair = engines.length == 2 &&
+          engines.every((e) => e.kind == 'bing' || e.kind == 'duckduckgo') &&
+          engines.map((e) => e.kind).toSet().length == 2;
+      // Old default pair (raw Bing/DDG HTML) → upgrade to the ddgs/Tavily-first
+      // layout; anything custom stays exactly as the user left it.
+      return legacyPair ? SearchEngineConfig.defaults() : engines;
     }
     // Migrate the legacy single-engine field.
     final legacy = (asString(json['search_engine']) ?? '').trim();
@@ -249,14 +255,19 @@ class AppConfig {
   }
 
   /// Default preset prompts for the "compress session" feature.
+  ///
+  /// Each one names what is being compressed (the conversation transcript
+  /// appended after it) and what the output must be: a self-contained Markdown
+  /// context summary — never a reply to the user.
   static List<String> defaultCompressPrompts() => <String>[
-        '请把以下对话内容压缩为一份简洁的上下文摘要，保留：任务目标、关键结论、已做出的决定、'
-            '重要的代码/文件/路径信息以及待办事项。摘要将作为后续对话的唯一上下文，'
-            '请确保信息完整可用，直接输出摘要内容。',
-        '请将以下对话历史压缩成结构化摘要，分为：1) 用户意图与目标；2) 关键讨论与结论；'
-            '3) 涉及的文件与代码要点；4) 未完成事项。直接输出摘要，不要额外解释。',
-        '请对以下多轮对话做无损要点压缩：保留所有技术细节、命令、参数与决定，'
-            '删除寒暄与重复内容，输出一段可直接接续对话的上下文说明。',
+        '把上面的对话记录压缩为一份简洁的上下文摘要。保留：任务目标与用户明确要求、'
+            '关键结论、已做出的决定、重要的文件路径/代码标识/命令参数、待办事项。'
+            '摘要会作为后续对话的唯一上下文，请确保脱离原文也能读懂；直接输出摘要正文。',
+        '把上面的对话记录压缩为结构化 Markdown 摘要，分节输出：'
+            '1) 用户意图与目标；2) 关键讨论与结论；3) 涉及的文件、代码与命令要点；'
+            '4) 未完成事项与下一步。不要复述指令、不要解释、不要提问，直接输出摘要。',
+        '对上面的多轮对话做无损要点压缩，输出一份上下文摘要：逐条保留技术细节、命令、参数、'
+            '路径与决定，删除寒暄和重复内容，摘要要能让人直接接续对话（Markdown），只输出摘要。',
       ];
 
   /// Default approval levels: read-only / network tools run unattended; file

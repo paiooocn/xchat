@@ -1142,9 +1142,12 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     final state = context.read<AppState>();
     final cancel = llm.CancelToken();
     final progress = ValueNotifier<String>('');
-    var dialogOpen = true;
+    var dialogVisible = true;
+    var progressDead = false;
     // Show a progress dialog streaming the compressed text so the user can
-    // follow (and cancel) the compression work.
+    // follow (and cancel) the compression work. The notifier is disposed only
+    // once the route is gone — disposing while the dialog is still on screen
+    // would break its listener and abort the rest of the flow.
     unawaited(
       showDialog<void>(
         context: context,
@@ -1156,30 +1159,34 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
             Navigator.of(dialogContext).pop();
           },
         ),
-      ).then((_) => dialogOpen = false),
+      ).whenComplete(() {
+        dialogVisible = false;
+        progressDead = true;
+        progress.dispose();
+      }),
     );
     // Live partial text from the compressor stream, shown in the dialog.
     try {
       final created = await state.compressSession(
         session.id,
         prompt,
-        onProgress: (text) => progress.value = text,
+        onProgress: (text) {
+          if (!progressDead) progress.value = text;
+        },
         cancel: cancel,
       );
       await state.refreshSessions();
-      if (dialogOpen && mounted) Navigator.of(context).pop();
-      progress.dispose();
+      if (dialogVisible && mounted) Navigator.of(context).pop();
       if (!mounted) return;
       widget.onCompressCompleted?.call(created.id);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已创建压缩会话「${created.title}」')),
+        SnackBar(content: Text('已创建并保存压缩会话「${created.title}」')),
       );
     } catch (error) {
-      if (dialogOpen && mounted) Navigator.of(context).pop();
-      progress.dispose();
+      if (dialogVisible && mounted) Navigator.of(context).pop();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('压缩失败：$error')),
+        SnackBar(content: Text(cancel.isCancelled ? '已取消压缩' : '压缩失败：$error')),
       );
     }
   }

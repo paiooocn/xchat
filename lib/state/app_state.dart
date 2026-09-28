@@ -11,6 +11,7 @@ import '../data/session_repository.dart';
 import '../data/template_repository.dart';
 import '../llm/session_compressor.dart';
 import '../llm/session_namer.dart';
+import '../models/agent_mode.dart';
 import '../models/app_config.dart';
 import '../models/models_dev.dart';
 import '../models/project.dart';
@@ -180,6 +181,8 @@ class AppState extends ChangeNotifier {
     String? projectId,
     String? sandbox,
     List<SessionMessage>? extraMessages,
+    AgentMode? mode,
+    bool? webSearchEnabled,
   }) async {
     final resolvedProvider = providerId ?? config.currentProviderId;
     final provider = providerById(resolvedProvider);
@@ -201,6 +204,8 @@ class AppState extends ChangeNotifier {
       provider: resolvedProvider,
       model: model ?? (config.currentModel.isNotEmpty ? config.currentModel : _defaultModel(provider)),
       thinkingReplyMode: thinkingReplyMode ?? ThinkingReplyMode.auto,
+      mode: mode ?? AgentMode.auto,
+      webSearchEnabled: webSearchEnabled ?? true,
       tools: tools ?? List<String>.of(config.defaultTools),
       params: params ?? config.defaultParams.copyWith(),
       messages: <SessionMessage>[
@@ -338,7 +343,11 @@ class AppState extends ChangeNotifier {
 
   /// Compresses a session via the LLM and creates a new session containing
   /// the same system prompt plus one user/assistant pair:
-  /// user = compress prompt, assistant = compressed context.
+  /// user = hand-off of the compressed context, assistant = the summary itself.
+  ///
+  /// The clone inherits the source's working dir, tools and runtime switches,
+  /// and is persisted before it is returned, so the caller can rely on it being
+  /// a real, re-openable session.
   Future<Session> compressSession(
     String id,
     String compressPrompt, {
@@ -359,12 +368,22 @@ class AppState extends ChangeNotifier {
       onProgress: onProgress,
       cancel: cancel,
     );
+    final sourceTitle = source.title.trim();
+    final title = '${sourceTitle.isEmpty ? '会话' : sourceTitle}（压缩）';
     final extraMessages = <SessionMessage>[
-      SessionMessage(role: MessageRole.user, content: compressPrompt),
-      SessionMessage(role: MessageRole.assistant, content: compressed),
+      SessionMessage(
+        role: MessageRole.user,
+        id: newShortId(),
+        content: buildCompressHandoff(sourceTitle, compressed),
+      ),
+      SessionMessage(
+        role: MessageRole.assistant,
+        id: newShortId(),
+        content: compressed,
+      ),
     ];
-    return createSession(
-      title: '${source.title.isEmpty ? '会话' : source.title}（压缩）',
+    final created = await createSession(
+      title: title,
       providerId: source.provider.isNotEmpty ? source.provider : null,
       model: source.model.isNotEmpty ? source.model : null,
       systemPrompt: source.systemPrompt,
@@ -376,7 +395,17 @@ class AppState extends ChangeNotifier {
       projectId: source.projectId.isNotEmpty ? source.projectId : null,
       sandbox: source.sandbox,
       extraMessages: extraMessages,
+      mode: source.mode,
+      webSearchEnabled: source.webSearchEnabled,
     );
+    created.updatedAt = DateTime.now();
+    // Persist explicitly: the compressed session is only useful if it survives
+    // a restart, and a failed write must surface as an error, not silently.
+    await sessionRepository.write(created);
+    if (!await sessionRepository.exists(created.id)) {
+      throw StateError('压缩会话写入失败：${paths.sessionFile(created.id)}');
+    }
+    return created;
   }
 
   /// All distinct tags across active sessions (for the list filter).

@@ -49,8 +49,11 @@ bool asBool(Object? value, {bool fallback = false}) {
   return fallback;
 }
 
+/// Reads a list of strings. The result is **growable** on purpose: decoded
+/// values back mutable config collections (compress prompts, tool lists, shell
+/// allow/deny lists, …) that the settings pages edit in place.
 List<String> asStringList(Object? value) =>
-    asList(value).map(asString).whereType<String>().toList(growable: false);
+    asList(value).map(asString).whereType<String>().toList();
 
 /// Removes entries whose value is `null`.
 Map<String, Object?> pruneNulls(Map<String, Object?> json) {

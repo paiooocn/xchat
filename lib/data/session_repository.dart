@@ -51,17 +51,36 @@ class SessionRepository {
     session.ensureSystem();
     final dir = _dir;
     if (!await dir.exists()) await dir.create(recursive: true);
-    final target = File(paths.sessionFile(session.id));
-    final tmp = File('${target.path}.tmp');
-    await tmp.writeAsString(SessionXml.encode(session), flush: true);
-    await tmp.rename(target.path);
+    await _writeAtomic(paths.sessionFile(session.id), SessionXml.encode(session));
     await indexRepository.upsertSession(session);
   }
 
   Future<void> writeTo(String path, Session session) async {
+    await _writeAtomic(path, SessionXml.encode(session));
+  }
+
+  /// Writes via a `.tmp` file + rename so a crash can't truncate a session.
+  ///
+  /// `rename` over an existing file fails on some targets (Windows, and some
+  /// Android storage backends), which used to abort the save entirely — fall
+  /// back to dropping the old file first, then to a direct write.
+  static Future<void> _writeAtomic(String path, String content) async {
+    final target = File(path);
     final tmp = File('$path.tmp');
-    await tmp.writeAsString(SessionXml.encode(session), flush: true);
-    await tmp.rename(path);
+    await tmp.writeAsString(content, flush: true);
+    try {
+      await tmp.rename(target.path);
+    } on FileSystemException {
+      if (await target.exists()) await target.delete();
+      try {
+        await tmp.rename(target.path);
+      } on FileSystemException {
+        await tmp.copy(target.path);
+        await tmp.delete();
+      }
+    } finally {
+      if (await tmp.exists()) await tmp.delete();
+    }
   }
 
   Future<void> delete(String id) async {
