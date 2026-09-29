@@ -99,7 +99,6 @@ class ProviderConfig {
 
   /// Context window (tokens) for the context bar; `null` = unknown.
   int? contextWindow;
-
   /// How history thinking should be echoed for this provider.
   ThinkingReplyMode defaultThinkingReplyMode;
 

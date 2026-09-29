@@ -1116,7 +1116,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           ),
         InputArea(
           running: controller.isRunning,
-          onSend: (text) => controller.send(text),
+          onSend: (text, attachments) => controller.send(text, attachments: attachments),
           onStop: controller.stop,
           mode: session.mode,
           onModeChanged: (value) => controller.setMode(value),

@@ -17,11 +17,9 @@ LlmProvider createProvider(ProviderConfig config) {
       reasoningRequestStyle: _reasoningStyle(config.reasoningStyle),
       useMaxCompletionTokens: config.useMaxCompletionTokens,
       sendStreamOptions: true,
-      capabilities: const ProviderCapabilities(),
     ),
   );
 }
-
 ReasoningSource _reasoningSource(String value) => switch (value) {
       'field' => ReasoningSource.field,
       'inline' => ReasoningSource.inlineTags,

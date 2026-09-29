@@ -24,7 +24,9 @@ import 'package:test/test.dart';
 void main() {
   group('ThinkTagParser.split', () {
     test('separates an inline thinking block', () {
-      final result = ThinkTagParser.split('hello  thinkingbecause reasons<｜end▁of▁thinking｜>\nworld');
+      final result = ThinkTagParser.split(
+        'hello <｜begin▁of▁thinking｜>because reasons<｜end▁of▁thinking｜>\nworld',
+      );
       expect(result.content, 'hello \nworld');
       expect(result.reasoning, 'because reasons');
       expect(result.hasReasoning, isTrue);
@@ -43,20 +45,20 @@ void main() {
     });
 
     test('an unterminated block becomes reasoning by default', () {
-      final result = ThinkTagParser.split('answer  thinkingtruncated by max_tokens');
+      final result = ThinkTagParser.split('answer <｜begin▁of▁thinking｜>truncated by max_tokens');
       expect(result.content, 'answer ');
       expect(result.reasoning, 'truncated by max_tokens');
     });
 
     test('unterminatedAsReasoning: false demotes it to content', () {
       final parser = ThinkTagParser(unterminatedAsReasoning: false);
-      final segments = <ThinkSegment>[...parser.add('a  thinkingb'), ...parser.flush()];
+      final segments = <ThinkSegment>[...parser.add('a <｜begin▁of▁thinking｜>b'), ...parser.flush()];
       expect(segments.map((s) => s.type),
           <ThinkSegmentType>[ThinkSegmentType.content, ThinkSegmentType.content]);
     });
 
     test('is disabled cleanly', () {
-      const input = 'a  thinkingb<｜end▁of▁thinking｜> c';
+      const input = 'a <｜begin▁of▁thinking｜>b<｜end▁of▁thinking｜> c';
       expect(ThinkTagParser.split(input, enabled: false).content, input);
     });
   });
@@ -73,30 +75,34 @@ void main() {
 
     test('holds back a lone "<" until it is resolved', () {
       final parser = ThinkTagParser();
-      expect(parser.add('2 < 3'), <ThinkSegment>[const ThinkSegment(ThinkSegmentType.content, '2 ')]);
-      expect(parser.add(' is true'),
+      expect(parser.add('2 <'), <ThinkSegment>[const ThinkSegment(ThinkSegmentType.content, '2 ')]);
+      expect(parser.add(' 3 is true'),
           <ThinkSegment>[const ThinkSegment(ThinkSegmentType.content, '< 3 is true')]);
       expect(parser.flush(), isEmpty);
     });
 
     test('flushes held-back text at end of stream', () {
       final parser = ThinkTagParser();
-      expect(parser.add('trailing <thi'), isEmpty);
+      // The whole buffer could still grow into a tag, so nothing is emitted.
+      expect(parser.add('<thi'), isEmpty);
       expect(parser.flush(), <ThinkSegment>[
-        const ThinkSegment(ThinkSegmentType.content, 'trailing <thi'),
+        const ThinkSegment(ThinkSegmentType.content, '<thi'),
       ]);
     });
 
     test('character-by-character equals whole-string parsing', () {
-      const input = 'intro  thinkingstep one\nstep two<｜end▁of▁thinking｜>final';
+      const input =
+          'intro <｜begin▁of▁thinking｜>step one\nstep two<｜end▁of▁thinking｜>final';
       final result = parseCharByChar(input);
       expect(result.content, 'intro final');
       expect(result.reasoning, 'step one\nstep two');
-      expect(result, ThinkTagParser.split(input));
+      final whole = ThinkTagParser.split(input);
+      expect(result.content, whole.content);
+      expect(result.reasoning, whole.reasoning);
     });
 
     test('reassembles text split at every offset', () {
-      const input = 'A  thinkingB<｜end▁of▁thinking｜>C';
+      const input = 'A<｜begin▁of▁thinking｜>B<｜end▁of▁thinking｜>C';
       for (var cut = 1; cut < input.length; cut++) {
         final parser = ThinkTagParser();
         final out = <ThinkSegment>[
@@ -104,37 +110,44 @@ void main() {
           ...parser.add(input.substring(cut)),
           ...parser.flush(),
         ];
-        expect(out.map((s) => s.text).join(), 'AC', reason: 'cut at $cut');
+        expect(out.where((s) => !s.isReasoning).map((s) => s.text).join(), 'AC',
+            reason: 'cut at $cut');
         expect(out.firstWhere((s) => s.isReasoning).text, 'B', reason: 'cut at $cut');
       }
     });
 
     test('drops a stray leading close tag (vLLM/SGLang prefill artefact)', () {
-      final result = parseCharByChar('\n\nHello there');
+      final result = parseCharByChar('\n\n<｜end▁of▁thinking｜>Hello there');
       expect(result.content, '\n\nHello there');
       expect(result.reasoning, isEmpty);
     });
 
     test('keeps a stray close tag once real content has been emitted', () {
-      final result = parseCharByChar('I will show you how  tags work');
+      final result = parseCharByChar('I will show you how <｜end▁of▁thinking｜> tags work');
       expect(result.reasoning, isEmpty);
       expect(result.content, contains(' tags work'));
     });
 
     test('startInReasoning handles a pre-filled thinking block', () {
-      final result = parseCharByChar('reasoning here\n\nanswer', startInReasoning: true);
+      final result = parseCharByChar(
+        'reasoning here\n\n<｜end▁of▁thinking｜>answer',
+        startInReasoning: true,
+      );
       expect(result.reasoning, 'reasoning here\n\n');
       expect(result.content, 'answer');
     });
 
     test('handles three blocks and mixed content', () {
-      final result = parseCharByChar('a  thinkingb<｜end▁of▁thinking｜> c  thinkingd<｜end▁of▁thinking｜> e');
+      final result = parseCharByChar(
+        'a<｜begin▁of▁thinking｜>b<｜end▁of▁thinking｜>  c '
+        '<｜begin▁of▁thinking｜>d<｜end▁of▁thinking｜> e',
+      );
       expect(result.content, 'a  c  e');
       expect(result.reasoning, 'bd');
     });
 
     test('reset() clears state', () {
-      final parser = ThinkTagParser()..add('x  thinkingy');
+      final parser = ThinkTagParser()..add('x<｜begin▁of▁thinking｜>y');
       expect(parser.inReasoning, isTrue);
       parser.reset();
       expect(parser.inReasoning, isFalse);
@@ -159,7 +172,7 @@ void main() {
       final router = ReasoningRouter(source: ReasoningSource.inlineTags);
       final events = <ChatEvent>[
         ...router.reasoning('ignored'),
-        ...router.content('a  thinkingb<｜end▁of▁thinking｜>c'),
+        ...router.content('a<｜begin▁of▁thinking｜>b<｜end▁of▁thinking｜>c'),
         ...router.finish(),
       ];
       expect(events.whereType<ReasoningDelta>().map((e) => e.text).join(), 'b');
@@ -170,7 +183,7 @@ void main() {
       final router = ReasoningRouter(source: ReasoningSource.auto);
       final events = <ChatEvent>[
         ...router.reasoning('from field '),
-        ...router.content('answer  thinking'),
+        ...router.content('answer <｜begin▁of▁thinking｜>'),
         ...router.content('from tag'),
         ...router.finish(),
       ];

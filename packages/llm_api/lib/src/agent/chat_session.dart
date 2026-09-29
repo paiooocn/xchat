@@ -252,20 +252,16 @@ class ChatSession {
 
   /// Number of messages forming the oldest droppable unit.
   ///
-  /// An assistant message that requested tools is inseparable from the
-  /// `tool` messages answering it — dropping only one of them makes providers
-  /// reject the whole request.
+  /// A unit is one whole exchange: the user message plus every assistant and
+  /// `tool` message that answers it. Dropping a *slice* of an exchange is what
+  /// produces an illegal history — an assistant `tool_calls` message without
+  /// its results, or a `tool` result without the call it answers — and
+  /// providers reject the whole request when they see one.
   int _leadingUnitLength() {
     final start = _systemCount;
     if (start >= _history.length) return 0;
     var end = start + 1;
-    if (_history[start].role == ChatRole.assistant && _history[start].hasToolCalls) {
-      while (end < _history.length && _history[end].role == ChatRole.tool) {
-        end++;
-      }
-    }
-    // Never leave a dangling tool message at the head of the history.
-    while (end < _history.length && _history[end].role == ChatRole.tool) {
+    while (end < _history.length && _history[end].role != ChatRole.user) {
       end++;
     }
     return end - start;

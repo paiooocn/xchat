@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llm_api/llm_api.dart' as llm;
+import 'package:path/path.dart' as p;
 
 import '../data/session_repository.dart';
 import '../llm/llm_factory.dart';
 import '../llm/outbound_adapter.dart';
 import '../models/agent_mode.dart';
 import '../models/app_config.dart';
+import '../models/message_attachment.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_message.dart';
@@ -57,7 +59,7 @@ class AgentEngine {
   /// Runs a turn. When [userText] is provided it is appended as a new user
   /// message first (a plain send); otherwise the existing history is used
   /// (a resend after editing the last user message).
-  Stream<AgentEvent> run({String? userText}) async* {
+  Stream<AgentEvent> run({String? userText, List<MessageAttachment>? attachments}) async* {
     if (isRunning) {
       yield const AgentError('a turn is already running');
       return;
@@ -87,11 +89,13 @@ class AgentEngine {
     ));
 
     try {
-      if (userText != null && userText.trim().isNotEmpty) {
+      if (userText != null || (attachments?.isNotEmpty ?? false)) {
+        final id = _shortId();
         session.messages.add(SessionMessage(
           role: MessageRole.user,
-          id: _shortId(),
+          id: id,
           content: userText,
+          attachments: await _storeAttachments(id, attachments ?? const []),
         ));
         await _persist();
       }
@@ -111,7 +115,7 @@ class AgentEngine {
 
         final request = llm.ChatRequest(
           model: session.model,
-          messages: buildChatMessages(session, provider: providerConfig),
+          messages: await buildChatMessages(session, provider: providerConfig),
           tools: registry.definitions,
           temperature: session.params.temperature,
           topP: session.params.topP,
@@ -330,6 +334,47 @@ class AgentEngine {
     }
     return '';
   }
+
+  /// Copies the picked files into `<sandbox>/attachments/` and returns the
+  /// attachments pointing at their new sandbox-relative home. Copying (rather
+  /// than referencing the original path) keeps the session self-contained when
+  /// the XML is moved or the source file is deleted.
+  Future<List<MessageAttachment>> _storeAttachments(
+    String messageId,
+    List<MessageAttachment> picked,
+  ) async {
+    if (picked.isEmpty) return const [];
+    final dir = Directory(p.join(session.sandbox, 'attachments'));
+    final stored = <MessageAttachment>[];
+    var index = 0;
+    for (final file in picked) {
+      index++;
+      final extension = p.extension(file.name).isNotEmpty
+          ? p.extension(file.name)
+          : _extensionForMime(file.mimeType);
+      final target = p.join(dir.path, '$messageId-$index$extension');
+      try {
+        await dir.create(recursive: true);
+        final bytes = await file.readBytes();
+        if (bytes == null) continue; // source vanished between pick and send
+        await File(target).writeAsBytes(bytes, flush: true);
+        stored.add(file.copyWith(path: target));
+      } catch (_) {
+        // A single unreadable file must not sink the whole message; skip it.
+        continue;
+      }
+    }
+    return stored;
+  }
+
+  static String _extensionForMime(String mimeType) => switch (mimeType) {
+        'image/png' => '.png',
+        'image/jpeg' => '.jpg',
+        'image/webp' => '.webp',
+        'image/gif' => '.gif',
+        'image/bmp' => '.bmp',
+        _ => '.bin',
+      };
 
   String _shortId() =>
       DateTime.now().microsecondsSinceEpoch.toRadixString(36) +

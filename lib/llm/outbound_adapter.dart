@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:llm_api/llm_api.dart' as llm;
 
 import '../models/provider_config.dart';
@@ -22,11 +24,14 @@ ThinkingReplyMode resolveEchoMode(Session session, ProviderConfig provider) {
 
 /// Converts the persisted session messages into `llm_api` chat messages,
 /// applying the thinking echo policy and the tool-call protocol.
-List<llm.ChatMessage> buildChatMessages(
+///
+/// Async because user messages carrying attachments have to read their
+/// payloads off disk before they can be turned into [llm.ContentPart]s.
+Future<List<llm.ChatMessage>> buildChatMessages(
   Session session, {
   required ProviderConfig provider,
   List<SessionMessage>? messages,
-}) {
+}) async {
   final source = messages ?? session.messages;
   final echo = resolveEchoMode(session, provider);
   final thinkingOn = session.params.thinkingEnabled;
@@ -41,7 +46,12 @@ List<llm.ChatMessage> buildChatMessages(
           (message.content ?? '').replaceAll('{sandbox}', session.sandbox),
         ));
       case MessageRole.user:
-        out.add(llm.ChatMessage.user(message.content ?? ''));
+        final parts = await _userParts(message);
+        if (parts == null) {
+          out.add(llm.ChatMessage.user(message.content ?? ''));
+        } else {
+          out.add(llm.ChatMessage.userParts(parts));
+        }
       case MessageRole.tool:
         out.add(llm.ChatMessage.tool(
           toolCallId: message.toolCallId ?? '',
@@ -72,6 +82,28 @@ List<llm.ChatMessage> buildChatMessages(
     }
   }
   return out;
+}
+
+/// Builds the parts of a multimodal user turn, or `null` when the message has
+/// no usable attachment and can go out as plain text.
+Future<List<llm.ContentPart>?> _userParts(SessionMessage message) async {
+  if (!message.hasAttachments) return null;
+  final parts = <llm.ContentPart>[];
+  for (final file in message.attachments) {
+    final bytes = await file.readBytes();
+    if (bytes == null) {
+      parts.add(llm.TextPart('[${file.name}: 文件已丢失]'));
+      continue;
+    }
+    parts.add(llm.ContentPart.imageBase64(
+      base64Encode(bytes),
+      mimeType: file.mimeType,
+    ));
+  }
+  // Text goes last: the vendor docs put the prompt *after* the media part.
+  final text = message.content?.trim() ?? '';
+  if (text.isNotEmpty) parts.add(llm.TextPart(text));
+  return parts;
 }
 
 /// Whether the session's thinking config requires echoing reasoning back.

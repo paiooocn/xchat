@@ -1,4 +1,3 @@
-import 'dart:async';
 
 import 'package:llm_api/llm_api.dart';
 import 'package:llm_api/llm_api_testing.dart';
@@ -334,7 +333,11 @@ void main() {
       expect(response.toolCalls.single.argumentsAsMap(), <String, Object?>{'q': 'x'});
     });
 
-    test('merges a functionCall whose arguments were split across chunks', () async {
+    // Gemini delivers `args` as a complete map per part, so a "split" call can
+    // only be observed when the opening frame carries the name only and the
+    // arguments show up in a later frame. Two functionCall parts inside one
+    // candidate are two distinct calls -- see the next test.
+    test('merges a functionCall whose arguments arrive in a later chunk', () async {
       final transport = MockHttpTransport.sse(<Object?>[
         <String, Object?>{
           'candidates': <Object?>[
@@ -342,7 +345,7 @@ void main() {
               'content': <String, Object?>{
                 'parts': <Object?>[
                   <String, Object?>{
-                    'functionCall': <String, Object?>{'name': 'write', 'args': <String, Object?>{'a': 1}},
+                    'functionCall': <String, Object?>{'name': 'write'},
                   },
                 ],
               },
@@ -355,8 +358,10 @@ void main() {
               'content': <String, Object?>{
                 'parts': <Object?>[
                   <String, Object?>{
-                    // Continuation: no closing brace above, so this appends.
-                    'functionCall': <String, Object?>{'name': 'write', 'args': <String, Object?>{'b': 2}},
+                    'functionCall': <String, Object?>{
+                      'name': 'write',
+                      'args': <String, Object?>{'a': 1, 'b': 2},
+                    },
                   },
                 ],
               },
@@ -366,6 +371,7 @@ void main() {
       ]);
       final response = await gemini(transport).complete(request());
       expect(response.toolCalls, hasLength(1));
+      expect(response.toolCalls.single.name, 'write');
       expect(response.toolCalls.single.argumentsAsMap(), <String, Object?>{'a': 1, 'b': 2});
     });
 

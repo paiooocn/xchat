@@ -440,7 +440,7 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
             title: const Text('使用 max_completion_tokens'),
             onChanged: (value) => setState(() => _useMaxCompletionTokens = value),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           TextField(
             controller: _models,
             maxLines: 3,

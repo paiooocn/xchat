@@ -32,7 +32,7 @@ const kPresetDefaultBaseUrls = <String, String>{
   'zhipu': 'https://open.bigmodel.cn/api/paas/v4',
   'qwen': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   'minimax': '',
-  'mimo': 'https://api.siliconflow.cn/v1',
+  'mimo': 'https://api.xiaomimimo.com/v1',
   'openai': 'https://api.openai.com/v1',
   'openrouter': 'https://openrouter.ai/api/v1',
 };

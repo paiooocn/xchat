@@ -521,6 +521,8 @@ user 输入
   全局模型默认参数、续判模式、流式开关、代理（可选）。
 - **Provider 管理**：预设一键添加（deepseek/kimi/glm/mimo/minimax/qwen/openai/
   openrouter/ollama…）、自定义 baseUrl/apiKey/headers、测试连接、拉取模型。
+- **图片附件**：落盘在 `<sandbox>/attachments/`，XML 只存相对路径；发送时
+  base64 内联，文本 part 置于图片 part **之后**。格式：png / jpg / webp / gif / bmp。
 
 ---
 

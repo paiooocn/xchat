@@ -213,8 +213,8 @@ void main() {
         maxHistoryCharacters: 60,
       );
 
-      await chat.send('first question');
-      await chat.send('second question');
+      await chat.send('first question').toList();
+      await chat.send('second question').toList();
 
       expect(chat.history.first.role, ChatRole.system);
       expect(chat.history.where((m) => m.role == ChatRole.tool ||
@@ -229,18 +229,31 @@ void main() {
     });
 
     test('rejects a second concurrent turn', () async {
+      // A response that never arrives keeps the first turn genuinely in flight;
+      // an in-memory one would finish before the assertions run.
+      final controller = StreamController<List<int>>();
       final transport = ScriptedTransport(<FutureOr<TransportResponse> Function(TransportRequest)>[
-        ScriptedTransport.sse(answerRound('one')),
+        (request) => TransportResponse(
+              statusCode: 200,
+              headers: <String, List<String>>{'content-type': <String>['text/event-stream']},
+              byteStream: controller.stream,
+              uri: request.uri,
+            ),
       ]);
       final chat = session(transport);
-      final first = chat.send('a');
-      final subscription = first.listen((_) {});
       // The generator only starts on the first listen.
-      await Future<void>.delayed(Duration.zero);
+      final subscription = chat.send('a').listen((_) {});
+      await pumpEventQueue();
       expect(chat.isBusy, isTrue);
-      expect(() => chat.send('b'), throwsA(isA<StateError>()));
-      await subscription.cancel();
+      // `send` is lazy, so the guard surfaces as an error on the stream rather
+      // than as a synchronous throw.
+      await expectLater(chat.send('b'), emitsError(isA<StateError>()));
+
+      controller.add((await sseBytes(answerRound('one')).toList()).single);
+      await controller.close();
+      await pumpEventQueue();
       expect(chat.isBusy, isFalse);
+      await subscription.cancel();
     });
 
     test('round-trips through JSON', () async {
@@ -249,7 +262,7 @@ void main() {
         ScriptedTransport.sse(answerRound('sunny')),
       ]);
       final chat = session(transport, tools: <LlmTool>[weatherTool()]);
-      await chat.send('weather?');
+      await chat.send('weather?').toList();
 
       final json = chat.toJson();
       final restored = ChatSession(
@@ -269,7 +282,7 @@ void main() {
         ScriptedTransport.sse(answerRound('ok')),
       ]);
       final chat = session(transport);
-      await chat.send('hello');
+      await chat.send('hello').toList();
       chat.clear();
       expect(chat.history, hasLength(1));
       expect(chat.history.single.role, ChatRole.system);

@@ -1,5 +1,5 @@
 /// Streaming splitter for models that inline their thinking in the text
-/// channel, e.g. `...<｜end▁of▁thinking｜>answer`.
+/// channel, e.g. `...<｜begin▁of▁thinking｜>reasoning<｜end▁of▁thinking｜>answer`.
 ///
 /// The hard part is not finding the tags once the whole string is known — it is
 /// doing it **incrementally**, when `<thi` arrives at the end of one SSE chunk
@@ -9,6 +9,17 @@ library;
 
 /// Which channel a segment belongs to.
 enum ThinkSegmentType { content, reasoning }
+
+/// Full-width sentinel tokens emitted by DeepSeek/Qwen-style serving stacks.
+///
+/// They are always recognised, in addition to the `<think>`-style tags built
+/// from [ThinkTagParser.tags], because a gateway can switch between the two
+/// spellings mid-session and a model that emits the sentinel form would
+/// otherwise leak its reasoning into the answer.
+const List<String> kSentinelOpenTokens = <String>['<｜begin▁of▁thinking｜>'];
+
+/// Closing counterpart of [kSentinelOpenTokens].
+const List<String> kSentinelCloseTokens = <String>['<｜end▁of▁thinking｜>'];
 
 /// A contiguous run of text belonging to one channel.
 class ThinkSegment {
@@ -40,7 +51,7 @@ class ThinkParseResult {
   bool get hasReasoning => reasoning.isNotEmpty;
 }
 
-/// Incremental ` thinking… response` state machine.
+/// Incremental `<｜begin▁of▁thinking｜>…<｜end▁of▁thinking｜>` state machine.
 ///
 /// ```dart
 /// final parser = ThinkTagParser();
@@ -64,8 +75,8 @@ class ThinkTagParser {
     this.stripLeadingCloseTags = true,
     this.unterminatedAsReasoning = true,
     this.initialBufferLimit = 64,
-  })  : _openTokens = _buildTokens(tags, closing: false),
-        _closeTokens = _buildTokens(tags, closing: true),
+  })  : _openTokens = <String>[..._buildTokens(tags, closing: false), ...kSentinelOpenTokens],
+        _closeTokens = <String>[..._buildTokens(tags, closing: true), ...kSentinelCloseTokens],
         _inReasoning = startInReasoning {
     _allTokens = <String>[..._openTokens, ..._closeTokens];
   }
@@ -156,7 +167,13 @@ class ThinkTagParser {
         }
         final keep = _holdBack(_closeTokens);
         if (keep >= _buffer.length) return; // everything may still be a tag
-        _emit(ThinkSegmentType.reasoning, _buffer.substring(0, _buffer.length - keep));
+        // The block has no close tag yet. `unterminatedAsReasoning` decides how
+        // such a block is reported, and it must be applied here too — not just
+        // in the `atEnd` branch — otherwise the flag is a no-op for streaming.
+        _emit(
+          unterminatedAsReasoning ? ThinkSegmentType.reasoning : ThinkSegmentType.content,
+          _buffer.substring(0, _buffer.length - keep),
+        );
         _buffer = _buffer.substring(_buffer.length - keep);
         return;
       }
@@ -200,7 +217,10 @@ class ThinkTagParser {
 
   void _emit(ThinkSegmentType type, String text) {
     if (text.isEmpty) return;
-    _emittedAnything = true;
+    // Leading whitespace is not "real output": a pre-filled prefix that only
+    // contributes newlines must not disable the stray-close-tag strip, which is
+    // exactly the shape of the artefact we are trying to remove.
+    if (text.trim().isNotEmpty) _emittedAnything = true;
     _out.add(ThinkSegment(type, text));
   }
 

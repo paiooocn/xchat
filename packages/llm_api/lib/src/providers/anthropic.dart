@@ -109,6 +109,8 @@ class AnthropicProvider extends HttpLlmProvider {
     required this.config,
     super.transport,
     super.maxRetries,
+    super.retryBaseDelay,
+    super.retryMaxDelay,
     super.connectTimeout,
     super.idleTimeout,
   });
@@ -315,6 +317,29 @@ class AnthropicProvider extends HttpLlmProvider {
 
   // ---------------------------------------------------------------- decoding
 
+  /// Converts one Anthropic `usage` frame into an increment.
+  ///
+  /// Anthropic reports `output_tokens` as a *running total* — `1` on
+  /// `message_start`, the final count on `message_delta` — whereas
+  /// [UsageEvent]s are aggregated by summation. Emitting both readings verbatim
+  /// double-counts (1 + 7 = 8), so each frame contributes only the growth since
+  /// the previous one.
+  static TokenUsage _usageDelta(AnthropicContext ctx, Map<String, Object?> usage) {
+    final reported = TokenUsage.fromAnthropic(usage);
+    final output = reported.outputTokens;
+    if (output == null) return reported;
+    final previous = ctx.scratch[_kOutputTokensSeen] as int? ?? 0;
+    ctx.scratch[_kOutputTokensSeen] = output;
+    return TokenUsage(
+      inputTokens: reported.inputTokens,
+      outputTokens: output > previous ? output - previous : 0,
+      reasoningTokens: reported.reasoningTokens,
+      cachedInputTokens: reported.cachedInputTokens,
+    );
+  }
+
+  static const String _kOutputTokensSeen = 'anthropic_output_tokens_seen';
+
   @override
   Iterable<ChatEvent> decodeChunk(Map<String, Object?> payload, ReasoningContext context) sync* {
     final ctx = context as AnthropicContext;
@@ -326,7 +351,7 @@ class AnthropicProvider extends HttpLlmProvider {
         final usage = asMap(message['usage']);
         ctx.scratch['id'] = asString(message['id']);
         ctx.scratch['model'] = asString(message['model']);
-        if (usage.isNotEmpty) yield UsageEvent(TokenUsage.fromAnthropic(usage));
+        if (usage.isNotEmpty) yield UsageEvent(_usageDelta(ctx, usage));
         return;
 
       case 'content_block_start':
@@ -384,7 +409,7 @@ class AnthropicProvider extends HttpLlmProvider {
           context.finishReason = FinishReason.parse(stop);
         }
         final usage = asMap(payload['usage']);
-        if (usage.isNotEmpty) yield UsageEvent(TokenUsage.fromAnthropic(usage));
+        if (usage.isNotEmpty) yield UsageEvent(_usageDelta(ctx, usage));
         return;
 
       case 'error':

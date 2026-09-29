@@ -11,6 +11,7 @@
 /// ```
 library;
 
+import '../core/content_part.dart';
 import '../thinking/reasoning_router.dart';
 import '../transport/transport.dart';
 import 'anthropic.dart';
@@ -130,6 +131,22 @@ abstract final class LlmPresets {
           reasoningSource: ReasoningSource.auto,
           reasoningRequestStyle: OpenAiReasoningRequestStyle.thinkingBudget,
           capabilities: const ProviderCapabilities(supportsReasoningBudget: true),
+        ),
+        transport: transport,
+      );
+
+  /// Xiaomi MiMo (`mimo-v2.6-pro` / `-flash`).
+  static OpenAiCompatibleProvider mimo({
+    required String apiKey,
+    Uri? baseUrl,
+    HttpTransport? transport,
+  }) =>
+      OpenAiCompatibleProvider(
+        config: OpenAiCompatibleConfig(
+          baseUrl: baseUrl ?? Uri.parse('https://api.xiaomimimo.com/v1'),
+          name: 'mimo',
+          apiKey: apiKey,
+          reasoningSource: ReasoningSource.field,
         ),
         transport: transport,
       );

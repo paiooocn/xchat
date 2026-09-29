@@ -66,10 +66,11 @@ List<ContentPart> partsFromJson(Object? value) {
   final out = <ContentPart>[];
   for (final raw in asList(value)) {
     final map = asMap(raw);
-    if (map['type'] == 'image') {
-      out.add(ImagePart.fromJson(map));
-    } else {
-      out.add(TextPart(asString(map['text']) ?? ''));
+    switch (map['type']) {
+      case 'image':
+        out.add(ImagePart.fromJson(map));
+      default:
+        out.add(TextPart(asString(map['text']) ?? ''));
     }
   }
   return out;

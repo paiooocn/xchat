@@ -35,6 +35,9 @@ dependencies:
   html: ^0.15.4
   intl: ^0.20.0
 
+  # Multimodal input: pick image files to send to the LLM
+  file_picker: ^8.1.4
+
   # Web search (multi-engine meta search: DDG/Google/Bing/Brave/…)
   ddgs: ^0.3.2
 

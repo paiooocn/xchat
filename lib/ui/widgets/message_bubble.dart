@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../models/message_attachment.dart';
 import '../../models/session_message.dart';
 import 'markdown_view.dart';
 import 'thinking_block.dart';
@@ -80,13 +83,14 @@ class MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            if (message.hasAttachments) _attachmentStrip(context),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: theme.colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: markdownView(text),
+              child: text.isEmpty ? const SizedBox.shrink() : markdownView(text),
             ),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -110,6 +114,66 @@ class MessageBubble extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Thumbnails for the images a user turn carried. Missing files
+  /// are shown as a muted chip rather than a broken image box.
+  Widget _attachmentStrip(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: [
+          for (final file in message.attachments)
+            if (!file.isAvailable)
+              _missingChip(theme, file.name)
+            else
+              _thumbnail(context, file),
+        ],
+      ),
+    );
+  }
+
+  Widget _missingChip(ThemeData theme, String name) => Tooltip(
+        message: name,
+        child: Chip(
+          avatar: Icon(Icons.broken_image_outlined, size: 16, color: theme.disabledColor),
+          label: const Text('文件已丢失'),
+          visualDensity: VisualDensity.compact,
+        ),
+      );
+
+  Widget _thumbnail(BuildContext context, MessageAttachment file) => ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: () => _showFullscreen(context, file),
+          child: Image.file(
+            File(file.path!),
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox(
+              width: 120,
+              height: 120,
+              child: Icon(Icons.broken_image_outlined),
+            ),
+          ),
+        ),
+      );
+
+  void _showFullscreen(BuildContext context, MessageAttachment file) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        child: InteractiveViewer(
+          maxScale: 6,
+          child: Image.file(File(file.path!), fit: BoxFit.contain),
         ),
       ),
     );

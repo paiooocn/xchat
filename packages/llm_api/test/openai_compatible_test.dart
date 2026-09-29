@@ -51,8 +51,8 @@ void main() {
           messages: <ChatMessage>[
             ChatMessage.system('be nice'),
             ChatMessage.user('hi'),
+            // A pure tool-call turn: no visible text, so no `content` key.
             ChatMessage.assistant(
-              content: 'let me look',
               toolCalls: const <ToolCall>[
                 ToolCall(id: 'call_1', name: 'lookup', arguments: '{"q":"x"}'),
               ],
@@ -69,7 +69,7 @@ void main() {
 
       final body = transport.lastBody;
       expect(transport.lastRequest!.uri.toString(), 'https://api.test/v1/chat/completions');
-      expect(transport.lastRequest!.headers['authorization'], 'Bearer sk-test');
+      expect(transport.lastRequest!.headers['Authorization'], 'Bearer sk-test');
       expect(body['model'], 'm');
       expect(body['stream'], isTrue);
       expect(body['stream_options'], <String, Object?>{'include_usage': true});
@@ -227,7 +227,12 @@ void main() {
     test('extracts inline think tags when the gateway inlines them', () async {
       final transport = MockHttpTransport.sse(
         <Object?>[
-          for (final chunk in <String>['Bal', 'ance the eq', 'uation:  thinking2+2', '=4<｜end▁of▁thinking｜>4'])
+          for (final chunk in <String>[
+            'Bal',
+            'ance the eq',
+            'uation: <｜begin▁of▁thinking｜>2+2',
+            '=4<｜end▁of▁thinking｜>4',
+          ])
             <String, Object?>{
               'choices': <Object?>[
                 <String, Object?>{'delta': <String, Object?>{'content': chunk}},
@@ -328,12 +333,12 @@ void main() {
               },
             },
           ],
-          <String, Object?>{
-            'choices': <Object?>[
-              <String, Object?>{'delta': <String, Object?>{}, 'finish_reason': 'tool_calls'},
-            ],
-          },
-        ],
+        },
+        <String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{'delta': <String, Object?>{}, 'finish_reason': 'tool_calls'},
+          ],
+        },
       ]);
 
       final response = await build(transport).complete(simpleRequest());

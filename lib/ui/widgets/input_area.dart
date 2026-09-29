@@ -1,8 +1,10 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/agent_mode.dart';
+import '../../models/message_attachment.dart';
 /// Intent: send the current text.
 class _SendIntent extends Intent {
   const _SendIntent();
@@ -35,7 +37,7 @@ class InputArea extends StatefulWidget {
     this.hint = 'Enter 发送，Ctrl+Enter 换行',
   });
 
-  final void Function(String text) onSend;
+  final void Function(String text, List<MessageAttachment> attachments) onSend;
   final VoidCallback onStop;
   final bool running;
   final AgentMode mode;
@@ -56,6 +58,7 @@ class InputArea extends StatefulWidget {
 
   /// Optional scroll-to-bottom action shown in the toolbar.
   final VoidCallback? onScrollToBottom;
+
   final String hint;
 
   @override
@@ -66,6 +69,9 @@ class _InputAreaState extends State<InputArea> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
 
+  /// Files staged for the next send. Cleared once the message is handed off.
+  final List<MessageAttachment> _pending = <MessageAttachment>[];
+
   @override
   void dispose() {
     _controller.dispose();
@@ -75,10 +81,58 @@ class _InputAreaState extends State<InputArea> {
 
   void _send() {
     final text = _controller.text.trim();
-    if (text.isEmpty || widget.running) return;
+    if (widget.running) return;
+    if (text.isEmpty && _pending.isEmpty) return;
     _controller.clear();
-    widget.onSend(text);
+    final files = List<MessageAttachment>.of(_pending);
+    setState(_pending.clear);
+    widget.onSend(text, files);
     _focus.requestFocus();
+  }
+
+  /// Opens the system picker and stages whatever comes back.
+  Future<void> _pickImages() async {
+    const extensions = <String>['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: extensions,
+        allowMultiple: true,
+      );
+      if (result == null || result.paths.isEmpty) return;
+      final staged = <MessageAttachment>[];
+      final rejected = <String>[];
+      for (final file in result.files) {
+        final path = file.path;
+        if (path == null) {
+          rejected.add(file.name);
+          continue;
+        }
+        final attachment = MessageAttachment.fromFile(path, name: file.name);
+        if (attachment == null) {
+          rejected.add(file.name);
+        } else {
+          staged.add(attachment);
+        }
+      }
+      if (!mounted) return;
+      setState(() => _pending.addAll(staged));
+      if (rejected.isNotEmpty) {
+        _toast('已忽略不支持的文件：${rejected.join('、')}');
+      }
+    } catch (error) {
+      if (mounted) _toast('选择文件失败：$error');
+    }
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+    );
+  }
+
+  void _removePending(MessageAttachment attachment) {
+    setState(() => _pending.remove(attachment));
   }
 
   void _insertNewline() {
@@ -156,6 +210,11 @@ class _InputAreaState extends State<InputArea> {
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               const Spacer(),
+              IconButton(
+                onPressed: widget.running ? null : _pickImages,
+                tooltip: '添加图片',
+                icon: const Icon(Icons.image_outlined),
+              ),
               if (widget.onCompress != null)
                 IconButton(
                   onPressed: widget.running ? null : widget.onCompress,
@@ -179,6 +238,31 @@ class _InputAreaState extends State<InputArea> {
             ],
           ),
           const SizedBox(height: 8),
+          // Staged attachments: they ride along with the next message and are
+          // deliberately kept out of the text controller.
+          if (_pending.isNotEmpty) ...[
+            SizedBox(
+              height: 76,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _pending.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final file = _pending[index];
+                  return InputChip(
+                    avatar: const Icon(Icons.image, size: 18),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 160),
+                      child: Text(file.name, overflow: TextOverflow.ellipsis),
+                    ),
+                    onDeleted: () => _removePending(file),
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           // Input row: text field with the send / stop button on its right,
           // outside the field.
           Row(

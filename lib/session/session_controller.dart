@@ -5,6 +5,7 @@ import '../agent/agent_events.dart';
 import '../data/session_repository.dart';
 import '../models/app_config.dart';
 import '../models/agent_mode.dart';
+import '../models/message_attachment.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_message.dart';
@@ -73,12 +74,14 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> send(String text) async {
+  Future<void> send(String text, {List<MessageAttachment>? attachments}) async {
     final session = _session;
-    if (session == null || _running || text.trim().isEmpty) return;
+    final files = attachments ?? const <MessageAttachment>[];
+    if (session == null || _running) return;
+    if (text.trim().isEmpty && files.isEmpty) return;
     _error = null;
     _notice = null;
-    await _run(() => _engine!.run(userText: text));
+    await _run(() => _engine!.run(userText: text, attachments: files));
   }
 
   /// Re-runs using the existing history (after editing the last user message).

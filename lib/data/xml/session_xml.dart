@@ -3,6 +3,7 @@ import 'package:xml/xml.dart';
 
 import '../../core/app_paths.dart';
 import '../../models/agent_mode.dart';
+import '../../models/message_attachment.dart';
 import '../../models/session.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
@@ -75,6 +76,18 @@ class SessionXml {
           out.close('system');
         case MessageRole.user:
           out.open('user', _attrs({'id': message.id}));
+          if (message.hasAttachments) {
+            out.open('attachments');
+            for (final file in message.attachments) {
+              // The path is machine-readable, never prose: plain text, not CDATA.
+              out.leafText('attachment', file.path ?? '', _attrs({
+                'kind': 'image',
+                'mime': file.mimeType,
+                'name': file.name,
+              }));
+            }
+            out.close('attachments');
+          }
           out.leaf('content', message.content);
           out.close('user');
         case MessageRole.assistant:
@@ -196,6 +209,7 @@ class SessionXml {
             role: MessageRole.user,
             id: element.getAttribute('id'),
             content: readTextOrEmpty(element, 'content'),
+            attachments: _decodeAttachments(element, session.sandbox),
           ));
         case 'assistant':
           session.messages.add(_decodeAssistant(element));
@@ -213,6 +227,23 @@ class SessionXml {
 
     session.ensureSystem();
     return session;
+  }
+
+  /// Reads `<attachments>` and resolves each path against the session sandbox.
+  static List<MessageAttachment> _decodeAttachments(XmlElement user, String sandbox) {
+    final container = user.getElement('attachments');
+    if (container == null) return <MessageAttachment>[];
+    final out = <MessageAttachment>[];
+    for (final element in container.findElements('attachment')) {
+      final relative = element.innerText.trim();
+      if (relative.isEmpty) continue;
+      out.add(MessageAttachment(
+        mimeType: element.getAttribute('mime') ?? 'image/png',
+        name: element.getAttribute('name') ?? '',
+        path: p.isAbsolute(relative) ? relative : p.join(sandbox, relative),
+      ));
+    }
+    return out;
   }
 
   static SessionMessage _decodeAssistant(XmlElement element) {

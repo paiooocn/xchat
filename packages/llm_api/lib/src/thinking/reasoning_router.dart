@@ -10,7 +10,8 @@ enum ReasoningSource {
   /// `reasoning`, Qwen `reasoning_content`, …
   field,
 
-  /// Inlined in the content between ` thinking…<｜end▁of▁thinking｜>` markers.
+  /// Inlined in the content between `<｜begin▁of▁thinking｜>` and
+  /// `<｜end▁of▁thinking｜>` markers.
   inlineTags,
 
   /// Prefer the field, but also strip tags out of the content (safe default:

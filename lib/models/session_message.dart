@@ -1,4 +1,5 @@
 import '../core/json_utils.dart';
+import 'message_attachment.dart';
 import 'token_usage.dart';
 
 /// How historical thinking text is echoed back to the model.
@@ -73,11 +74,13 @@ class SessionMessage {
     this.reasoning,
     this.reasoningMode,
     List<ToolCallData>? toolCalls,
+    List<MessageAttachment>? attachments,
     this.toolCallId,
     this.toolName,
     this.isError = false,
     this.usage = TokenUsage.empty,
-  }) : toolCalls = toolCalls ?? <ToolCallData>[];
+  })  : toolCalls = toolCalls ?? <ToolCallData>[],
+        attachments = attachments ?? <MessageAttachment>[];
 
   MessageRole role;
   String? id;
@@ -90,6 +93,10 @@ class SessionMessage {
   String? reasoningMode;
 
   List<ToolCallData> toolCalls;
+
+  /// Images sent with this message (user turns only).
+  List<MessageAttachment> attachments;
+
   String? toolCallId;
   String? toolName;
   bool isError;
@@ -98,6 +105,8 @@ class SessionMessage {
   TokenUsage usage;
 
   bool get hasToolCalls => toolCalls.isNotEmpty;
+
+  bool get hasAttachments => attachments.isNotEmpty;
 
   bool get hasReasoning => reasoning != null && reasoning!.isNotEmpty;
 
@@ -108,6 +117,7 @@ class SessionMessage {
     String? reasoning,
     String? reasoningMode,
     List<ToolCallData>? toolCalls,
+    List<MessageAttachment>? attachments,
     String? toolCallId,
     String? toolName,
     bool? isError,
@@ -120,6 +130,7 @@ class SessionMessage {
         reasoning: reasoning ?? this.reasoning,
         reasoningMode: reasoningMode ?? this.reasoningMode,
         toolCalls: toolCalls ?? this.toolCalls,
+        attachments: attachments ?? this.attachments,
         toolCallId: toolCallId ?? this.toolCallId,
         toolName: toolName ?? this.toolName,
         isError: isError ?? this.isError,
@@ -134,6 +145,8 @@ class SessionMessage {
         if (reasoningMode != null) 'reasoning_mode': reasoningMode,
         if (toolCalls.isNotEmpty)
           'tool_calls': toolCalls.map((call) => call.toJson()).toList(),
+        if (attachments.isNotEmpty)
+          'attachments': [for (final file in attachments) file.toJson()],
         if (toolCallId != null) 'tool_call_id': toolCallId,
         if (toolName != null) 'tool_name': toolName,
         if (isError) 'is_error': true,
@@ -149,6 +162,8 @@ class SessionMessage {
       reasoning: asString(json['reasoning']),
       reasoningMode: asString(json['reasoning_mode']),
       toolCalls: asList(json['tool_calls']).map(ToolCallData.fromJson).toList(),
+      attachments:
+          asList(json['attachments']).map(MessageAttachment.fromJson).toList(),
       toolCallId: asString(json['tool_call_id']),
       toolName: asString(json['tool_name']),
       isError: asBool(json['is_error']),

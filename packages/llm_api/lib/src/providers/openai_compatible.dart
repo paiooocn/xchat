@@ -174,6 +174,8 @@ class OpenAiCompatibleProvider extends HttpLlmProvider {
     required this.config,
     super.transport,
     super.maxRetries,
+    super.retryBaseDelay,
+    super.retryMaxDelay,
     super.connectTimeout,
     super.idleTimeout,
     super.ownsTransport,

@@ -395,12 +395,12 @@ class AppConfig {
         ProviderConfig(
           id: 'mimo',
           name: 'MiMo',
-          baseUrl: 'https://api.siliconflow.cn/v1',
+          baseUrl: 'https://api.xiaomimimo.com/v1',
           preset: 'mimo',
           reasoningSource: 'auto',
           reasoningStyle: 'none',
-          models: <String>['XiaomiMiMo/MiMo-VL-7B-RL'],
-          contextWindow: 32768,
+          models: <String>['mimo-v2.6-pro', 'mimo-v2.6-flash'],
+          contextWindow: 262144,
         ),
         ProviderConfig(
           id: 'openai',

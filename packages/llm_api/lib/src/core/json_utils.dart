@@ -71,16 +71,15 @@ Map<String, Object?> deepMerge(Map<String, Object?> base, Map<String, Object?> o
 }
 
 /// Removes entries whose value is `null` (recursively) before serialising.
+///
+/// Nested maps are kept even when they end up empty: `{"properties": {}}` is a
+/// meaningful JSON Schema fragment, and dropping it silently changes the wire
+/// payload (strict gateways reject a tool whose schema lost its `properties`).
 Map<String, Object?> pruneNulls(Map<String, Object?> input) {
   final out = <String, Object?>{};
   input.forEach((key, value) {
     if (value == null) return;
-    if (value is Map) {
-      final nested = pruneNulls(asMap(value));
-      if (nested.isNotEmpty) out[key] = nested;
-    } else {
-      out[key] = value;
-    }
+    out[key] = value is Map ? pruneNulls(asMap(value)) : value;
   });
   return out;
 }
