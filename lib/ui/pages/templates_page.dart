@@ -25,6 +25,7 @@ class TemplatesPage extends StatelessWidget {
         label: const Text('新建模板'),
       ),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: 88),
         children: [
           for (final template in state.templates)
             ListTile(

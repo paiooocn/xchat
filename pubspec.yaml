@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.1.14+1
+version: 0.1.15+1
 license: MIT
 
 environment:
@@ -36,7 +36,9 @@ dependencies:
   intl: ^0.20.0
 
   # Multimodal input: pick image files to send to the LLM
-  file_picker: ^8.1.4
+  # >=10 required: older releases hardcode compileSdk 34 in their own
+  # android/build.gradle and fail AAR metadata checks against AGP 9 / SDK 36.
+  file_picker: ^13.1.0
 
   # Web search (multi-engine meta search: DDG/Google/Bing/Brave/…)
   ddgs: ^0.3.2

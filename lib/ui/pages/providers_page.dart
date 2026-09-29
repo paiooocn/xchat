@@ -39,6 +39,7 @@ class ProvidersPage extends StatelessWidget {
           await state.saveConfig();
         },
         child: ListView(
+          padding: const EdgeInsets.only(bottom: 88),
           children: [
             _FeatureModelBanner(state: state),
             for (final provider in state.config.providers)

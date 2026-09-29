@@ -101,16 +101,15 @@ class _InputAreaState extends State<InputArea> {
   Future<void> _pickImages() async {
     const extensions = <String>['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: extensions,
-        allowMultiple: true,
       );
-      if (result == null || result.paths.isEmpty) return;
+      if (files.isEmpty) return;
       final staged = <MessageAttachment>[];
       final rejected = <String>[];
       final oversized = <String>[];
-      for (final file in result.files) {
+      for (final file in files) {
         final path = file.path;
         if (path == null) {
           rejected.add(file.name);

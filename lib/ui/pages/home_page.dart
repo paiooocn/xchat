@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'dart:async';
 import 'package:llm_api/llm_api.dart' as llm;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_paths.dart';
 import '../../models/project.dart';
@@ -40,6 +41,38 @@ class _HomePageState extends State<HomePage> {
 
   /// Selected session tag filters (empty = show all).
   final Set<String> _tagFilter = <String>{};
+
+  /// Whether the global sessions section is expanded (persisted).
+  bool _globalSessionsExpanded = true;
+
+  static const _globalExpandedKey = 'xchat_global_sessions_expanded';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGlobalExpanded();
+  }
+
+  Future<void> _loadGlobalExpanded() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getBool(_globalExpandedKey);
+      if (value != null && mounted) {
+        setState(() => _globalSessionsExpanded = value);
+      }
+    } catch (_) {
+      // Ignore — use default (expanded).
+    }
+  }
+
+  Future<void> _saveGlobalExpanded(bool expanded) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_globalExpandedKey, expanded);
+    } catch (_) {
+      // Ignore — state is still kept in memory.
+    }
+  }
 
   void _toggleTag(String tag) {
     setState(() {
@@ -214,6 +247,11 @@ class _HomePageState extends State<HomePage> {
                         selectedId: _selectedId,
                         tagFilter: _tagFilter,
                         onTagToggle: _toggleTag,
+                        globalSessionsExpanded: _globalSessionsExpanded,
+                        onGlobalExpandedChanged: (expanded) {
+                          setState(() => _globalSessionsExpanded = expanded);
+                          _saveGlobalExpanded(expanded);
+                        },
                         showHeader: true,
                         onSelect: (id) => _openSession(context, id),
                         onNewSession: (projectId) => _newSession(context, projectId: projectId),
@@ -241,6 +279,11 @@ class _HomePageState extends State<HomePage> {
                   selectedId: _selectedId,
                   tagFilter: _tagFilter,
                   onTagToggle: _toggleTag,
+                  globalSessionsExpanded: _globalSessionsExpanded,
+                  onGlobalExpandedChanged: (expanded) {
+                    setState(() => _globalSessionsExpanded = expanded);
+                    _saveGlobalExpanded(expanded);
+                  },
                   showHeader: false,
                   onSelect: (id) async {
                     await _openSession(context, id);
@@ -342,6 +385,8 @@ class _Sidebar extends StatelessWidget {
     required this.onNewProject,
     required this.tagFilter,
     required this.onTagToggle,
+    required this.globalSessionsExpanded,
+    required this.onGlobalExpandedChanged,
     this.onEditProject,
     this.showHeader = false,
   });
@@ -354,6 +399,8 @@ class _Sidebar extends StatelessWidget {
   final VoidCallback onNewProject;
   final Set<String> tagFilter;
   final void Function(String tag) onTagToggle;
+  final bool globalSessionsExpanded;
+  final void Function(bool expanded) onGlobalExpandedChanged;
   final void Function(Project project)? onEditProject;
   final bool showHeader;
 
@@ -417,19 +464,28 @@ class _Sidebar extends StatelessWidget {
                   ),
                 ),
               // ---- 全局会话 ------------------------------------------
-              _sectionHeader(context, '全局会话'),
-              for (final session in global)
-                _SessionTile(
-                  session: session,
-                  selected: session.id == selectedId,
-                  leading: const Icon(Icons.chat_bubble_outline, size: 20),
-                  onTap: () => onSelect(session.id),
-                ),
-              if (global.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: Text('暂无全局会话', style: TextStyle(color: Colors.grey)),
-                ),
+              ExpansionTile(
+                initiallyExpanded: globalSessionsExpanded,
+                onExpansionChanged: onGlobalExpandedChanged,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                leading: const Icon(Icons.public_outlined, size: 20),
+                title: const Text('全局会话'),
+                children: [
+                  for (final session in global)
+                    _SessionTile(
+                      session: session,
+                      selected: session.id == selectedId,
+                      indent: 12,
+                      leading: const Icon(Icons.chat_bubble_outline, size: 20),
+                      onTap: () => onSelect(session.id),
+                    ),
+                  if (global.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
+                      child: Text('暂无全局会话', style: TextStyle(color: Colors.grey)),
+                    ),
+                ],
+              ),
               const Divider(height: 1),
               // ---- 项目 ----------------------------------------------
               Padding(
@@ -480,10 +536,6 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  static Widget _sectionHeader(BuildContext context, String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-        child: Text(text, style: Theme.of(context).textTheme.labelLarge),
-      );
 }
 
 /// A project row that expands to reveal its own sessions.
