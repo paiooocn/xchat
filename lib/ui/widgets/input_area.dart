@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/agent_mode.dart';
+import '../../models/app_config.dart';
 import '../../models/message_attachment.dart';
 /// Intent: send the current text.
 class _SendIntent extends Intent {
@@ -34,6 +37,7 @@ class InputArea extends StatefulWidget {
     this.onCompress,
     this.onScrollToRecent,
     this.onScrollToBottom,
+    this.maxAttachmentBytes = kDefaultMaxAttachmentBytes,
     this.hint = 'Enter 发送，Ctrl+Enter 换行',
   });
 
@@ -58,6 +62,9 @@ class InputArea extends StatefulWidget {
 
   /// Optional scroll-to-bottom action shown in the toolbar.
   final VoidCallback? onScrollToBottom;
+
+  /// Per-image transfer cap; 0 = no limit (see `AppConfig.maxAttachmentBytes`).
+  final int maxAttachmentBytes;
 
   final String hint;
 
@@ -102,6 +109,7 @@ class _InputAreaState extends State<InputArea> {
       if (result == null || result.paths.isEmpty) return;
       final staged = <MessageAttachment>[];
       final rejected = <String>[];
+      final oversized = <String>[];
       for (final file in result.files) {
         final path = file.path;
         if (path == null) {
@@ -111,15 +119,28 @@ class _InputAreaState extends State<InputArea> {
         final attachment = MessageAttachment.fromFile(path, name: file.name);
         if (attachment == null) {
           rejected.add(file.name);
-        } else {
-          staged.add(attachment);
+          continue;
         }
+        // Images go out base64-inline; an oversized one is a transport
+        // problem, so refuse it here rather than letting the request fail.
+        final cap = widget.maxAttachmentBytes;
+        final size = await File(path).length();
+        if (cap > 0 && size > cap) {
+          oversized.add(file.name);
+          continue;
+        }
+        staged.add(attachment);
       }
       if (!mounted) return;
       setState(() => _pending.addAll(staged));
-      if (rejected.isNotEmpty) {
-        _toast('已忽略不支持的文件：${rejected.join('、')}');
-      }
+      final notes = <String>[
+        if (rejected.isNotEmpty) '已忽略不支持的文件：${rejected.join('、')}',
+        if (oversized.isNotEmpty)
+          '已忽略超过体积上限的文件：${oversized.join('、')}'
+              '（上限 ${(widget.maxAttachmentBytes / (1024 * 1024)).toStringAsFixed(0)} MB，'
+              '可在设置中调整）',
+      ];
+      if (notes.isNotEmpty) _toast(notes.join('\n'));
     } catch (error) {
       if (mounted) _toast('选择文件失败：$error');
     }

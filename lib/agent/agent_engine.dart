@@ -18,6 +18,8 @@ import '../models/shell_policy.dart';
 import '../models/token_usage.dart';
 import 'agent_events.dart';
 import 'tools/builtin_tools.dart';
+import 'tools/image_attach.dart';
+import 'tools/path_guard.dart';
 
 /// Drives a ReAct turn for one session: model → tools → model … with a
 /// tool-call budget and an automatic continue-decision when the budget is hit.
@@ -86,6 +88,7 @@ class AgentEngine {
       searchEngines: config.searchEngines,
       proxy: config.proxy,
       shellEnabled: config.shellCommandsConfigured,
+      maxAttachmentBytes: config.maxAttachmentBytes,
     ));
 
     try {
@@ -207,13 +210,20 @@ class AgentEngine {
                   llm.ToolCall(id: call.id, name: call.name, arguments: call.arguments),
                   cancel: token,
                 );
+          // An image the model cannot see on its own (`attach_image`, or
+          // `read_file` on a picture): copy it into the sandbox and hang it
+          // off this tool message, so the outbound adapter can send it as an
+          // image part next turn.
+          final toolId = _shortId();
+          final attached = await _attachToolImage(toolId, call);
           session.messages.add(SessionMessage(
             role: MessageRole.tool,
-            id: _shortId(),
+            id: toolId,
             toolCallId: call.id,
             toolName: call.name,
-            content: result.content,
-            isError: result.isError,
+            content: attached.error ?? result.content,
+            isError: result.isError || attached.error != null,
+            attachments: attached.stored,
           ));
           session.toolCalls += 1;
           yield AgentToolResult(
@@ -335,10 +345,37 @@ class AgentEngine {
     return '';
   }
 
+  /// Resolves the `path` of an image-carrying tool call (`attach_image`, or
+  /// `read_file` on a picture) and stores the image in the session sandbox.
+  /// Re-validated here (not trusted from the tool) so a refused image can
+  /// never end up silently attached with an "ok" result.
+  Future<ToolImageAttachment> _attachToolImage(
+    String messageId,
+    ToolCallData call,
+  ) async {
+    final raw = toolImagePath(call.name, call.arguments);
+    if (raw == null) {
+      return const ToolImageAttachment(<MessageAttachment>[], null);
+    }
+    final result = await resolveAttachableImage(
+      guard: PathGuard(session.sandbox),
+      maxBytes: config.maxAttachmentBytes,
+      rawPath: raw,
+    );
+    if (!result.ok) return ToolImageAttachment(const <MessageAttachment>[], result.error);
+    final stored = await _storeAttachments(messageId, [result.attachment!]);
+    if (stored.isEmpty) {
+      return const ToolImageAttachment(<MessageAttachment>[], 'ERROR: 图片读取失败，未能附加');
+    }
+    return ToolImageAttachment(stored, null);
+  }
+
   /// Copies the picked files into `<sandbox>/attachments/` and returns the
   /// attachments pointing at their new sandbox-relative home. Copying (rather
   /// than referencing the original path) keeps the session self-contained when
-  /// the XML is moved or the source file is deleted.
+  /// the XML is moved or the source file is deleted. Files over the configured
+  /// size cap are dropped: the payload goes out base64-inline, so an oversized
+  /// image is a transport problem, not a token one.
   Future<List<MessageAttachment>> _storeAttachments(
     String messageId,
     List<MessageAttachment> picked,
@@ -357,6 +394,8 @@ class AgentEngine {
         await dir.create(recursive: true);
         final bytes = await file.readBytes();
         if (bytes == null) continue; // source vanished between pick and send
+        final cap = config.maxAttachmentBytes;
+        if (cap > 0 && bytes.length > cap) continue;
         await File(target).writeAsBytes(bytes, flush: true);
         stored.add(file.copyWith(path: target));
       } catch (_) {

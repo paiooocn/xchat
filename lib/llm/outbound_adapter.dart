@@ -59,6 +59,13 @@ Future<List<llm.ChatMessage>> buildChatMessages(
           name: message.toolName,
           isError: message.isError,
         ));
+        // An OpenAI-compatible `tool` message can only carry a string, so an
+        // image the agent produced cannot ride on it. Follow it with a user
+        // message holding just the image parts — the one encoding all
+        // OpenAI-compatible endpoints agree on.
+        if (message.hasAttachments) {
+          out.add(llm.ChatMessage.userParts(await _imageParts(message)));
+        }
       case MessageRole.assistant:
         final calls = message.toolCalls
             .map((call) => llm.ToolCall(
@@ -88,6 +95,16 @@ Future<List<llm.ChatMessage>> buildChatMessages(
 /// no usable attachment and can go out as plain text.
 Future<List<llm.ContentPart>?> _userParts(SessionMessage message) async {
   if (!message.hasAttachments) return null;
+  final parts = await _imageParts(message);
+  // Text goes last: the vendor docs put the prompt *after* the media part.
+  final text = message.content?.trim() ?? '';
+  if (text.isNotEmpty) parts.add(llm.TextPart(text));
+  return parts;
+}
+
+/// The image parts of a turn; a file that vanished degrades to a visible text
+/// marker rather than silently shrinking the request.
+Future<List<llm.ContentPart>> _imageParts(SessionMessage message) async {
   final parts = <llm.ContentPart>[];
   for (final file in message.attachments) {
     final bytes = await file.readBytes();
@@ -100,9 +117,6 @@ Future<List<llm.ContentPart>?> _userParts(SessionMessage message) async {
       mimeType: file.mimeType,
     ));
   }
-  // Text goes last: the vendor docs put the prompt *after* the media part.
-  final text = message.content?.trim() ?? '';
-  if (text.isNotEmpty) parts.add(llm.TextPart(text));
   return parts;
 }
 

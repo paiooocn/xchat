@@ -7,16 +7,18 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:llm_api/llm_api.dart';
 import 'package:path/path.dart' as p;
 
+import '../../models/app_config.dart';
 import '../../models/proxy_config.dart';
 import '../../models/search_engine_config.dart';
 import 'browser_session.dart';
+import 'image_attach.dart';
 import 'path_guard.dart';
 import 'tavily_api.dart';
 
 /// The catalogue of built-in tools and their metadata.
 class BuiltinTools {
   static const descriptions = <String, String>{
-    'read_file': '读取文件内容（限会话沙箱目录）',
+    'read_file': '读取文件内容（限会话沙箱目录；图片文件会作为图像返回给模型）',
     'write_file': '写入文件（自动创建目录，限沙箱）',
     'edit_file': '对文件做精确字符串替换编辑',
     'list_dir': '列出目录内容',
@@ -24,6 +26,7 @@ class BuiltinTools {
     'shell': '执行 shell 命令（桌面端，工作目录=沙箱）',
     'http_fetch': '抓取网页/接口文本内容',
     'web_search': '联网搜索（引擎可配置：bing/duckduckgo，可走代理）',
+    'attach_image': '把沙箱内的图片附加到对话（模型下一轮即可看到）',
     'datetime': '获取当前日期时间',
   };
 
@@ -34,6 +37,7 @@ class BuiltinTools {
     List<SearchEngineConfig> searchEngines = const <SearchEngineConfig>[],
     ProxyConfig? proxy,
     bool shellEnabled = true,
+    int maxAttachmentBytes = kDefaultMaxAttachmentBytes,
   }) {
     final guard = PathGuard(sandbox);
     final proxyConfig = proxy ?? ProxyConfig();
@@ -57,6 +61,8 @@ class BuiltinTools {
           tools.add(_httpFetch(proxyConfig));
         case 'web_search':
           tools.add(_webSearch(searchEngines, proxyConfig));
+        case 'attach_image':
+          tools.add(_attachImage(guard, maxAttachmentBytes));
         case 'datetime':
           tools.add(_datetime());
       }
@@ -66,7 +72,8 @@ class BuiltinTools {
 
   static LlmTool _readFile(PathGuard guard) => FunctionTool(
         name: 'read_file',
-        description: '读取文件内容。path 为相对沙箱的路径或绝对路径（必须在沙箱内）。',
+        description: '读取文件内容。path 为相对沙箱的路径或绝对路径（必须在沙箱内）。'
+            '图片文件（png/jpg/webp/gif/bmp）会被直接作为图像返回给模型，可用于看图识别。',
         parameters: objectSchema(
           properties: {
             'path': stringSchema(description: '文件路径'),
@@ -78,7 +85,20 @@ class BuiltinTools {
           final path = guard.resolveReal('${args['path']}');
           final file = File(path);
           if (!await file.exists()) return 'ERROR: file not found: $path';
-          final content = await file.readAsString();
+          // Pictures are not text: the engine hangs the image off this tool
+          // message, so answering with a marker (instead of decoded garbage)
+          // is what lets the model actually look at it next turn.
+          if (looksLikeImagePath(path)) {
+            return 'IMAGE: ${p.basename(path)}（图片已随本条消息附加，可直接查看图像内容；'
+                '如需裁剪/转换请用 shell 处理后再次读取）';
+          }
+          final bytes = await file.readAsBytes();
+          String content;
+          try {
+            content = utf8.decode(bytes);
+          } on FormatException {
+            return 'ERROR: $path 不是 UTF-8 文本文件（二进制 ${bytes.length} 字节），无法按文本读取。';
+          }
           final max = (args['max_chars'] as num?)?.toInt() ?? 200000;
           if (content.length <= max) return content;
           return '${content.substring(0, max)}\n…[truncated ${content.length - max} chars]';
@@ -186,6 +206,31 @@ class BuiltinTools {
       );
 
   static LlmTool _shell(String sandbox) => _ShellTool(sandbox);
+
+  static LlmTool _attachImage(PathGuard guard, int maxBytes) => FunctionTool(
+        name: 'attach_image',
+        description: '把沙箱内的一张图片附加到当前对话，模型下一轮即可直接看到它。'
+            '典型用法：先用 shell 生成图片（如 '
+            'chromium --headless --disable-gpu --screenshot=shot.png --window-size=1280,800 <url>），'
+            '再用本工具附加；也可附加沙箱内已有的图片文件。',
+        parameters: objectSchema(
+          properties: {
+            'path': stringSchema(description: '沙箱内的图片路径（相对沙箱或绝对路径）'),
+          },
+          required: ['path'],
+        ),
+        handler: (args) async {
+          final result = await resolveAttachableImage(
+            guard: guard,
+            maxBytes: maxBytes,
+            rawPath: '${args['path'] ?? ''}',
+          );
+          if (!result.ok) return result.error;
+          final file = result.attachment!;
+          return 'OK: 已附加图片 ${file.name}（${file.mimeType}，沙箱内路径 '
+              '${guard.resolve(file.path ?? '')}），模型下一轮可直接查看该图。';
+        },
+      );
 
   static LlmTool _httpFetch(ProxyConfig proxy) => FunctionTool(
         name: 'http_fetch',

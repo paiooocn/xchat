@@ -27,6 +27,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _editor = TextEditingController();
   final _limit = TextEditingController();
+  final _maxAttachment = TextEditingController();
   final _continuePrompt = TextEditingController();
   final _root = TextEditingController();
   final _httpProxy = TextEditingController();
@@ -41,6 +42,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final config = context.read<AppState>().config;
     _editor.text = config.editorCommand;
     _limit.text = config.defaultToolCallsLimit.toString();
+    _maxAttachment.text = (config.maxAttachmentBytes / (1024 * 1024))
+        .toStringAsFixed(config.maxAttachmentBytes % (1024 * 1024) == 0 ? 0 : 1);
     _continuePrompt.text = config.continuePrompt;
     _root.text = AppPaths.instance.root;
     _httpProxy.text = config.proxy.httpProxy;
@@ -53,6 +56,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _editor.dispose();
     _limit.dispose();
+    _maxAttachment.dispose();
     _continuePrompt.dispose();
     _root.dispose();
     _httpProxy.dispose();
@@ -65,6 +69,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final config = state.config;
     config.editorCommand = _editor.text.trim();
     config.defaultToolCallsLimit = int.tryParse(_limit.text.trim()) ?? 0;
+    final mb = double.tryParse(_maxAttachment.text.trim());
+    config.maxAttachmentBytes = mb == null
+        ? kDefaultMaxAttachmentBytes
+        : (mb <= 0 ? 0 : (mb * 1024 * 1024).round())
+            .clamp(0, kMaxAttachmentBytesCap);
     config.continuePrompt = _continuePrompt.text;
     config.proxy
       ..httpProxy = _httpProxy.text.trim()
@@ -149,6 +158,17 @@ class _SettingsPageState extends State<SettingsPage> {
             controller: _limit,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(labelText: '默认工具调用上限（0=不允许调用工具）'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _maxAttachment,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: '单张图片体积上限（MB，0=不限制）',
+              helperText: '图片以 base64 内联进请求体，超限的图片会被拒绝'
+                  '（用户选图与 Agent 附加图片共用此上限）',
+              helperMaxLines: 2,
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<ThinkingSwitch>(

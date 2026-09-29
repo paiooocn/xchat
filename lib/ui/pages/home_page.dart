@@ -1120,6 +1120,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           onStop: controller.stop,
           mode: session.mode,
           onModeChanged: (value) => controller.setMode(value),
+          maxAttachmentBytes: context.watch<AppState>().config.maxAttachmentBytes,
           webSearchAvailable: session.tools.contains('web_search'),
           webSearchEnabled: session.webSearchEnabled,
           onWebSearchChanged: (value) => controller.setWebSearch(value),

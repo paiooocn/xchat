@@ -55,9 +55,17 @@ class MessageBubble extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
-            child: ToolResultBlock(
-              content: message.content ?? '',
-              isError: message.isError,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ToolResultBlock(
+                  content: message.content ?? '',
+                  isError: message.isError,
+                ),
+                // Images the agent attached itself, so the user can see what
+                // the model was just shown.
+                if (message.hasAttachments) _attachmentStrip(context),
+              ],
             ),
           ),
         );

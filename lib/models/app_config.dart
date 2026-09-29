@@ -48,6 +48,15 @@ enum ContinueMode {
 }
 
 /// Global application configuration (`Documents/XChat/config.json`).
+/// Default per-image transfer cap: 5 MB. Images ride along base64-inline in
+/// the request body (~33% larger), so this is a transport guard, not a
+/// token budget — the token cost is whatever the provider reports in `usage`.
+const kDefaultMaxAttachmentBytes = 5 * 1024 * 1024;
+
+/// Sanity ceiling for the setting (64 MB), so a typo cannot disable the guard
+/// in a way that silently produces unsendable requests.
+const kMaxAttachmentBytesCap = 64 * 1024 * 1024;
+
 class AppConfig {
   AppConfig({
     this.currentProviderId = '',
@@ -62,6 +71,7 @@ class AppConfig {
     List<String>? defaultTools,
     this.continuePrompt = kDefaultContinuePrompt,
     this.maxToolCallsPerTurn = 0,
+    this.maxAttachmentBytes = kDefaultMaxAttachmentBytes,
     List<SearchEngineConfig>? searchEngines,
     ProxyConfig? proxy,
     Map<String, int>? toolApprovals,
@@ -103,6 +113,10 @@ class AppConfig {
 
   /// Optional guard for a single turn's tool rounds; 0 = derive from budget.
   int maxToolCallsPerTurn;
+
+  /// Per-image transfer cap in bytes; 0 = no limit. Applies both to images the
+  /// user picks and to images the agent attaches via `attach_image`.
+  int maxAttachmentBytes;
 
   /// Search engines, in fallback order, with enable toggles.
   List<SearchEngineConfig> searchEngines;
@@ -160,6 +174,7 @@ class AppConfig {
         'default_tools': defaultTools,
         'continue_prompt': continuePrompt,
         'max_tool_calls_per_turn': maxToolCallsPerTurn,
+        'max_attachment_bytes': maxAttachmentBytes,
         'search_engines': searchEngines.map((e) => e.toJson()).toList(),
         'proxy': proxy.toJson(),
         'tool_approvals': toolApprovals,
@@ -189,6 +204,9 @@ class AppConfig {
           : asStringList(json['default_tools']),
       continuePrompt: asString(json['continue_prompt']) ?? kDefaultContinuePrompt,
       maxToolCallsPerTurn: asInt(json['max_tool_calls_per_turn']) ?? 0,
+      maxAttachmentBytes:
+          (asInt(json['max_attachment_bytes']) ?? kDefaultMaxAttachmentBytes)
+              .clamp(0, kMaxAttachmentBytesCap),
       searchEngines: _decodeSearchEngines(json),
       proxy: _decodeProxy(json),
       toolApprovals: _decodeApprovals(json['tool_approvals']),

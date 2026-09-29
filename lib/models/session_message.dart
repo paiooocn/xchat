@@ -94,7 +94,8 @@ class SessionMessage {
 
   List<ToolCallData> toolCalls;
 
-  /// Images sent with this message (user turns only).
+  /// Images sent with this message: picked by the user on a user turn, or
+  /// produced by the agent and attached to its own `tool` message.
   List<MessageAttachment> attachments;
 
   String? toolCallId;

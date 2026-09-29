@@ -446,11 +446,32 @@ user 输入
 | `shell`             | 桌面   | 执行命令（工作目录 = 沙箱）                 |
 | `http_fetch`        | 全平台 | 抓取 URL 文本                               |
 | `web_search`        | 全平台 | 多引擎（Bing→DDG→SearXNG），可配 Tavily key |
+| `attach_image`      | 全平台 | 把沙箱内图片附加到对话，模型下一轮即可看到   |
 | `datetime`          | 全平台 | 当前时间                                    |
 
 - 工具集合按会话 `tools` 字段启用；模板可预置。
 - 每个工具结果写入独立 `<tool>` 元素（CDATA）。
 - 结果过长截断（默认 24k 字符，`llm_api.ToolRegistry.maxResultCharacters`）。
+
+### 10.1.1 Agent 自产图片（`attach_image`）
+
+Agent 自己没有视觉输入通道，图片只能由工具产出：先用 `shell` 生成图片
+（如 `chromium --headless --screenshot=shot.png --window-size=1280,800 <url>`），
+再调用 `attach_image` 登记。链路与用户手选图完全同构：
+
+```
+shell 产出 PNG → attach_image 校验（沙箱/格式/体积）→ 落盘 attachments/<id>-<n>.png
+              → 挂在该 <tool> 消息上 → 出站编码为紧随其后的 user 图片消息
+```
+
+- **为什么多一跳**：OpenAI 兼容协议下 `role: tool` 的 `content` 只能是字符串，
+  图片挂不上去，必须紧跟一条只含 `image_url` 的 user 消息——这是所有兼容端点
+  唯一一致的编码方式。因此 `<tool>` 消息仍保持纯文本，附件单独成条。
+- **体积闸门**：`AppConfig.maxAttachmentBytes`（设置页可配，默认 5MB，0 = 不限制）
+  同时约束用户选图与 `attach_image`。图片以 base64 内联进请求体（约 +33%），
+  这是**传输体积**闸门，不是 token 预算；上下文与计费仍以服务端 `usage` 为准。
+- 校验逻辑集中在 `agent/tools/image_attach.dart`，工具与引擎共用同一份判定，
+  避免「工具说成功、实际没图」。
 
 ### 10.2 沙箱与安全
 
