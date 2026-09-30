@@ -23,8 +23,13 @@ class IndexRepository {
   CatalogIndex? _cached;
 
   Future<CatalogIndex> load() async {
+    // Validate even the cached index against disk: sessions/projects can be
+    // created, deleted or archived by another app instance (or an older app
+    // version sharing the same data dir) while this one is running, and the
+    // list must reflect that. The check is cheap (two directory listings
+    // compared by id), so it runs on every load.
     final cached = _cached;
-    if (cached != null) return cached;
+    if (cached != null && await _matchesDisk(cached)) return cached;
     final stored = await _readFile();
     if (stored != null && await _matchesDisk(stored)) {
       _cached = stored;

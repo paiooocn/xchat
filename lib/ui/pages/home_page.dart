@@ -45,6 +45,9 @@ class _HomePageState extends State<HomePage> {
   /// Whether the global sessions section is expanded (persisted).
   bool _globalSessionsExpanded = true;
 
+  /// Whether a manual session-list refresh is in flight (spinner in header).
+  bool _refreshingSessions = false;
+
   static const _globalExpandedKey = 'xchat_global_sessions_expanded';
 
   @override
@@ -78,6 +81,20 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       if (!_tagFilter.remove(tag)) _tagFilter.add(tag);
     });
+  }
+
+  /// Re-reads the session index from disk (picks up sessions created,
+  /// deleted or archived by another app instance) and rebuilds the lists.
+  Future<void> _refreshSessions() async {
+    if (_refreshingSessions) return;
+    setState(() => _refreshingSessions = true);
+    try {
+      final state = context.read<AppState>();
+      await state.refreshSessions();
+      await state.refreshArchived();
+    } finally {
+      if (mounted) setState(() => _refreshingSessions = false);
+    }
   }
 
   Future<void> _newSession(BuildContext context, {String? projectId}) async {
@@ -245,6 +262,7 @@ class _HomePageState extends State<HomePage> {
                         sessions: sessions,
                         projects: projects,
                         selectedId: _selectedId,
+                        runningIds: state.runningSessionIds,
                         tagFilter: _tagFilter,
                         onTagToggle: _toggleTag,
                         globalSessionsExpanded: _globalSessionsExpanded,
@@ -252,6 +270,8 @@ class _HomePageState extends State<HomePage> {
                           setState(() => _globalSessionsExpanded = expanded);
                           _saveGlobalExpanded(expanded);
                         },
+                        onRefreshSessions: _refreshSessions,
+                        refreshingSessions: _refreshingSessions,
                         showHeader: true,
                         onSelect: (id) => _openSession(context, id),
                         onNewSession: (projectId) => _newSession(context, projectId: projectId),
@@ -277,6 +297,7 @@ class _HomePageState extends State<HomePage> {
                   sessions: sessions,
                   projects: projects,
                   selectedId: _selectedId,
+                  runningIds: state.runningSessionIds,
                   tagFilter: _tagFilter,
                   onTagToggle: _toggleTag,
                   globalSessionsExpanded: _globalSessionsExpanded,
@@ -284,6 +305,8 @@ class _HomePageState extends State<HomePage> {
                     setState(() => _globalSessionsExpanded = expanded);
                     _saveGlobalExpanded(expanded);
                   },
+                  onRefreshSessions: _refreshSessions,
+                  refreshingSessions: _refreshingSessions,
                   showHeader: false,
                   onSelect: (id) async {
                     await _openSession(context, id);
@@ -380,6 +403,7 @@ class _Sidebar extends StatelessWidget {
     required this.sessions,
     required this.projects,
     required this.selectedId,
+    required this.runningIds,
     required this.onSelect,
     required this.onNewSession,
     required this.onNewProject,
@@ -387,6 +411,8 @@ class _Sidebar extends StatelessWidget {
     required this.onTagToggle,
     required this.globalSessionsExpanded,
     required this.onGlobalExpandedChanged,
+    required this.onRefreshSessions,
+    required this.refreshingSessions,
     this.onEditProject,
     this.showHeader = false,
   });
@@ -394,6 +420,9 @@ class _Sidebar extends StatelessWidget {
   final List<Session> sessions;
   final List<Project> projects;
   final String? selectedId;
+
+  /// Ids of sessions whose agent turn is running (shown with a spinner).
+  final Set<String> runningIds;
   final void Function(String id) onSelect;
   final void Function(String? projectId) onNewSession;
   final VoidCallback onNewProject;
@@ -401,6 +430,12 @@ class _Sidebar extends StatelessWidget {
   final void Function(String tag) onTagToggle;
   final bool globalSessionsExpanded;
   final void Function(bool expanded) onGlobalExpandedChanged;
+
+  /// Re-lists sessions from disk (manual refresh button in the header).
+  final VoidCallback onRefreshSessions;
+
+  /// Whether the refresh is running — swaps the icon for a spinner.
+  final bool refreshingSessions;
   final void Function(Project project)? onEditProject;
   final bool showHeader;
 
@@ -425,6 +460,17 @@ class _Sidebar extends StatelessWidget {
             child: Row(
               children: [
                 Text('会话', style: theme.textTheme.titleMedium),
+                IconButton(
+                  tooltip: '刷新会话列表',
+                  icon: refreshingSessions
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  onPressed: refreshingSessions ? null : onRefreshSessions,
+                ),
                 const Spacer(),
                 IconButton(
                   tooltip: '新建项目',
@@ -475,6 +521,7 @@ class _Sidebar extends StatelessWidget {
                     _SessionTile(
                       session: session,
                       selected: session.id == selectedId,
+                      running: runningIds.contains(session.id),
                       indent: 12,
                       leading: const Icon(Icons.chat_bubble_outline, size: 20),
                       onTap: () => onSelect(session.id),
@@ -509,6 +556,7 @@ class _Sidebar extends StatelessWidget {
                   project: project,
                   sessions: visible.where((s) => s.projectId == project.id).toList(),
                   selectedId: selectedId,
+                  runningIds: runningIds,
                   onSelect: onSelect,
                   onNewSession: () => onNewSession(project.id),
                   onEdit: () => onEditProject?.call(project),
@@ -544,6 +592,7 @@ class _ProjectGroup extends StatelessWidget {
     required this.project,
     required this.sessions,
     required this.selectedId,
+    required this.runningIds,
     required this.onSelect,
     required this.onNewSession,
     required this.onEdit,
@@ -554,6 +603,7 @@ class _ProjectGroup extends StatelessWidget {
   final Project project;
   final List<Session> sessions;
   final String? selectedId;
+  final Set<String> runningIds;
   final void Function(String id) onSelect;
   final VoidCallback onNewSession;
   final VoidCallback onEdit;
@@ -578,22 +628,34 @@ class _ProjectGroup extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall,
       ),
-      trailing: PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, size: 18),
-        onSelected: (value) {
-          switch (value) {
-            case 'edit':
-              onEdit();
-            case 'archive':
-              onArchive();
-            case 'delete':
-              onDelete();
-          }
-        },
-        itemBuilder: (context) => const [
-          PopupMenuItem(value: 'edit', child: Text('编辑')),
-          PopupMenuItem(value: 'archive', child: Text('归档')),
-          PopupMenuItem(value: 'delete', child: Text('删除')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: '在项目中新建会话',
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add),
+            onPressed: onNewSession,
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 18),
+            onSelected: (value) {
+              switch (value) {
+                case 'edit':
+                  onEdit();
+                case 'archive':
+                  onArchive();
+                case 'delete':
+                  onDelete();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('编辑')),
+              PopupMenuItem(value: 'archive', child: Text('归档')),
+              PopupMenuItem(value: 'delete', child: Text('删除')),
+            ],
+          ),
         ],
       ),
       children: [
@@ -601,6 +663,7 @@ class _ProjectGroup extends StatelessWidget {
           _SessionTile(
             session: session,
             selected: session.id == selectedId,
+            running: runningIds.contains(session.id),
             indent: 28,
             leading: const Icon(Icons.forum_outlined, size: 18),
             trailing: Container(
@@ -618,13 +681,6 @@ class _ProjectGroup extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(44, 4, 16, 4),
             child: Text('暂无会话', style: TextStyle(color: Colors.grey)),
           ),
-        ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.only(left: 44, right: 16),
-          leading: const Icon(Icons.add, size: 18),
-          title: const Text('在项目中新建会话'),
-          onTap: onNewSession,
-        ),
       ],
     );
   }
@@ -639,6 +695,7 @@ class _SessionTile extends StatelessWidget {
     required this.onTap,
     this.trailing,
     this.indent = 0,
+    this.running = false,
   });
 
   final Session session;
@@ -648,6 +705,10 @@ class _SessionTile extends StatelessWidget {
   final VoidCallback onTap;
   final double indent;
 
+  /// Whether the session's agent turn is running — replaces [leading] with a
+  /// spinning progress ring so an in-progress session is visible at a glance.
+  final bool running;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -655,7 +716,16 @@ class _SessionTile extends StatelessWidget {
       dense: true,
       selected: selected,
       contentPadding: EdgeInsets.only(left: 16 + indent, right: 8),
-      leading: leading,
+      leading: running
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: theme.colorScheme.primary,
+              ),
+            )
+          : leading,
       title: Text(
         session.title.isNotEmpty ? session.title : '(未命名会话)',
         maxLines: 1,
@@ -705,6 +775,7 @@ class _SessionMenu extends StatelessWidget {
         PopupMenuItem(value: 'clone_first', child: Text('克隆（含首次对话）')),
         PopupMenuItem(value: 'clone_full', child: Text('克隆（完整会话）')),
         PopupMenuItem(value: 'edit_xml', child: Text('用编辑工具打开')),
+        PopupMenuItem(value: 'open_dir', child: Text('打开工作目录')),
         PopupMenuItem(value: 'archive', child: Text('归档')),
         PopupMenuItem(value: 'delete', child: Text('删除')),
       ],
@@ -744,6 +815,9 @@ class _SessionMenu extends StatelessWidget {
         } else {
           _toast(context, result.message);
         }
+      case 'open_dir':
+        final result = await openDirectory(session.sandbox);
+        if (context.mounted) _toast(context, result.message);
       case 'archive':
         await state.setSessionArchived(session.id, true);
         if (context.mounted) _toast(context, '已归档会话');
@@ -890,26 +964,22 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     super.didChangeDependencies();
     final live = context.watch<AppState>().sessionById(widget.sessionId);
     final current = _controller?.session;
-    // Adopt a refreshed instance (e.g. after reload) unless we are mid-stream.
+    // Adopt a refreshed instance (e.g. after reload) unless we are mid-stream:
+    // a running turn keeps mutating (and persisting) the instance it started
+    // with, so swapping it out mid-run would detach the engine's state.
     if (live != null &&
         !identical(live, current) &&
         !(_controller?.isRunning ?? false)) {
-      _controller?.removeListener(_onChange);
-      _controller?.dispose();
-      _controller = _build();
+      _controller?.open(live);
       setState(() {});
     }
   }
 
   SessionController _build() {
-    final state = context.read<AppState>();
-    final session = state.sessionById(widget.sessionId);
-    final controller = SessionController(
-      repository: state.sessionRepository,
-      config: state.config,
-      providerResolver: state.providerById,
-    );
-    if (session != null) controller.open(session);
+    // The controller is owned by AppState (keyed by session id), so it — and
+    // the agent turn it drives — survives the panel being swapped out when
+    // switching sessions: multiple sessions can run at the same time.
+    final controller = context.read<AppState>().controllerFor(widget.sessionId);
     controller.approvalHandler = _requestApproval;
     controller.addListener(_onChange);
     return controller;
@@ -1106,8 +1176,10 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
 
   @override
   void dispose() {
+    // The controller belongs to AppState and outlives this panel — only the
+    // listener is removed here so a background turn keeps running after the
+    // user switches to another session.
     _controller?.removeListener(_onChange);
-    _controller?.dispose();
     _scroll.dispose();
     super.dispose();
   }

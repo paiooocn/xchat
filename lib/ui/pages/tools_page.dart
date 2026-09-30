@@ -1,7 +1,11 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../agent/tools/builtin_tools.dart';
+import '../../core/json_utils.dart';
 import '../../models/agent_mode.dart';
 import '../../models/app_config.dart';
 import '../../state/app_state.dart';
@@ -31,6 +35,161 @@ class _ToolsPageState extends State<ToolsPage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已应用默认名单')));
     }
+  }
+
+  // ------------------------------------------------------- import / export
+
+  /// Exports the tool-related settings (approval levels + shell command lists)
+  /// as a JSON file via the system save dialog.
+  Future<void> _exportTools(AppState state) async {
+    try {
+      final config = state.config;
+      final payload = <String, Object?>{
+        'tool_approvals': config.toolApprovals,
+        'shell_level1_commands': config.shellLevel1Commands,
+        'shell_level2_commands': config.shellLevel2Commands,
+        'shell_denied_commands': config.shellDeniedCommands,
+      };
+      final bytes = utf8.encode(const JsonEncoder.withIndent('  ').convert(payload));
+      final stamp = DateTime.now().toString().replaceAll(RegExp(r'[^0-9]'), '');
+      final uri = await FilePicker.saveFile(
+        fileName: 'xchat-tools-${stamp.substring(0, 14)}.json',
+        bytes: bytes,
+        mimeType: 'application/json',
+        dialogTitle: '导出工具配置',
+      );
+      if (uri == null || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(uri.scheme == 'file' ? '已导出到 ${uri.path}' : '已导出')),
+      );
+    } catch (error) {
+      _showError('导出失败：$error');
+    }
+  }
+
+  /// Picks a JSON file and imports the tool-related settings it contains.
+  /// Both the dedicated export format and a full `config.json` work — only
+  /// the tool-related keys are read.
+  Future<void> _importTools(AppState state) async {
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        dialogTitle: '导入工具配置',
+      );
+      final file = picked.isNotEmpty ? picked.first : null;
+      final bytes = file != null ? await file.readAsBytes() : null;
+      if (bytes == null) return;
+
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(utf8.decode(bytes));
+      } on FormatException catch (error) {
+        _showError('JSON 解析失败：${error.message}');
+        return;
+      }
+      if (decoded is! Map) {
+        _showError('文件格式不正确：顶层必须是 JSON 对象');
+        return;
+      }
+
+      final _ToolSettingsImport parsed;
+      try {
+        parsed = _parseToolSettings(asMap(decoded));
+      } on FormatException catch (error) {
+        _showError(error.message);
+        return;
+      }
+
+      final ok = await _confirmImport(parsed);
+      if (!ok) return;
+
+      final config = state.config;
+      // Approvals merge (a partial file keeps the other tools' levels); the
+      // shell lists are self-contained and get replaced wholesale.
+      if (parsed.approvals != null) config.toolApprovals.addAll(parsed.approvals!);
+      if (parsed.level1 != null) config.shellLevel1Commands = parsed.level1!;
+      if (parsed.level2 != null) config.shellLevel2Commands = parsed.level2!;
+      if (parsed.denied != null) config.shellDeniedCommands = parsed.denied!;
+      await state.saveConfig();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已导入工具配置')));
+      }
+    } catch (error) {
+      _showError('导入失败：$error');
+    }
+  }
+
+  /// Extracts and validates the tool-related keys; throws [FormatException]
+  /// with a readable message when anything is malformed.
+  _ToolSettingsImport _parseToolSettings(Map<String, Object?> json) {
+    Map<String, int>? approvals;
+    if (json.containsKey('tool_approvals')) {
+      final raw = asMap(json['tool_approvals']);
+      final map = <String, int>{};
+      raw.forEach((key, value) {
+        final level = asInt(value);
+        if (level == null || level < 0 || level > 3) {
+          throw FormatException('tool_approvals["$key"] 必须是 0..3 的整数');
+        }
+        map[key] = level;
+      });
+      approvals = map;
+    }
+
+    List<String>? parseList(String key) {
+      if (!json.containsKey(key)) return null;
+      final raw = json[key];
+      if (raw is! List) throw FormatException('$key 必须是数组');
+      return [
+        for (final entry in raw)
+          if (entry is String && entry.trim().isNotEmpty) entry.trim(),
+      ];
+    }
+
+    final parsed = _ToolSettingsImport(
+      approvals: approvals,
+      level1: parseList('shell_level1_commands'),
+      level2: parseList('shell_level2_commands'),
+      denied: parseList('shell_denied_commands'),
+    );
+    if (parsed.isEmpty) {
+      throw const FormatException('文件中没有可导入的工具配置（审批等级 / Shell 名单）');
+    }
+    return parsed;
+  }
+
+  Future<bool> _confirmImport(_ToolSettingsImport parsed) {
+    final rows = <String>[
+      if (parsed.approvals != null) '工具审批等级 ${parsed.approvals!.length} 项（合并覆盖）',
+      if (parsed.level1 != null) '1级名单 ${parsed.level1!.length} 条（整体替换）',
+      if (parsed.level2 != null) '2级名单 ${parsed.level2!.length} 条（整体替换）',
+      if (parsed.denied != null) 'F级名单 ${parsed.denied!.length} 条（整体替换）',
+    ];
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('导入工具配置'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('文件包含以下设置，导入后将覆盖当前对应配置：'),
+            const SizedBox(height: 8),
+            for (final row in rows) Text('· $row'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('导入')),
+        ],
+      ),
+    ).then((value) => value ?? false);
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _editLists(AppState state) async {
@@ -132,7 +291,21 @@ class _ToolsPageState extends State<ToolsPage> {
     final state = context.watch<AppState>();
     final config = state.config;
     return Scaffold(
-      appBar: AppBar(title: const Text('工具管理')),
+      appBar: AppBar(
+        title: const Text('工具管理'),
+        actions: [
+          IconButton(
+            tooltip: '导入',
+            icon: const Icon(Icons.upload_outlined),
+            onPressed: () => _importTools(state),
+          ),
+          IconButton(
+            tooltip: '导出',
+            icon: const Icon(Icons.download_outlined),
+            onPressed: () => _exportTools(state),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -141,7 +314,9 @@ class _ToolsPageState extends State<ToolsPage> {
             child: Text(
               '审批等级 0..3 决定不同模式（普通/自动/托管）下是否需要在执行前确认：\n'
               '0 都不审批 · 1 普通审批 · 2 普通/自动审批 · 3 都审批\n'
-              '（shell 的基础等级固定为 3，点右侧 ⓘ 查看其审批详情）',
+              '（shell 的基础等级固定为 3，点右侧 ⓘ 查看其审批详情）\n'
+              '工具配置（审批等级与 Shell 名单）可通过右上角按钮导入 / 导出，'
+              '导出为 JSON 文件，便于备份或迁移到其他设备。',
               style: TextStyle(fontSize: 12),
             ),
           ),
@@ -210,6 +385,19 @@ class _ToolsPageState extends State<ToolsPage> {
       ),
     );
   }
+}
+
+/// The tool-related settings carried by an import file (all sections
+/// optional — only the present ones are applied).
+class _ToolSettingsImport {
+  const _ToolSettingsImport({this.approvals, this.level1, this.level2, this.denied});
+
+  final Map<String, int>? approvals;
+  final List<String>? level1;
+  final List<String>? level2;
+  final List<String>? denied;
+
+  bool get isEmpty => approvals == null && level1 == null && level2 == null && denied == null;
 }
 
 /// The three edited lists.

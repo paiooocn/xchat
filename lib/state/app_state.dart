@@ -20,6 +20,7 @@ import '../models/session.dart';
 import '../models/session_message.dart';
 import '../models/session_params.dart';
 import '../models/session_template.dart';
+import '../session/session_controller.dart';
 
 /// Top-level application state: config, session list, templates, projects.
 ///
@@ -53,6 +54,54 @@ class AppState extends ChangeNotifier {
 
   /// Sessions whose full conversation (messages) has been loaded in memory.
   final Map<String, Session> _sessionCache = <String, Session>{};
+
+  /// Live session controllers, keyed by session id. A controller (and the
+  /// agent turn it drives) outlives the chat panel: switching to another
+  /// session no longer disposes — and therefore stops — the previous one, so
+  /// multiple sessions can work at the same time.
+  final Map<String, SessionController> _controllers = <String, SessionController>{};
+
+  /// Ids of sessions with a currently running agent turn (sidebar spinner).
+  final Set<String> _runningSessionIds = <String>{};
+
+  /// Ids of sessions whose agent turn is running right now.
+  Set<String> get runningSessionIds => Set<String>.unmodifiable(_runningSessionIds);
+
+  /// Returns the live controller for [sessionId], creating (and opening) it
+  /// on first use. The controller is owned by this store, not by the panel.
+  SessionController controllerFor(String sessionId) {
+    final existing = _controllers[sessionId];
+    if (existing != null) return existing;
+    final session = sessionById(sessionId);
+    if (session == null) throw StateError('会话不存在：$sessionId');
+    final controller = SessionController(
+      repository: sessionRepository,
+      config: config,
+      providerResolver: providerById,
+    );
+    controller.open(session);
+    controller.addListener(_onControllerChanged);
+    _controllers[sessionId] = controller;
+    return controller;
+  }
+
+  /// Re-broadcasts controller notifications only when the *running* set
+  /// actually changes, so stream deltas don't rebuild the whole app.
+  void _onControllerChanged() {
+    var changed = false;
+    for (final entry in _controllers.entries) {
+      final shouldMark = entry.value.isRunning;
+      final marked = _runningSessionIds.contains(entry.key);
+      if (shouldMark && !marked) {
+        _runningSessionIds.add(entry.key);
+        changed = true;
+      } else if (!shouldMark && marked) {
+        _runningSessionIds.remove(entry.key);
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+  }
 
   Future<void> load() async {
     config = await configRepository.load();
@@ -240,6 +289,8 @@ class AppState extends ChangeNotifier {
   Future<void> deleteSession(String id) async {
     await sessionRepository.delete(id);
     _sessionCache.remove(id);
+    _controllers.remove(id)?.dispose();
+    _runningSessionIds.remove(id);
     await refreshSessions();
   }
 

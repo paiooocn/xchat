@@ -39,6 +39,25 @@ Future<EditorLaunchResult> openInEditor(String filePath, String command) async {
   }
 }
 
+/// Opens [dirPath] in the system file explorer (Finder / Explorer / xdg-open).
+Future<EditorLaunchResult> openDirectory(String dirPath) async {
+  if (!(Platform.isLinux || Platform.isMacOS || Platform.isWindows)) {
+    return const EditorLaunchResult(false, '当前平台不支持打开目录，请手动访问');
+  }
+  try {
+    if (Platform.isMacOS) {
+      await Process.start('open', [dirPath], mode: ProcessStartMode.detached);
+    } else if (Platform.isWindows) {
+      await Process.start('explorer', [dirPath], mode: ProcessStartMode.detached);
+    } else {
+      await Process.start('xdg-open', [dirPath], mode: ProcessStartMode.detached);
+    }
+    return EditorLaunchResult(true, '已打开工作目录');
+  } catch (error) {
+    return EditorLaunchResult(false, '打开失败：$error');
+  }
+}
+
 List<String> _split(String input) {
   final result = <String>[];
   final buffer = StringBuffer();
