@@ -12,6 +12,7 @@ import '../../models/session_message.dart';
 import '../../session/session_controller.dart';
 import '../../session/session_ops.dart';
 import '../../state/app_state.dart';
+import '../../state/approval_center.dart';
 import '../../util/editor_launcher.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/input_area.dart';
@@ -48,12 +49,103 @@ class _HomePageState extends State<HomePage> {
   /// Whether a manual session-list refresh is in flight (spinner in header).
   bool _refreshingSessions = false;
 
+  /// Whether the global approval window is on screen. While closed, pending
+  /// requests stay queued and surface via the app-bar badge instead.
+  bool _approvalDialogOpen = false;
+
+  /// Set when the user dismisses the window via 稍后处理: the still-pending
+  /// requests must NOT trigger an immediate auto-reopen (that made the button
+  /// look broken). Cleared by the next *new* request or when the queue drains.
+  bool _approvalSnoozed = false;
+
+  /// Ids of requests already seen, to tell a brand-new request from a change
+  /// on an existing one.
+  final Set<String> _knownApprovalIds = <String>{};
+
+  /// Captured in initState: the center outlives this State, and `context`
+  /// must not be touched in dispose.
+  late final ApprovalCenter _approvalCenter;
+
   static const _globalExpandedKey = 'xchat_global_sessions_expanded';
 
   @override
   void initState() {
     super.initState();
     _loadGlobalExpanded();
+    _approvalCenter = context.read<AppState>().approvalCenter;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Approvals can arrive from any session at any time (including one whose
+      // panel is not visible), so the queue is observed from the page root.
+      _approvalCenter.addListener(_onApprovalsChanged);
+      _maybeOpenApprovalDialog();
+    });
+  }
+
+  @override
+  void dispose() {
+    _approvalCenter.removeListener(_onApprovalsChanged);
+    super.dispose();
+  }
+
+  void _onApprovalsChanged() {
+    if (!mounted) return;
+    final pending = _approvalCenter.pending;
+    // A brand-new request always reopens the window, even after 稍后处理.
+    final hasNew = pending.any((r) => !_knownApprovalIds.contains(r.id));
+    _knownApprovalIds
+      ..clear()
+      ..addAll(pending.map((r) => r.id));
+    if (pending.isEmpty || hasNew) _approvalSnoozed = false;
+    setState(() {}); // refresh the app-bar badge
+    _maybeOpenApprovalDialog();
+  }
+
+  /// Auto-open driven by the approval queue: suppressed while the user has
+  /// dismissed the window via 稍后处理 (until the next new request arrives).
+  /// New requests arriving while it is open are appended to its list by the
+  /// dialog itself.
+  void _maybeOpenApprovalDialog() {
+    if (_approvalDialogOpen || _approvalSnoozed) return;
+    _showApprovalDialog();
+  }
+
+  /// Manual open from the app-bar badge: explicit user intent, so it always
+  /// opens — the 稍后处理 snooze only gates *automatic* reopening.
+  void _openApprovalDialog() {
+    _approvalSnoozed = false;
+    _showApprovalDialog();
+  }
+
+  void _showApprovalDialog() {
+    if (_approvalDialogOpen) return;
+    if (_approvalCenter.pending.isEmpty) return;
+    _approvalDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ApprovalDialog(
+        onDismissed: () => _approvalSnoozed = true,
+      ),
+    ).whenComplete(() {
+      _approvalDialogOpen = false;
+      // A request may have arrived while the dialog was closing.
+      if (mounted) _maybeOpenApprovalDialog();
+    });
+  }
+
+  /// App-bar entry to the approval window; the badge shows the pending count.
+  Widget _approvalBadge() {
+    final count = context.watch<AppState>().approvalCenter.pending.length;
+    return IconButton(
+      tooltip: count > 0 ? '工具审批（$count 项待处理）' : '工具审批',
+      icon: Badge(
+        isLabelVisible: count > 0,
+        label: Text('$count'),
+        child: const Icon(Icons.fact_check_outlined),
+      ),
+      onPressed: _openApprovalDialog,
+    );
   }
 
   Future<void> _loadGlobalExpanded() async {
@@ -209,6 +301,7 @@ class _HomePageState extends State<HomePage> {
           appBar: AppBar(
             title: const Text('XChat'),
             actions: [
+              _approvalBadge(),
               IconButton(
                 tooltip: '模板',
                 icon: const Icon(Icons.dashboard_customize_outlined),
@@ -980,54 +1073,37 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     // the agent turn it drives — survives the panel being swapped out when
     // switching sessions: multiple sessions can run at the same time.
     final controller = context.read<AppState>().controllerFor(widget.sessionId);
-    controller.approvalHandler = _requestApproval;
+    // Captured here (not via `context` in the handler): the engine keeps
+    // running — and asking for approval — after this panel is disposed, and a
+    // disposed State's `context` can no longer be touched.
+    final center = context.read<AppState>().approvalCenter;
+    controller.approvalHandler = (tool, arguments, note) =>
+        _requestApproval(center, tool, arguments, note);
+    controller.onStop = () => center.dropForSession(widget.sessionId);
     controller.addListener(_onChange);
     return controller;
   }
 
-  /// Asks the user whether to run a tool that requires approval.
-  Future<bool> _requestApproval(String tool, String arguments, String? note) async {
-    if (!mounted) return false;
-    final approved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('允许执行工具「$tool」？'),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (note != null && note.isNotEmpty) ...[
-                  Text(note, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary)),
-                  const SizedBox(height: 8),
-                ],
-                Text(
-                  arguments.isEmpty ? '(无参数)' : arguments,
-                  style: const TextStyle(
-                    fontFamily: AppFonts.mono,
-                    fontFamilyFallback: AppFonts.monoFallback,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('拒绝'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('允许'),
-          ),
-        ],
-      ),
+  /// Forwards the engine's approval ask to the global [ApprovalCenter].
+  ///
+  /// The prompt is deliberately not tied to this panel: switching to another
+  /// session disposes the panel, so a per-session dialog would strand — and
+  /// silently deny — the background session's approval. The center keeps the
+  /// request pending until the user resolves it from the global approval
+  /// window, whichever session is visible.
+  Future<bool> _requestApproval(
+    ApprovalCenter center,
+    String tool,
+    String arguments,
+    String? note,
+  ) {
+    return center.request(
+      sessionId: widget.sessionId,
+      sessionTitle: _controller?.session?.title ?? '',
+      tool: tool,
+      arguments: arguments,
+      note: note,
     );
-    return approved ?? false;
   }
 
   void _onChange() {
@@ -1549,6 +1625,249 @@ class _CompressProgressDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(onPressed: onCancel, child: const Text('取消')),
+      ],
+    );
+  }
+}
+
+/// Global tool-approval window: a list column of every pending request (from
+/// all sessions) beside a detail pane for the selected one.
+///
+/// The dialog watches [ApprovalCenter], so requests that arrive while it is
+/// open are appended to the list, and it auto-closes once the queue drains.
+class _ApprovalDialog extends StatefulWidget {
+  const _ApprovalDialog({this.onDismissed});
+
+  /// Called when the user picks 稍后处理, before the window closes, so the
+  /// page can suppress auto-reopen until the next new request arrives.
+  final VoidCallback? onDismissed;
+
+  @override
+  State<_ApprovalDialog> createState() => _ApprovalDialogState();
+}
+
+class _ApprovalDialogState extends State<_ApprovalDialog> {
+  late final ApprovalCenter _center;
+  String? _selectedId;
+
+  @override
+  void initState() {
+    super.initState();
+    _center = context.read<AppState>().approvalCenter;
+    _center.addListener(_onCenterChanged);
+    _selectedId = _center.pending.isNotEmpty ? _center.pending.first.id : null;
+  }
+
+  void _onCenterChanged() {
+    if (!mounted) return;
+    setState(() {
+      final pending = _center.pending;
+      if (pending.isEmpty) {
+        // Everything resolved — nothing left to review.
+        _selectedId = null;
+        Navigator.of(context).pop();
+        return;
+      }
+      // Keep a valid selection: follow the selected request out, else fall
+      // back to the oldest pending one.
+      if (_selectedId == null || !pending.any((r) => r.id == _selectedId)) {
+        _selectedId = pending.first.id;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _center.removeListener(_onCenterChanged);
+    super.dispose();
+  }
+
+  ApprovalRequest? get _selected {
+    final id = _selectedId;
+    if (id == null) return null;
+    for (final r in _center.pending) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final pending = _center.pending;
+    final selected = _selected;
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.fact_check_outlined, size: 20, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('工具审批（${pending.length} 项待处理）'),
+        ],
+      ),
+      content: SizedBox(
+        // Upper bounds only: parents tighten these on small screens, and the
+        // LayoutBuilder below adapts the list/detail layout to the width.
+        width: 640,
+        height: 380,
+        child: pending.isEmpty
+            ? const Center(child: Text('暂无待处理的审批'))
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 560;
+                  final list = _ApprovalList(
+                    requests: pending,
+                    selectedId: _selectedId,
+                    onSelect: (id) => setState(() => _selectedId = id),
+                  );
+                  final detail = selected == null
+                      ? const Center(child: Text('从列表中选择一项审批'))
+                      : _ApprovalDetail(
+                          request: selected,
+                          onResolve: (approved) => _center.resolve(selected.id, approved),
+                        );
+                  if (narrow) {
+                    return Column(
+                      children: [
+                        SizedBox(height: 150, child: list),
+                        const Divider(height: 1),
+                        Expanded(child: detail),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      SizedBox(width: 240, child: list),
+                      const VerticalDivider(width: 1),
+                      Expanded(child: detail),
+                    ],
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            widget.onDismissed?.call();
+            Navigator.of(context).pop();
+          },
+          child: const Text('稍后处理'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The list column: one row per pending approval, showing which session it
+/// came from, the tool, and when it was asked.
+class _ApprovalList extends StatelessWidget {
+  const _ApprovalList({
+    required this.requests,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final List<ApprovalRequest> requests;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListView.separated(
+      itemCount: requests.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final req = requests[index];
+        final selected = req.id == selectedId;
+        return ListTile(
+          dense: true,
+          selected: selected,
+          leading: Icon(
+            Icons.handyman_outlined,
+            size: 18,
+            color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+          ),
+          title: Text(
+            req.displayTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelMedium,
+          ),
+          subtitle: Text(
+            '${req.tool} · ${_formatTime(req.createdAt)}',
+            style: theme.textTheme.bodySmall,
+          ),
+          onTap: () => onSelect(req.id),
+        );
+      },
+    );
+  }
+
+  static String _formatTime(DateTime time) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(time.hour)}:${two(time.minute)}:${two(time.second)}';
+  }
+}
+
+/// Detail pane for the selected approval: why it was asked, the arguments,
+/// and the allow/deny actions.
+class _ApprovalDetail extends StatelessWidget {
+  const _ApprovalDetail({required this.request, required this.onResolve});
+
+  final ApprovalRequest request;
+  final ValueChanged<bool> onResolve;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('允许执行工具「${request.tool}」？', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text('来自会话：${request.displayTitle}', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
+        if (request.note != null && request.note!.isNotEmpty) ...[
+          Text(
+            request.note!,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                request.arguments.isEmpty ? '(无参数)' : request.arguments,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: AppFonts.mono,
+                  fontFamilyFallback: AppFonts.monoFallback,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => onResolve(false),
+              child: const Text('拒绝'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: () => onResolve(true),
+              child: const Text('允许'),
+            ),
+          ],
+        ),
       ],
     );
   }

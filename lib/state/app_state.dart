@@ -21,6 +21,7 @@ import '../models/session_message.dart';
 import '../models/session_params.dart';
 import '../models/session_template.dart';
 import '../session/session_controller.dart';
+import 'approval_center.dart';
 
 /// Top-level application state: config, session list, templates, projects.
 ///
@@ -66,6 +67,16 @@ class AppState extends ChangeNotifier {
 
   /// Ids of sessions whose agent turn is running right now.
   Set<String> get runningSessionIds => Set<String>.unmodifiable(_runningSessionIds);
+
+  /// Global tool-approval queue: collects pending approvals from every session
+  /// so the approval window works no matter which session is visible.
+  late final ApprovalCenter approvalCenter = ApprovalCenter();
+
+  @override
+  void dispose() {
+    approvalCenter.dispose();
+    super.dispose();
+  }
 
   /// Returns the live controller for [sessionId], creating (and opening) it
   /// on first use. The controller is owned by this store, not by the panel.
@@ -291,6 +302,8 @@ class AppState extends ChangeNotifier {
     _sessionCache.remove(id);
     _controllers.remove(id)?.dispose();
     _runningSessionIds.remove(id);
+    // A pending approval of the deleted session can never be answered.
+    approvalCenter.dropForSession(id);
     await refreshSessions();
   }
 

@@ -28,6 +28,11 @@ class SessionController extends ChangeNotifier {
   /// allow, `false` to deny. The optional note explains why approval was asked.
   Future<bool> Function(String tool, String arguments, String? note)? approvalHandler;
 
+  /// Set by the UI; invoked when the running turn is stopped so the global
+  /// approval queue can drop this session's pending requests (the awaiting
+  /// engine is cancelled and will never see the answer).
+  VoidCallback? onStop;
+
   Session? _session;
   AgentEngine? _engine;
   bool _running = false;
@@ -101,6 +106,7 @@ class SessionController extends ChangeNotifier {
 
   void stop() {
     _engine?.stop();
+    onStop?.call();
   }
 
   Future<void> save() async {
