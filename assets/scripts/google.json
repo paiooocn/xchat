@@ -1,0 +1,10 @@
+{
+  "id": "google",
+  "name": "Google SERP",
+  "created_by": "builtin",
+  "match": { "hosts": ["google.com"], "path_prefix": "/search" },
+  "ready_selector": "div.g",
+  "next_selector": "a#pnnext",
+  "priority": 10,
+  "body": "(function () { var out = []; var nodes = document.querySelectorAll('div.g'); for (var i = 0; i < nodes.length; i++) { var n = nodes[i]; var a = n.querySelector('a[href^=http]'); if (!a || !a.href) continue; var h = n.querySelector('h3'); var s = n.querySelector('.VwiC3b') || n.querySelector('.IsZvec'); out.push({ title: ((h && (h.innerText || h.textContent)) || (a.innerText || a.textContent) || '').trim(), url: a.href, snippet: ((s && (s.innerText || s.textContent)) || '').trim() }); } return JSON.stringify(out); })()"
+}

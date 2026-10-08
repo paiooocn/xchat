@@ -58,6 +58,27 @@ Future<EditorLaunchResult> openDirectory(String dirPath) async {
   }
 }
 
+/// Opens [url] in the system default browser.
+Future<EditorLaunchResult> openUrl(String url) async {
+  final target = url.trim();
+  if (target.isEmpty) return const EditorLaunchResult(false, 'URL 为空');
+  if (!(Platform.isLinux || Platform.isMacOS || Platform.isWindows)) {
+    return const EditorLaunchResult(false, '当前平台不支持打开浏览器');
+  }
+  try {
+    if (Platform.isMacOS) {
+      await Process.start('open', [target], mode: ProcessStartMode.detached);
+    } else if (Platform.isWindows) {
+      await Process.start('cmd', ['/c', 'start', '', target], mode: ProcessStartMode.detached);
+    } else {
+      await Process.start('xdg-open', [target], mode: ProcessStartMode.detached);
+    }
+    return const EditorLaunchResult(true, '已在浏览器打开');
+  } catch (error) {
+    return EditorLaunchResult(false, '打开失败：$error');
+  }
+}
+
 List<String> _split(String input) {
   final result = <String>[];
   final buffer = StringBuffer();

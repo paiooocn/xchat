@@ -1,0 +1,10 @@
+{
+  "id": "duckduckgo",
+  "name": "DuckDuckGo SERP",
+  "created_by": "builtin",
+  "match": { "hosts": ["duckduckgo.com"] },
+  "ready_selector": "article[data-testid=result]",
+  "next_selector": "input.btn--alt, a.result--more__btn",
+  "priority": 10,
+  "body": "(function () { var out = []; var nodes = document.querySelectorAll(\"article[data-testid='result'], .result\"); for (var i = 0; i < nodes.length; i++) { var n = nodes[i]; var a = n.querySelector(\"a[data-testid='result-title-a']\") || n.querySelector('.result__a') || n.querySelector('a[href^=http]'); if (!a || !a.href) continue; var s = n.querySelector(\"[data-result='snippet']\") || n.querySelector('.result__snippet'); out.push({ title: (a.innerText || a.textContent || '').trim(), url: a.href, snippet: ((s && (s.innerText || s.textContent)) || '').trim() }); } return JSON.stringify(out); })()"
+}

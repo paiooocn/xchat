@@ -25,6 +25,7 @@ import 'archive_page.dart';
 import 'compress_prompts_page.dart';
 import 'providers_page.dart';
 import 'session_wizard_page.dart';
+import 'search_page.dart';
 import 'settings_page.dart';
 import 'templates_page.dart';
 import 'tools_page.dart';
@@ -314,6 +315,13 @@ class _HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.cloud_outlined),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ProvidersPage()),
+                ),
+              ),
+              IconButton(
+                tooltip: '手动搜索',
+                icon: const Icon(Icons.travel_explore),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SearchPage()),
                 ),
               ),
               IconButton(

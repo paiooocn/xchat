@@ -140,6 +140,8 @@ Documents/XChat/
 ├── sessions/            # 默认 sandbox：会话 XML 文件（<uuid>.xml）
 │   ├── 550e8400-....xml
 │   └── ...
+├── scripts/             # 页面解析脚本（<id>.json，隐藏 WebView 用，见 §19）
+│   └── ...
 └── templates/           # 会话模板（<template-id>.xml）
     └── ...
 ```
@@ -445,7 +447,12 @@ user 输入
 | `list_dir` / `glob` | 全平台 | 目录列举 / 模式匹配                         |
 | `shell`             | 桌面   | 执行命令（工作目录 = 沙箱）                 |
 | `http_fetch`        | 全平台 | 抓取 URL 文本                               |
-| `web_search`        | 全平台 | 多引擎（Bing→DDG→SearXNG），可配 Tavily key |
+| `web_search`        | 全平台 | 多引擎（隐藏 WebView 渲染 SERP 后按脚本解析，按配置顺序回退） |
+| `webview_fetch`     | 全平台 | 隐藏 WebView 加载 URL 返回渲染内容（outline/html/text，见 §19） |
+| `webview_extract`   | 全平台 | 按解析脚本提取结构化结果（见 §19）           |
+| `webview_script_mount` | 全平台 | 挂载/更新页面解析脚本（持久化，见 §19）    |
+| `webview_script_list` | 全平台 | 列出已挂载的页面解析脚本                    |
+| `webview_script_unmount` | 全平台 | 卸载页面解析脚本                        |
 | `attach_image`      | 全平台 | 把沙箱内图片附加到对话，模型下一轮即可看到   |
 | `datetime`          | 全平台 | 当前时间                                    |
 
@@ -681,3 +688,151 @@ shell 产出 PNG → attach_image 校验（沙箱/格式/体积）→ 落盘 att
   （见 §11.6）。
 - **打开工作目录**：会话「更多操作」菜单新增「打开工作目录」，用系统文件管理器
   打开该会话的 sandbox（见 §11.7）。
+
+---
+
+## 19. 隐藏 WebView 搜索与脚本提取
+
+### 19.1 动机
+
+直接 HTTP 请求搜索引擎会被反爬（TLS/JA3 指纹、IP 信誉、cloaked SEO-spam），
+因此搜索只保留隐藏 WebView 一种请求方式（原「引擎自带」HTTP/API 模式已移除），
+本地 headless Chromium（`--dump-dom`）也可能被检测（`navigator.webdriver`）。
+本方案在**真实浏览器环境**（隐藏 WebView）中加载页面，再用页面内 JS 解析结果。
+
+跨平台由 `webview_all` 提供：Android/iOS/macOS/Windows 用系统 WebView，
+**Linux 用 WebKitGTK 4.1**（构建前需 `apt install libwebkit2gtk-4.1-dev`）。
+离屏会话 `OffscreenWebViewSession` 无需可见 widget。
+
+### 19.2 三层执行
+
+| 层 | 机制 | 特点 |
+| --- | --- | --- |
+| L1 | `BrowserSession.get`（HTTP 模拟） | 快，易被反爬（仅 `http_fetch` 等使用） |
+| L2 | headless Chromium（`render`） | 中，可能被检测（同上） |
+| L3 | **隐藏 WebView（`WebViewExtractor`）** | 最真实，绕过大部分反爬 |
+
+**搜索只走 L3**：`web_search` 与手动搜索页都经 `BuiltinTools.search` →
+`_searchOne`，在隐藏 WebView 中加载引擎的 SERP URL 再解析；引擎顺序即回退策略
+（前一个引擎被拦/改版就顺延到下一个）。解析脚本来源优先级：内联 `extractScript` >
+`ScriptRegistry` 命中（内置 baidu/bing/duckduckgo/google/sogou）> 引擎 CSS 选择器动态生成。
+
+**多页聚合**：单页 SERP 通常只有 ~10 条，且首页含赞助/遮蔽结果。搜索会按
+「下一页」选择器（脚本 `next_selector` 优先，其次引擎配置 `next_selector`）继续加载
+后续页，**跨页按 URL 去重后合并成一个结果列表**，再统一走相关性与垃圾过滤，最后按
+`max_results` 截断。页数取值优先级：手动搜索页「聚合页数」/`web_search` 的 `pages`
+参数 > 引擎配置 `pages`（1–10，默认 1）。缺少下一页链接、或某一页没有新增结果即提前
+结束（`PagedExtraction.pagesFetched`）；没有 `next_selector` 时退化为单页。实际页数
+少于请求页数时，结果里会附一条诊断（`WebSearchOutcome.notes`），例如
+「翻页提前结束：请求 3 页，实际解析 1 页」。
+
+### 19.3 脚本注册表
+
+`ScriptRegistry` 合并两源并按 URL 匹配选脚本：
+
+1. 内置 `assets/scripts/*.json`（只读，google/bing/duckduckgo/baidu/sogou）；
+2. `<root>/scripts/<id>.json`（agent/用户自建，可写；同 id 覆盖内置）。
+
+匹配优先级：`url_pattern` 正则 > 精确 host > host 后缀；同分比较 `priority`。
+
+### 19.4 存储格式
+
+```
+<root>/
+  scripts/
+    <id>.json            # 每脚本一个文件，跨会话复用
+```
+
+```jsonc
+{
+  "id": "example",
+  "name": "Example SERP",
+  "created_by": "agent",              // builtin | user | agent
+  "origin_url": "https://example.com/search?q=test",
+  "match": { "hosts": ["example.com"], "path_prefix": "/search", "url_pattern": "" },
+  "ready_selector": "li.result",
+  "next_selector": "a.sb_pagN",
+  "priority": 10,
+  "enabled": true,
+  "created_at": "…", "updated_at": "…",
+  "body": "(function(){ … return JSON.stringify([{title,url,snippet}]); })()"
+}
+```
+
+**复用靠 URL 模式匹配**（非「完全相同 URL」）：agent 分析过
+`…/search?q=test` 后，同站点不同 query 也命中；需精确锁定时用 `url_pattern`。
+**一次挂载，`web_search` 与 `webview_extract` 同时生效，重启保留**。
+
+### 19.5 Agent 工具
+
+| 工具 | 审批 | 用途 |
+| --- | --- | --- |
+| `webview_fetch` | 0 | 加载 URL 返回渲染内容（`mode=outline/html/text`） |
+| `webview_extract` | 0 | 按脚本提取（验证脚本） |
+| `webview_script_mount` | 1 | 挂载脚本（持久化到 `<root>/scripts/`） |
+| `webview_script_list` | 0 | 列出脚本 |
+| `webview_script_unmount` | 1 | 卸载脚本（内置仅禁用） |
+
+### 19.6 Agent 闭环
+
+```
+webview_fetch(outline) → webview_fetch(html, selector) → 写脚本
+  → webview_extract(验证) → webview_script_mount(持久化)
+  → 后续 web_search / webview_extract 自动复用
+```
+
+### 19.7 关键实现
+
+- `WebViewExtractor`：进程内单例，懒加载离屏会话，单飞锁串行执行，30s 超时；
+  不可用时 `available=false`，调用方回退 L1/L2。
+- 验证码检测复用 `BrowserSession.looksBlocked`（命中抛 `WebViewBlockedException`）。
+- 脚本返回 JSON 字符串，Dart 侧 `WebViewExtractor.decodeResults` 解码后走现有
+  `_usable()` 过滤链（去重/相关性/跳转解包）。
+- 代理：WebKitGTK 走系统代理；`ProxyConfig` 通过环境变量注入。
+- 失败落盘：WebView 提取为空时，页面 HTML 落盘到 `<root>/logs/webview/last.html`，供离线分析结构。
+- 脚本求值用 `runJavaScriptReturningResult`（**不是** `callAsyncJavaScript`：后者会把 IIFE 再包一层函数，丢弃其返回值 → `null`）。
+- 多页聚合：`WebViewExtractor.evaluatePaged` 逐页解析并跨页去重合并；`web_search`
+  与手动搜索页共用 `BuiltinTools.search` → `_searchOne` 这一条路径。
+- **翻页是「验证过的」而不是「假定的」**：依次尝试三种触发方式 —— ①鼠标事件序列
+  （`mousedown/mouseup/click`）让站点自己的翻页 JS 跑起来（Bing 用它在 JS 里补出
+  `cvid`/`rdr`/`FORM=PERE` 等上下文并改写分页 URL）；②页面内 `location.assign(href)`；
+  ③Dart 侧 `loadRequest(href)`；每次触发后都要等到**解析结果集真的变化**（首条 URL 或
+  条数不同）才算一页。原因：SERP 分页是上下文相关的，把 Bing 分页链接里的
+  `…&first=11&FORM=PORE` 当新导航直接加载会被当作「重新搜第 1 页」；而旧 DOM 同样满足
+  `ready_selector`，所以「选择器命中」不能证明页面已前进。未前进即停止并在
+  `PagedExtraction.note` 中给出原因（URL 是否变化、结果集是否相同），不再静默少返回。
+- **一次「白跑」是正常的，必须重试而不是等待**（2026-10 实测，WebKitGTK 2.52 +
+  Chromium 149 对照）：会话里**第一次**点击分页链接会被引擎回以第 1 页（Bing 45s 以上
+  都不变，所以「等久一点」无效），但这次落地会重写 pager 的 `href`（Bing 追加一个新的
+  `FPIG`），**再点一次那个新链接就真的前进**（`sb_pagS` 1→2→3，首条结果变化）。
+  因此 `_advance` 最多跑 `_advanceRounds`（3）轮：某轮「已导航但结果集未变」不再直接
+  判死，而是从重写后的 DOM 重新取 `href` 再触发一轮；一轮里一旦导航成功就 break，
+  不再用另外两种触发方式重复请求同一个 URL。超过上限才报
+  「已导航到 …，但结果集与上一页相同（引擎忽略了分页参数，已重试 3 轮）」。
+- 翻页诊断落盘：页数未达请求值时把 query/URL/`next_selector`/每页条数与新增数追加到
+  `<logs>/webview/paging.log`（`PagedExtraction.trace`），供事后判断是「引擎拒绝翻页」
+  还是「我们的触发失败」。
+- 截图/落盘用同一 UA：`captureHtml` 也设置桌面 Chrome UA —— 否则引擎返回的是另一个
+  （lite）变体，dump 出来的分页链接形态与搜索时看到的并不一致，调试时会被带偏。
+
+### 19.8 手动搜索页（GUI 验证台）
+
+`SearchPage`（首页 AppBar「手动搜索」图标）是 `web_search` 的 GUI 验证台：
+
+- 选择搜索引擎（含 disabled 引擎，便于调试）、输入搜索内容（结果不做条数限制）；
+- 复用 `BuiltinTools.search(..., diagnose: true)`（与 `web_search` 工具**同一实现**），
+  列表展示标题/URL/摘要；解析不到结果时额外落盘 SERP HTML 便于修脚本；
+- 单击列表项 → 系统浏览器打开（`openUrl`：`xdg-open` / `open` / `start`）；
+- 列表项右侧「解析」按钮 → 隐藏 WebView 加载该 URL 并展示渲染文本
+  （与 `webview_fetch` 同一执行器 `WebViewExtractor`）；
+- 请求方式只有一种：**隐藏 WebView**（唯一搜索通道，`BuiltinTools.search`）。
+- 「相关性过滤」开关：关闭后只做去重/截断（`_dedupe`），展示**引擎直出**结果，
+  便于对比过滤前后差异（`WebSearchOutcome.filtered`）；
+- 「完全原始」开关：不去重、不筛选、不截断，展示脚本解析出的**全部条目**
+  （`raw: true`），用于核对引擎原始结果条数；
+- 「聚合页数」：聚合成一个列表的 SERP 页数（留空 = 引擎配置 `pages`），
+  多页结果跨页按 URL 去重后合并再展示；
+- 「翻页诊断」：实际解析页数少于请求页数时，结果上方显示原因
+  （`WebSearchOutcome.notes`：缺 `next_selector` / 触发后页面未变化 / 已导航但结果集
+  与上一页相同（该情况会先重试 3 轮，见 §19.7）），同一份 trace 追加到
+  `<logs>/webview/paging.log`。

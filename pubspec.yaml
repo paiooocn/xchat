@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.2.1+1
+version: 0.3.0+1
 license: MIT
 
 environment:
@@ -41,7 +41,10 @@ dependencies:
   file_picker: ^13.1.0
 
   # Web search (multi-engine meta search: DDG/Google/Bing/Brave/…)
-  ddgs: ^0.3.2
+
+  # Hidden WebView (offscreen) for search-result extraction; on Linux it uses
+  # the system WebKitGTK 4.1 (needs libwebkit2gtk-4.1-dev at build time).
+  webview_all: ^1.4.4
 
   # Desktop window sizing (per-user persisted size, applied on next launch)
   window_manager: ^0.5.2
@@ -62,6 +65,9 @@ flutter:
   # wizard and one-click sync (see DESIGN.md §17).
   assets:
     - assets/models_dev/models_dev.json
+    # Bundled page-extraction scripts (host → JS parser), loaded at startup and
+    # merged with <root>/scripts/*.json (see DESIGN.md §19).
+    - assets/scripts/
 
   # Bundled open-source fonts so typography is identical on every platform
   # (Android / iOS / macOS / Windows / Linux) instead of falling back to each

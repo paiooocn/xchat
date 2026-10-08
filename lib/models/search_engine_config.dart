@@ -2,131 +2,168 @@ import '../core/json_utils.dart';
 
 /// A configurable web-search backend.
 ///
-/// * `ddgs` aggregates many scraped engines via `package:ddgs` (no API key);
-/// * `tavily` calls the Tavily Search API ([apiKey] required);
-/// * built-ins (`kind` = `bing` / `duckduckgo`) use a fixed HTML parser;
-/// * custom engines are described by a URL template plus CSS selectors.
+/// Every engine is searched the same way: its SERP URL is loaded in the hidden
+/// WebView (a real browser context, so anti-bot walls see a browser) and parsed
+/// by an extraction script — the engine's own `extractScript`, a matching
+/// [ScriptRegistry] script (built-ins ship for baidu/bing/duckduckgo/google/
+/// sogou), or a script generated from the CSS selectors below.
 class SearchEngineConfig {
   SearchEngineConfig({
     required this.id,
     required this.name,
     this.enabled = true,
-    this.useProxy = true,
-    this.kind = 'custom',
-    this.apiKey = '',
-    this.backend = defaultBackend,
     this.urlTemplate = '',
     this.resultSelector = '',
     this.titleSelector = '',
     this.linkSelector = '',
     this.snippetSelector = '',
+    this.readySelector = '',
+    this.nextSelector = '',
+    this.pages = 1,
+    this.extractScript = '',
   });
-
-  static const defaultBackend = 'duckduckgo,brave,ecosia';
 
   String id;
   String name;
   bool enabled;
 
-  /// Whether the configured proxy is applied to this engine.
-  bool useProxy;
-
-  /// `ddgs` | `tavily` | `bing` | `duckduckgo` | `custom`.
-  String kind;
-
-  /// API key for `tavily` engines.
-  String apiKey;
-
-  /// Comma separated `ddgs` backends, tried in order and merged.
-  String backend;
-
-  /// Custom engine: search URL with `{query}` placeholder.
+  /// Search URL with a `{query}` placeholder — the only required field.
   String urlTemplate;
+
+  /// CSS selectors used to build an extraction script when no script matches
+  /// the SERP URL. Ignored when [extractScript] is set.
   String resultSelector;
   String titleSelector;
   String linkSelector;
   String snippetSelector;
 
-  bool get isBuiltin => kind == 'bing' || kind == 'duckduckgo';
+  /// Wait for this CSS selector before parsing (optional).
+  String readySelector;
 
-  /// Whether the engine has everything it needs to serve searches.
-  bool get isReady => kind != 'tavily' || apiKey.trim().isNotEmpty;
+  /// "Next page" CSS selector — its link is loaded to fetch the following SERP
+  /// page (optional; without it only page 1 is read).
+  String nextSelector;
 
-  /// Short label for the settings list.
-  String get kindLabel {
-    switch (kind) {
-      case 'ddgs':
-        return 'DDGS 多引擎';
-      case 'tavily':
-        return 'Tavily API';
-      case 'bing':
-        return '内置 · Bing HTML';
-      case 'duckduckgo':
-        return '内置 · DuckDuckGo HTML';
-      default:
-        return '自定义';
-    }
-  }
+  /// How many SERP pages to aggregate into one result list (1 = single page).
+  /// Higher values trade seconds for more results.
+  int pages;
 
-  SearchEngineConfig copyWith({String? id, String? name, bool? enabled, bool? useProxy}) =>
+  /// Inline extraction script (optional; takes precedence over the
+  /// [ScriptRegistry] and the CSS selectors).
+  String extractScript;
+
+  /// SERP pages to aggregate, clamped (each extra page costs a navigation plus
+  /// a render, so a handful is the practical ceiling).
+  int get pageCount => pages.clamp(1, 10);
+
+  /// Whether the engine has a browsable SERP to load.
+  bool get isReady => urlTemplate.trim().contains('{query}');
+
+  /// Short label for the engine list.
+  String get label => '隐藏 WebView${pageCount > 1 ? ' · 聚合 $pageCount 页' : ''}';
+
+  SearchEngineConfig copyWith({
+    String? id,
+    String? name,
+    bool? enabled,
+    String? nextSelector,
+    int? pages,
+  }) =>
       SearchEngineConfig(
         id: id ?? this.id,
         name: name ?? this.name,
         enabled: enabled ?? this.enabled,
-        useProxy: useProxy ?? this.useProxy,
-        kind: kind,
-        apiKey: apiKey,
-        backend: backend,
         urlTemplate: urlTemplate,
         resultSelector: resultSelector,
         titleSelector: titleSelector,
         linkSelector: linkSelector,
         snippetSelector: snippetSelector,
+        readySelector: readySelector,
+        nextSelector: nextSelector ?? this.nextSelector,
+        pages: pages ?? this.pages,
+        extractScript: extractScript,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'id': id,
         'name': name,
         'enabled': enabled,
-        'use_proxy': useProxy,
-        'kind': kind,
-        if (apiKey.isNotEmpty) 'api_key': apiKey,
-        if (backend.isNotEmpty) 'backend': backend,
         if (urlTemplate.isNotEmpty) 'url_template': urlTemplate,
         if (resultSelector.isNotEmpty) 'result_selector': resultSelector,
         if (titleSelector.isNotEmpty) 'title_selector': titleSelector,
         if (linkSelector.isNotEmpty) 'link_selector': linkSelector,
         if (snippetSelector.isNotEmpty) 'snippet_selector': snippetSelector,
+        if (readySelector.isNotEmpty) 'ready_selector': readySelector,
+        if (nextSelector.isNotEmpty) 'next_selector': nextSelector,
+        if (pages > 1) 'pages': pages,
+        if (extractScript.isNotEmpty) 'extract_script': extractScript,
       };
 
   factory SearchEngineConfig.fromJson(Object? value) {
     final json = asMap(value);
     final id = asString(json['id']) ?? 'engine';
+    // Legacy configs described the engine with a `kind` and no URL template
+    // (the removed "request the engine directly" mode). Map those kinds onto
+    // their SERP so the engine keeps working through the WebView.
+    final urlTemplate = (asString(json['url_template']) ?? '').trim();
+    final kind = (asString(json['kind']) ?? '').trim();
     return SearchEngineConfig(
       id: id,
       name: asString(json['name']) ?? id,
       enabled: asBool(json['enabled'], fallback: true),
-      useProxy: asBool(json['use_proxy'], fallback: true),
-      kind: (asString(json['kind']) ?? 'custom').trim().isEmpty
-          ? 'custom'
-          : asString(json['kind'])!.trim(),
-      apiKey: asString(json['api_key']) ?? '',
-      backend: (asString(json['backend']) ?? '').trim().isEmpty
-          ? defaultBackend
-          : asString(json['backend'])!.trim(),
-      urlTemplate: asString(json['url_template']) ?? '',
+      urlTemplate: urlTemplate.isNotEmpty
+          ? urlTemplate
+          : _legacyTemplates[kind] ?? _legacyTemplates[id] ?? '',
       resultSelector: asString(json['result_selector']) ?? '',
       titleSelector: asString(json['title_selector']) ?? '',
       linkSelector: asString(json['link_selector']) ?? '',
       snippetSelector: asString(json['snippet_selector']) ?? '',
+      readySelector: asString(json['ready_selector']) ?? '',
+      nextSelector: asString(json['next_selector']) ?? '',
+      pages: (asInt(json['pages']) ?? 1).clamp(1, 10),
+      extractScript: asString(json['extract_script']) ?? '',
     );
   }
 
+  /// SERP templates for the engines of the removed direct-request mode; all of
+  /// them have a built-in extraction script, so the URL alone is enough.
+  static const _legacyTemplates = <String, String>{
+    'bing': 'https://cn.bing.com/search?q={query}',
+    'duckduckgo': 'https://duckduckgo.com/?q={query}',
+    'webview': 'https://www.google.com/search?q={query}&num=20',
+  };
+
   /// The built-in engines offered by default, in fallback order.
   static List<SearchEngineConfig> defaults() => <SearchEngineConfig>[
-        SearchEngineConfig(id: 'ddgs', name: 'DDGS 多引擎', kind: 'ddgs'),
-        SearchEngineConfig(id: 'tavily', name: 'Tavily', kind: 'tavily'),
-        SearchEngineConfig(id: 'bing', name: 'Bing', kind: 'bing'),
-        SearchEngineConfig(id: 'duckduckgo', name: 'DuckDuckGo', kind: 'duckduckgo'),
+        SearchEngineConfig(
+          id: 'bing',
+          name: 'Bing',
+          urlTemplate: 'https://cn.bing.com/search?q={query}',
+          pages: 2,
+        ),
+        SearchEngineConfig(
+          id: 'baidu',
+          name: '百度',
+          urlTemplate: 'https://www.baidu.com/s?wd={query}',
+          pages: 2,
+        ),
+        SearchEngineConfig(
+          id: 'sogou',
+          name: '搜狗',
+          urlTemplate: 'https://www.sogou.com/web?query={query}',
+          pages: 2,
+        ),
+        SearchEngineConfig(
+          id: 'google',
+          name: 'Google',
+          urlTemplate: 'https://www.google.com/search?q={query}&num=20',
+          pages: 2,
+        ),
+        SearchEngineConfig(
+          id: 'duckduckgo',
+          name: 'DuckDuckGo',
+          urlTemplate: 'https://duckduckgo.com/?q={query}',
+          pages: 2,
+        ),
       ];
 }

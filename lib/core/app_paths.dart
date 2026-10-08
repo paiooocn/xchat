@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   config.json
 ///   sessions/                 default sandbox for session files (<uuid>.xml)
 ///   templates/                session templates
+///   scripts/                  webview page-extraction scripts (<id>.json)
 ///   logs/
 ///   sandboxs/                 per-session working dirs
 ///   projects/                 project files + working dirs
@@ -133,6 +134,9 @@ class AppPaths {
   String get templatesDir => p.join(root, 'templates');
   String get logsDir => p.join(root, 'logs');
 
+  /// Page-extraction scripts (`<id>.json`), shared across sessions.
+  String get scriptsDir => p.join(root, 'scripts');
+
   /// Base directory for per-session working dirs (`sandboxs/{session_id}`).
   String get sandboxesDir => p.join(root, 'sandboxs');
 
@@ -149,6 +153,9 @@ class AppPaths {
   String sessionFile(String id) => p.join(sessionsDir, '$id.xml');
   String templateFile(String id) => p.join(templatesDir, '$id.xml');
   String projectFile(String id) => p.join(projectsDir, '$id.xml');
+
+  /// On-disk path of a page-extraction script.
+  String scriptFile(String id) => p.join(scriptsDir, '$id.json');
 
   /// Default working dir for a standalone session.
   String sessionSandboxDir(String id) => p.join(sandboxesDir, id);
@@ -172,6 +179,7 @@ class AppPaths {
       root,
       sessionsDir,
       templatesDir,
+      scriptsDir,
       logsDir,
       sandboxesDir,
       projectsDir,

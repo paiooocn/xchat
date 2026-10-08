@@ -1,0 +1,10 @@
+{
+  "id": "bing",
+  "name": "Bing SERP",
+  "created_by": "builtin",
+  "match": { "hosts": ["bing.com"], "path_prefix": "/search" },
+  "ready_selector": "li.b_algo",
+  "next_selector": "a.sb_pagN",
+  "priority": 10,
+  "body": "(function () { var out = []; var nodes = document.querySelectorAll('li.b_algo'); for (var i = 0; i < nodes.length; i++) { var n = nodes[i]; if ((n.className || '').indexOf('b_ad') >= 0) continue; var a = n.querySelector('h2 a') || n.querySelector('a[href^=http]'); if (!a || !a.href) continue; var h = n.querySelector('h2'); var p = n.querySelector('.b_caption p') || n.querySelector('.b_caption') || n.querySelector('p'); out.push({ title: ((h && (h.innerText || h.textContent)) || (a.innerText || a.textContent) || '').trim(), url: a.href, snippet: ((p && (p.innerText || p.textContent)) || '').trim() }); } return JSON.stringify(out); })()"
+}

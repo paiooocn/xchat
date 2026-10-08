@@ -1,3 +1,6 @@
+# Runtime session sandbox (created when the app root points at the repo)
+/attachments/
+
 # Miscellaneous
 *.class
 *.log

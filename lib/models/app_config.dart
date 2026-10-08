@@ -233,20 +233,18 @@ class AppConfig {
   static List<SearchEngineConfig> _decodeSearchEngines(Map<String, Object?> json) {
     final list = asList(json['search_engines']);
     if (list.isNotEmpty) {
-      final engines = list.map(SearchEngineConfig.fromJson).toList();
-      final legacyPair = engines.length == 2 &&
-          engines.every((e) => e.kind == 'bing' || e.kind == 'duckduckgo') &&
-          engines.map((e) => e.kind).toSet().length == 2;
-      // Old default pair (raw Bing/DDG HTML) → upgrade to the ddgs/Tavily-first
-      // layout; anything custom stays exactly as the user left it.
-      return legacyPair ? SearchEngineConfig.defaults() : engines;
+      // Engines without a browsable SERP (`{query}` template) are leftovers of
+      // the removed direct-request mode — drop them, keeping the order.
+      final engines =
+          list.map(SearchEngineConfig.fromJson).where((e) => e.isReady).toList();
+      if (engines.isNotEmpty) return engines;
     }
     // Migrate the legacy single-engine field.
     final legacy = (asString(json['search_engine']) ?? '').trim();
     final defaults = SearchEngineConfig.defaults();
     if (legacy.isEmpty) return defaults;
     for (final engine in defaults) {
-      engine.enabled = engine.kind == legacy || engine.id == legacy;
+      engine.enabled = engine.id == legacy || engine.name == legacy;
     }
     if (defaults.every((e) => !e.enabled)) return defaults;
     return defaults;
@@ -297,6 +295,11 @@ class AppConfig {
         'datetime': 0,
         'http_fetch': 0,
         'web_search': 0,
+        'webview_fetch': 0,
+        'webview_extract': 0,
+        'webview_script_list': 0,
+        'webview_script_mount': 1,
+        'webview_script_unmount': 1,
         'write_file': 2,
         'edit_file': 2,
         'shell': 3,

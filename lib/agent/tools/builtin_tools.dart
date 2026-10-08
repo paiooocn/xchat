@@ -2,18 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:ddgs/ddgs.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:llm_api/llm_api.dart';
 import 'package:path/path.dart' as p;
 
+import '../../core/app_paths.dart';
 import '../../models/app_config.dart';
+import '../../models/extract_script.dart';
 import '../../models/proxy_config.dart';
 import '../../models/search_engine_config.dart';
 import 'browser_session.dart';
 import 'image_attach.dart';
 import 'path_guard.dart';
-import 'tavily_api.dart';
+import 'script_registry.dart';
+import 'search_filter.dart';
+import 'webview_extractor.dart';
+import 'webview_tools.dart';
 
 /// The catalogue of built-in tools and their metadata.
 class BuiltinTools {
@@ -25,9 +29,23 @@ class BuiltinTools {
     'glob': '按通配符匹配文件路径',
     'shell': '执行 shell 命令（桌面端，工作目录=沙箱）',
     'http_fetch': '抓取网页/接口文本内容',
-    'web_search': '联网搜索（引擎可配置：bing/duckduckgo，可走代理）',
+    'web_search': '联网搜索（隐藏 WebView 渲染 SERP 后解析，可绕开反爬/验证码）',
+    'webview_fetch': '用隐藏 WebView 加载 URL 并返回渲染后的内容（outline/html/text）',
+    'webview_extract': '用隐藏 WebView 按解析脚本提取结构化结果',
+    'webview_script_mount': '挂载/更新页面解析脚本（持久化，相同 URL 自动复用）',
+    'webview_script_list': '列出已挂载的页面解析脚本',
+    'webview_script_unmount': '卸载页面解析脚本',
     'attach_image': '把沙箱内的图片附加到对话（模型下一轮即可看到）',
     'datetime': '获取当前日期时间',
+  };
+
+  /// Agent tools that drive the hidden WebView (see [WebViewTools]).
+  static const _webviewToolNames = <String>{
+    'webview_fetch',
+    'webview_extract',
+    'webview_script_mount',
+    'webview_script_list',
+    'webview_script_unmount',
   };
 
   /// Builds the tool objects enabled for a session.
@@ -43,6 +61,11 @@ class BuiltinTools {
     final proxyConfig = proxy ?? ProxyConfig();
     final tools = <LlmTool>[];
     final set = enabled.toSet();
+    // Hidden-WebView tools are built as a group, then filtered by name.
+    final webviewWanted = set.intersection(_webviewToolNames);
+    if (webviewWanted.isNotEmpty) {
+      tools.addAll(WebViewTools.build().where((t) => webviewWanted.contains(t.name)));
+    }
     for (final name in set) {
       switch (name) {
         case 'read_file':
@@ -60,7 +83,7 @@ class BuiltinTools {
         case 'http_fetch':
           tools.add(_httpFetch(proxyConfig));
         case 'web_search':
-          tools.add(_webSearch(searchEngines, proxyConfig));
+          tools.add(_webSearch(searchEngines));
         case 'attach_image':
           tools.add(_attachImage(guard, maxAttachmentBytes));
         case 'datetime':
@@ -266,13 +289,19 @@ class BuiltinTools {
         },
       );
 
-  static LlmTool _webSearch(List<SearchEngineConfig> searchEngines, ProxyConfig proxy) => FunctionTool(
+  static LlmTool _webSearch(List<SearchEngineConfig> searchEngines) => FunctionTool(
         name: 'web_search',
-        description: '联网搜索并返回标题/链接/摘要。query 请用精炼关键词（不要整句长问题），结果已过滤广告/跳转链接/无关内容。',
+        description: '联网搜索并返回标题/链接/摘要（在隐藏 WebView 中渲染 SERP 后解析，可绕开反爬/验证码）。'
+            'query 请用精炼关键词（不要整句长问题），结果已过滤广告/跳转链接/无关内容。',
         parameters: objectSchema(
           properties: {
             'query': stringSchema(description: '搜索关键词'),
             'max_results': integerSchema(description: '结果数量', minimum: 1, maximum: 20),
+            'pages': integerSchema(
+              description: '聚合的 SERP 页数（覆盖引擎配置，1–10）',
+              minimum: 1,
+              maximum: 10,
+            ),
           },
           required: ['query'],
         ),
@@ -280,63 +309,84 @@ class BuiltinTools {
           final query = '${args['query'] ?? ''}'.trim();
           if (query.isEmpty) return 'ERROR: query required';
           final max = (args['max_results'] as num?)?.toInt() ?? 8;
-          final proxied = BrowserSession(proxy: proxy);
-          final direct = BrowserSession();
-          try {
-            final errors = <String>[];
-
-            /// Tries every enabled engine against [q]; keeps only usable,
-            /// relevant, de-duplicated results (HTML scrapers frequently get
-            /// served cloaked SEO-spam that parses like real results).
-            Future<Map<String, Object?>> run(String q) async {
-              final seen = <String>{};
-              for (final engine in searchEngines.where((e) => e.enabled && e.isReady)) {
-                final session = (engine.useProxy && !proxy.isEmpty) ? proxied : direct;
-                final searcher = _engineFor(engine, session, proxy);
-                try {
-                  final raw = await searcher.search(q, max * 3);
-                  final kept = _usable(q, raw, max, seen: seen);
-                  final dropped = raw.length - kept.length;
-                  if (kept.isNotEmpty) {
-                    return {'engine': searcher.name, 'query': q, 'results': kept, 'dropped': dropped};
-                  }
-                  errors.add('${searcher.name}: no relevant results (raw ${raw.length}, dropped $dropped)');
-                } catch (error) {
-                  errors.add('${searcher.name}: $error');
-                }
-              }
-              return {'engine': '', 'query': q, 'results': const <Map<String, Object?>>[], 'dropped': 0};
-            }
-
-            var outcome = await run(query);
-            if ((outcome['results'] as List).isEmpty) {
-              // Long natural-language queries are the easiest target for
-              // scraper-cloaking; retry once with a keyword-only query.
-              final compact = _compactQuery(query);
-              if (compact.isNotEmpty && compact != query) {
-                errors.add('no usable results for the original query, retrying with keywords: $compact');
-                final retry = await run(compact);
-                if ((retry['results'] as List).isNotEmpty) outcome = retry;
-              }
-            }
-            final results = outcome['results'] as List;
-            if (results.isEmpty) {
-              return 'ERROR: all search engines failed:\n${errors.join('\n')}';
-            }
-            final dropped = outcome['dropped'] as int;
-            return const JsonEncoder.withIndent('  ').convert({
-              'query': outcome['query'],
-              'engine': outcome['engine'],
-              'results': results,
-              if ('${outcome['query']}' != query) 'note': '原 query 未命中，已退化为精炼关键词检索',
-              if (dropped > 0) 'filtered': 'dropped $dropped junk/irrelevant/duplicate items',
-            });
-          } finally {
-            proxied.close();
-            direct.close();
+          final pages = (args['pages'] as num?)?.toInt();
+          final outcome = await search(
+            searchEngines: searchEngines,
+            query: query,
+            max: max,
+            pages: pages,
+          );
+          if (outcome.results.isEmpty) {
+            return 'ERROR: all search engines failed:\n${outcome.errors.join('\n')}';
           }
+          return const JsonEncoder.withIndent('  ').convert({
+            'query': outcome.query,
+            'engine': outcome.engine,
+            'results': outcome.results,
+            if (outcome.query != query) 'note': '原 query 未命中，已退化为精炼关键词检索',
+            if (outcome.notes.isNotEmpty) 'paging': outcome.notes,
+            if (outcome.dropped > 0)
+              'filtered': 'dropped ${outcome.dropped} junk/irrelevant/duplicate items',
+          });
         },
       );
+
+  /// Runs a web search through the hidden WebView, trying each enabled engine in
+  /// order until one yields results (a blocked or changed SERP simply falls
+  /// through to the next engine).
+  ///
+  /// Shared by the `web_search` tool and the manual search page, so both go
+  /// through the same paged extraction, relevance filtering and fallback.
+  /// [max] caps the returned list; `null` returns everything the SERP yielded.
+  static Future<WebSearchOutcome> search({
+    required List<SearchEngineConfig> searchEngines,
+    required String query,
+    int? max = 8,
+    bool filter = true,
+    bool raw = false,
+    int? pages,
+    bool diagnose = false,
+  }) async {
+    Future<WebSearchOutcome> run(String q) async {
+      final errors = <String>[];
+      for (final engine in searchEngines.where((e) => e.enabled && e.isReady)) {
+        try {
+          final outcome = await _searchOne(
+            engine: engine,
+            query: q,
+            max: max,
+            filter: filter,
+            raw: raw,
+            pages: pages,
+            diagnose: diagnose,
+          );
+          if (outcome.results.isNotEmpty) return outcome;
+          errors.addAll(outcome.errors);
+        } catch (error) {
+          errors.add('${engine.name}: $error');
+        }
+      }
+      return WebSearchOutcome(
+        engine: '',
+        query: q,
+        results: const <Map<String, Object?>>[],
+        rawCount: 0,
+        dropped: 0,
+        filtered: filter,
+        errors: errors,
+      );
+    }
+
+    final outcome = await run(query);
+    if (!filter || outcome.results.isNotEmpty) return outcome;
+    // Long natural-language queries are the easiest target for cloaking; retry
+    // once with a keyword-only query.
+    final compact = SearchFilter.compactQuery(query);
+    if (compact.isEmpty || compact == query) return outcome;
+    outcome.errors.add('no usable results for the original query, retrying with keywords: $compact');
+    final retry = await run(compact);
+    return retry.results.isNotEmpty ? retry : outcome;
+  }
 
   static LlmTool _datetime() => FunctionTool(
         name: 'datetime',
@@ -351,18 +401,6 @@ class BuiltinTools {
           });
         },
       );
-
-  /// Throws when the engine answered with a captcha / bot-challenge page —
-  /// such pages still contain parsable blocks and would silently turn into
-  /// garbage "results".
-  static void _ensureNotBlocked(String body, String engine) {
-    if (body.trim().length < 200) {
-      throw StateError('$engine: empty or truncated response');
-    }
-    if (BrowserSession.looksBlocked(body)) {
-      throw StateError('$engine: captcha / bot-challenge page returned');
-    }
-  }
 
   /// Resolves [href] against [base] and unwraps engine redirectors
   /// (DuckDuckGo `/l/?uddg=…`, Bing `/ck/a?…&u=a1<base64url>`).
@@ -395,96 +433,169 @@ class BuiltinTools {
     return uri.toString();
   }
 
-  /// Junk / duplicate / irrelevant filter + snippet capping, shared by the
-  /// engine tier and the outer run loop. [seen] may span engines for
-  /// cross-engine de-duplication.
-  static List<Map<String, Object?>> _usable(
-    String query,
-    List<Map<String, Object?>> raw,
-    int max, {
-    Set<String>? seen,
-  }) {
-    final urls = seen ?? <String>{};
-    final kept = <Map<String, Object?>>[];
-    for (final item in raw) {
-      final title = '${item['title'] ?? ''}'.trim();
-      final url = '${item['url'] ?? ''}'.trim();
-      final snippet = '${item['snippet'] ?? ''}'.trim();
-      if (_isJunk(title, url) || !urls.add(url) || !_relevant(query, title, snippet)) continue;
-      kept.add({
-        'title': title,
-        'url': url,
-        'snippet': snippet.length > 300 ? '${snippet.substring(0, 300)}…' : snippet,
-      });
-      if (kept.length >= max) break;
+  /// The SERP URL a WebView request should load for [engine], or `null` when the
+  /// engine has no browsable page (its template lacks the `{query}` placeholder).
+  static Uri? searchUrl(SearchEngineConfig engine, String query) {
+    final template = engine.urlTemplate.trim();
+    if (!template.contains('{query}')) return null;
+    return Uri.tryParse(template.replaceAll('{query}', Uri.encodeQueryComponent(query)));
+  }
+
+  /// Resolves the extraction script for [engine] on [uri], in precedence order:
+  /// inline `extractScript` → [ScriptRegistry] match → CSS selectors → error.
+  static Future<ExtractScript> _resolveScript(SearchEngineConfig engine, Uri uri) async {
+    if (engine.extractScript.trim().isNotEmpty) {
+      return ExtractScript.inline(
+        id: engine.id,
+        body: engine.extractScript.trim(),
+        readySelector: engine.readySelector,
+        nextSelector: engine.nextSelector,
+      );
     }
-    return kept;
-  }
-
-  /// Drops unusable entries: empty, in-page anchors, engine-internal links.
-  static bool _isJunk(String title, String url) {
-    if (title.isEmpty || url.isEmpty) return true;
-    if (url.startsWith('javascript:') || url.startsWith('#')) return true;
-    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
-    return host.endsWith('bing.com') || host.endsWith('duckduckgo.com');
-  }
-
-  /// Latin words plus CJK bigrams — a language-agnostic relevance vocabulary.
-  static Set<String> _terms(String text) {
-    final out = <String>{};
-    for (final m in RegExp(r'[a-zA-Z]{2,}').allMatches(text)) {
-      out.add(m.group(0)!.toLowerCase());
+    final matched = (await ScriptRegistry.instance()).resolve(uri);
+    if (matched != null) return matched;
+    if (engine.resultSelector.trim().isNotEmpty) {
+      return ExtractScript.fromSelectors(
+        id: engine.id,
+        name: engine.name,
+        resultSelector: engine.resultSelector,
+        titleSelector: engine.titleSelector,
+        linkSelector: engine.linkSelector,
+        snippetSelector: engine.snippetSelector,
+        readySelector: engine.readySelector,
+        nextSelector: engine.nextSelector,
+        originUrl: uri.toString(),
+      );
     }
-    for (final m in RegExp(r'[\u4e00-\u9fff]+').allMatches(text)) {
-      final run = m.group(0)!;
-      if (run.length == 1) {
-        out.add(run);
-      } else {
-        for (var i = 0; i + 1 < run.length; i++) {
-          out.add(run.substring(i, i + 2));
-        }
-      }
+    throw StateError(
+        '引擎「${engine.name}」无可用解析脚本：请配置 CSS 选择器或用 webview_script_mount 挂载脚本');
+  }
+
+  /// The "next page" selector for a webview search: the script's own selector
+  /// wins (built-in / agent-mounted scripts know their SERP), else the engine
+  /// config's. Empty ⇒ single-page search.
+  static String _nextSelector(ExtractScript script, SearchEngineConfig engine) {
+    final fromScript = script.nextSelector.trim();
+    return fromScript.isNotEmpty ? fromScript : engine.nextSelector.trim();
+  }
+
+  /// Loads [engine]'s SERP in the hidden WebView, applies the junk/relevance
+  /// filter and returns the outcome.
+  ///
+  /// [pages] overrides the engine's configured page count; [diagnose] also dumps
+  /// the SERP HTML to disk when the script parses nothing (manual search page).
+  static Future<WebSearchOutcome> _searchOne({
+    required SearchEngineConfig engine,
+    required String query,
+    int? max = 8,
+    bool filter = true,
+    bool raw = false,
+    int? pages,
+    bool diagnose = false,
+  }) async {
+    final uri = searchUrl(engine, query);
+    if (uri == null) {
+      throw StateError('引擎「${engine.name}」缺少含 {query} 的搜索 URL 模板');
     }
-    return out;
-  }
-
-  /// Cheap relevance gate: a usable result must share some vocabulary with the
-  /// query — cloaked SEO-spam (e.g. 磨粉机站群) shares none of it.
-  static bool _relevant(String query, String title, String snippet) {
-    final wanted = _terms(query);
-    if (wanted.isEmpty) return true;
-    final got = _terms('$title $snippet');
-    if (got.isEmpty) return false;
-    var hits = 0;
-    for (final term in wanted) {
-      if (got.contains(term)) hits++;
+    final script = await _resolveScript(engine, uri);
+    final extractor = WebViewExtractor.shared;
+    if (!extractor.available) throw StateError(extractor.unavailableReason);
+    // Paged extraction: follows the "next" link up to [pages] times, merging
+    // every page into one de-duplicated list.
+    final count = (pages ?? engine.pageCount).clamp(1, 10);
+    final paged = await extractor.evaluatePaged(
+      uri,
+      script.body,
+      readySelector: script.readySelector,
+      nextSelector: _nextSelector(script, engine),
+      maxPages: count,
+    );
+    final decoded = _unwrapLinks(paged.items, uri);
+    final List<Map<String, Object?>> results;
+    final int dropped;
+    if (raw) {
+      // No filtering at all: every parsed item, duplicates included, no cap.
+      results = decoded;
+      dropped = 0;
+    } else {
+      final matched = filter ? SearchFilter.usable(query, decoded) : SearchFilter.dedupe(decoded);
+      results = max == null ? matched : matched.take(max).toList();
+      dropped = decoded.length - matched.length;
     }
-    return hits >= 2 || (wanted.length <= 3 && hits >= 1);
+    final errors = <String>[];
+    final notes = <String>[];
+    final pagingNote = paged.note;
+    if (pagingNote != null) notes.add(pagingNote);
+    // Persist the paging trace (page URLs + per-page counts): afterwards it is
+    // the only way to tell "the engine refused to page" from "our trigger
+    // failed" — the live UI only shows the one-line note.
+    if (pagingNote != null) await _logPaging(query, uri, paged);
+    if (decoded.isEmpty) {
+      final dump = diagnose
+          ? '（页面 HTML 已落盘：${await dumpPageHtml(uri, waitSelector: script.readySelector)}）'
+          : '';
+      errors.add('WebView 已加载 ${uri.host}${uri.path}，但脚本（${script.id}）未解析到结果：'
+          '页面结构可能变化，或选择器/脚本不匹配$dump');
+    } else if (results.isEmpty) {
+      errors.add('脚本解析到 ${decoded.length} 条，但被过滤规则全部丢弃'
+          '（可关闭「相关性过滤」查看原始结果）');
+    }
+    return WebSearchOutcome(
+      engine: '${engine.name} · WebView'
+          '${count > 1 ? ' · 聚合${paged.pagesFetched}/$count页' : ''}${raw ? '（原始）' : ''}',
+      query: query,
+      results: results,
+      rawCount: decoded.length,
+      dropped: dropped,
+      filtered: raw ? false : filter,
+      errors: errors,
+      notes: notes,
+    );
   }
 
-  /// Strips digits/punctuation → keyword-only fallback query.
-  static String _compactQuery(String query) {
-    final compact = query
-        .replaceAll(RegExp(r'[^a-zA-Z\u4e00-\u9fff]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return compact.length > 40 ? compact.substring(0, 40).trim() : compact;
+  /// Rewrites engine redirector links (Bing `ck/a`, DuckDuckGo `/l/?uddg=`) into
+  /// their real destination, so the model (and the UI) sees the final URL.
+  static List<Map<String, Object?>> _unwrapLinks(List<Map<String, Object?>> items, Uri base) => [
+        for (final item in items)
+          {...item, 'url': _unwrapLink('${item['url'] ?? ''}', base)},
+      ];
+
+  /// Appends a paging trace to `<logs>/webview/paging.log` (best-effort).
+  static Future<void> _logPaging(String query, Uri uri, PagedExtraction paged) async {
+    if (!AppPaths.isReady) return;
+    try {
+      final dir = Directory(p.join(AppPaths.instance.logsDir, 'webview'));
+      await dir.create(recursive: true);
+      final file = File(p.join(dir.path, 'paging.log'));
+      final stamp = DateTime.now().toIso8601String();
+      await file.writeAsString(
+        '[$stamp] query=$query\n'
+        '  url=$uri\n'
+        '  next_selector=${paged.nextSelector.isEmpty ? '(空)' : paged.nextSelector}\n'
+        '  ${paged.note}\n'
+        '${paged.trace.map((line) => '  $line').join('\n')}\n\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    } catch (_) {
+      // Diagnostics must never fail a search.
+    }
   }
 
-  /// Binds one configured engine to [session] / [proxy].
-  static _SearchEngine _engineFor(
-      SearchEngineConfig engine, BrowserSession session, ProxyConfig proxy) {
-    switch (engine.kind) {
-      case 'ddgs':
-        return _SearchEngine(engine.name, (q, m) => _ddgs(engine, q, m, proxy));
-      case 'tavily':
-        return _SearchEngine(engine.name, (q, m) => _tavily(engine, q, m, session));
-      case 'bing':
-        return _SearchEngine(engine.name, (q, m) => _bing(q, m, session));
-      case 'duckduckgo':
-        return _SearchEngine(engine.name, (q, m) => _duckDuckGo(q, m, session));
-      default:
-        return _SearchEngine(engine.name, (q, m) => _custom(engine, q, m, session));
+  /// Dumps the rendered page HTML to `<logs>/webview/last.html` for offline
+  /// inspection; returns the path, or a short failure note.
+  static Future<String> dumpPageHtml(Uri url, {String waitSelector = ''}) async {
+    try {
+      final html = await WebViewExtractor.shared.captureHtml(url, waitSelector: waitSelector);
+      if (html.isEmpty) return '(页面为空，未能落盘)';
+      if (!AppPaths.isReady) return '(数据目录未就绪，未能落盘)';
+      final dir = Directory(p.join(AppPaths.instance.logsDir, 'webview'));
+      await dir.create(recursive: true);
+      final file = File(p.join(dir.path, 'last.html'));
+      await file.writeAsString(html, flush: true);
+      return file.path;
+    } catch (error) {
+      return '(落盘失败：$error)';
     }
   }
 
@@ -504,238 +615,6 @@ class BuiltinTools {
       }
     }
     return page;
-  }
-
-  /// Generic custom search: URL template + CSS selectors.
-  static Future<List<Map<String, Object?>>> _custom(
-    SearchEngineConfig engine,
-    String query,
-    int max,
-    BrowserSession session,
-  ) async {
-    final template = engine.urlTemplate.trim();
-    if (!template.contains('{query}')) {
-      throw StateError('自定义引擎「${engine.name}」的 URL 模板缺少 {query} 占位符（否则每次搜索都返回同一页面）');
-    }
-    final resultSelector = engine.resultSelector.trim();
-    if (resultSelector.isEmpty) {
-      throw StateError('自定义引擎「${engine.name}」缺少结果条目选择器（避免抓到导航/页脚链接）');
-    }
-    final uri = Uri.parse(template.replaceAll('{query}', Uri.encodeQueryComponent(query)));
-    final page = await _fetchPage(session, uri);
-    if (page.statusCode >= 400) throw StateError('HTTP ${page.statusCode}');
-    _ensureNotBlocked(page.body, engine.name);
-    final doc = html_parser.parse(page.body);
-    final results = <Map<String, Object?>>[];
-    for (final node in doc.querySelectorAll(resultSelector)) {
-      final linkSelector = engine.linkSelector.trim();
-      var anchor = linkSelector.isEmpty ? node.querySelector('a') : node.querySelector(linkSelector);
-      if (anchor == null && node.localName == 'a') anchor = node;
-      final titleSelector = engine.titleSelector.trim();
-      final titleNode = titleSelector.isEmpty ? anchor : node.querySelector(titleSelector);
-      final url = _unwrapLink(anchor?.attributes['href'] ?? titleNode?.attributes['href'] ?? '', page.uri);
-      final title = (titleNode?.text ?? anchor?.text ?? '').trim();
-      final snippetSelector = engine.snippetSelector.trim();
-      final snippet = snippetSelector.isEmpty ? '' : (node.querySelector(snippetSelector)?.text ?? '').trim();
-      if (url.isEmpty && title.isEmpty) continue;
-      results.add({'title': title, 'url': url, 'snippet': snippet});
-      if (results.length >= max * 3) break;
-    }
-    return results;
-  }
-
-  /// Bing in three tiers: the clean RSS feed first, then a browser-consistent
-  /// HTML scrape, and finally a real headless render of the SERP.
-  static Future<List<Map<String, Object?>>> _bing(String query, int max, BrowserSession session) async {
-    Object? lastError;
-
-    // L1 — RSS feed (`format=rss`): an XML endpoint meant for feed readers,
-    // hence not served the cloaked / SEO-spam HTML SERP.
-    try {
-      final usable = _usable(query, await _bingRss(query, max, session), max);
-      if (usable.isNotEmpty) return usable;
-    } catch (error) {
-      lastError = error;
-    }
-
-    // L2 — HTML SERP scraped like a browser: the same URL params (form /
-    // refig / pc) plus the warmed-up visitor cookies they must agree with.
-    try {
-      await _bingWarmUp(session);
-      final uri = _bingUri(query, session);
-      final page = await _fetchPage(session, uri);
-      if (page.statusCode >= 400) throw StateError('HTTP ${page.statusCode}');
-      _ensureNotBlocked(page.body, 'bing');
-      final usable = _usable(query, _parseBingDom(page.body, page.uri, max * 3), max);
-      if (usable.isNotEmpty) return usable;
-    } catch (error) {
-      lastError = error;
-    }
-
-    // L3 — the SERP executed in real headless Chrome: the JS that mints the
-    // visitor tokens runs there, so the page cannot be cloaked to it.
-    try {
-      if (session.canRender) {
-        final uri = _bingUri(query, session);
-        final dom = await session.render(uri);
-        final usable = _usable(query, _parseBingDom(dom, uri, max * 3), max);
-        if (usable.isNotEmpty) return usable;
-      }
-    } catch (error) {
-      lastError = error;
-    }
-
-    if (lastError != null) throw lastError;
-    return const <Map<String, Object?>>[];
-  }
-
-  /// The SERP URL exactly as a browser builds it: search host, entry-form id,
-  /// UI-config code and the per-visitor `refig` hash — Bing cross-checks these
-  /// against its visitor cookies for consistency.
-  static Uri _bingUri(String query, BrowserSession session) => Uri.https('cn.bing.com', '/search', {
-        'q': query,
-        'form': 'ANNNB1',
-        'refig': session.refig,
-        'pc': 'U531',
-      });
-
-  /// First visit to the search host: harvests the visitor cookies (MUID /
-  /// _EDGE_S) that the `form`/`refig`/`pc` params must stay consistent with.
-  static Future<void> _bingWarmUp(BrowserSession session) async {
-    if (session.hasCookiesFor('bing.com')) return;
-    try {
-      await session.get(Uri.https('cn.bing.com', '/'));
-    } catch (_) {
-      // Warm-up is best-effort.
-    }
-  }
-
-  /// L1 source: Bing's RSS endpoint — clean XML items, no `ck/a` redirects.
-  static Future<List<Map<String, Object?>>> _bingRss(
-      String query, int max, BrowserSession session) async {
-    final uri = Uri.https('www.bing.com', '/search', {
-      'q': query,
-      'format': 'rss',
-      'count': '$max',
-    });
-    final page = await session.get(uri);
-    if (page.statusCode >= 400) return const <Map<String, Object?>>[];
-    final results = <Map<String, Object?>>[];
-    for (final m in RegExp(r'<item>([\s\S]*?)</item>').allMatches(page.body)) {
-      final item = m.group(1) ?? '';
-      results.add({
-        'title': _rssField(item, 'title'),
-        'url': _rssField(item, 'link'),
-        'snippet': _rssField(item, 'description'),
-      });
-      if (results.length >= max * 2) break;
-    }
-    return results;
-  }
-
-  /// Extracts one RSS tag's text. Regex-based on purpose: `<link>` is a void
-  /// element for the HTML parser and would swallow the URL.
-  static String _rssField(String item, String tag) {
-    final m = RegExp('<$tag>([\\s\\S]*?)</$tag>').firstMatch(item);
-    var text = m?.group(1) ?? '';
-    text = text.replaceAll(RegExp(r'^\s*<!\[CDATA\[|\]\]>\s*$'), '').trim();
-    return (html_parser.parseFragment(text).text ?? text).trim();
-  }
-
-  static List<Map<String, Object?>> _parseBingDom(String html, Uri base, int limit) {
-    final doc = html_parser.parse(html);
-    final results = <Map<String, Object?>>[];
-    for (final node in doc.querySelectorAll('li.b_algo')) {
-      if (node.className.contains('b_ad')) continue; // sponsored blocks
-      final anchor = node.querySelector('h2 a');
-      if (anchor == null) continue;
-      results.add({
-        'title': anchor.text.trim(),
-        'url': _unwrapLink(anchor.attributes['href'] ?? '', base),
-        'snippet': node.querySelector('.b_caption p')?.text.trim() ??
-            node.querySelector('.b_caption')?.text.trim() ??
-            '',
-      });
-      if (results.length >= limit) break;
-    }
-    return results;
-  }
-
-  static Future<List<Map<String, Object?>>> _duckDuckGo(String query, int max, BrowserSession session) async {
-    final uri = Uri.https('html.duckduckgo.com', '/html/', {'q': query});
-    final page = await _fetchPage(session, uri);
-    if (page.statusCode >= 400) throw StateError('HTTP ${page.statusCode}');
-    _ensureNotBlocked(page.body, 'duckduckgo');
-    final doc = html_parser.parse(page.body);
-    final results = <Map<String, Object?>>[];
-    for (final node in doc.querySelectorAll('.result')) {
-      final anchor = node.querySelector('.result__a');
-      if (anchor == null) continue;
-      results.add({
-        'title': anchor.text.trim(),
-        'url': _unwrapLink(anchor.attributes['href'] ?? '', page.uri),
-        'snippet': node.querySelector('.result__snippet')?.text.trim() ?? '',
-      });
-      if (results.length >= max * 3) break;
-    }
-    return results;
-  }
-
-  /// Multi-engine meta search via `package:ddgs` (no API key): several scraped
-  /// backends cross-check each other, diluting single-engine cloaking.
-  static Future<List<Map<String, Object?>>> _ddgs(
-    SearchEngineConfig engine,
-    String query,
-    int max,
-    ProxyConfig proxy,
-  ) async {
-    final backends = engine.backend
-        .split(',')
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (backends.isEmpty) backends.add('duckduckgo');
-    final ddgs = DDGS(proxy: _proxyUrl(proxy), timeout: const Duration(seconds: 15));
-    final results = <Map<String, Object?>>[];
-    final seen = <String>{};
-    try {
-      for (final backend in backends) {
-        try {
-          final items = await ddgs.text(query, maxResults: max, backend: backend);
-          for (final item in items) {
-            final url = '${item['href'] ?? item['url'] ?? ''}'.trim();
-            if (url.isEmpty || !seen.add(url)) continue;
-            results.add({
-              'title': '${item['title'] ?? ''}'.trim(),
-              'url': url,
-              'snippet': '${item['body'] ?? item['snippet'] ?? ''}'.trim(),
-            });
-          }
-        } catch (_) {
-          // One backend failing / rate-limited must not kill the aggregate.
-        }
-        if (results.length >= max) break;
-      }
-    } finally {
-      ddgs.close();
-    }
-    return results;
-  }
-
-  /// Tavily Search API (`POST /search`, 1 credit per call).
-  static Future<List<Map<String, Object?>>> _tavily(
-    SearchEngineConfig engine,
-    String query,
-    int max,
-    BrowserSession session,
-  ) =>
-      TavilyApi.search(session, engine.apiKey.trim(), query, max);
-
-  static String? _proxyUrl(ProxyConfig proxy) {
-    final raw = proxy.httpsProxy.trim().isNotEmpty
-        ? proxy.httpsProxy.trim()
-        : proxy.httpProxy.trim();
-    return raw.isEmpty ? null : 'http://${proxyHostPort(raw)}';
   }
 
   static RegExp _globToRegExp(String glob) {
@@ -762,11 +641,46 @@ class BuiltinTools {
   }
 }
 
-class _SearchEngine {
-  _SearchEngine(this.name, this.search);
+/// Structured outcome of a web search — shared by the `web_search` tool and the
+/// manual search page so both render the same results.
+class WebSearchOutcome {
+  WebSearchOutcome({
+    required this.query,
+    required this.engine,
+    required this.results,
+    required this.rawCount,
+    required this.dropped,
+    required this.filtered,
+    required this.errors,
+    this.notes = const <String>[],
+  });
 
-  final String name;
-  final Future<List<Map<String, Object?>>> Function(String query, int max) search;
+  /// The query actually used (may be a compacted fallback).
+  final String query;
+
+  /// Name of the engine that produced the results (empty when none did).
+  final String engine;
+
+  final List<Map<String, Object?>> results;
+
+  /// Number of raw items the engine returned (before any filtering).
+  final int rawCount;
+
+  /// Count of items rejected by the filter rules (junk/duplicate/irrelevant) —
+  /// does **not** include items cut off by the result limit.
+  final int dropped;
+
+  /// Whether the relevance/junk filter was applied (false = raw engine output).
+  final bool filtered;
+
+  /// Per-engine failure notes, for diagnostics when [results] is empty.
+  final List<String> errors;
+
+  /// Non-fatal remarks about a *successful* run (e.g. "翻页提前结束：请求 3 页，
+  /// 实际解析 1 页") — never a reason to discard the results.
+  final List<String> notes;
+
+  bool get isEmpty => results.isEmpty;
 }
 
 /// Cancellable `shell` tool: kills the spawned child process when the turn is
