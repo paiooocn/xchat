@@ -48,6 +48,19 @@ Widget markdownView(String data, {Color? codeBackground}) {
             // unreadable on the dark surface (and vanishes under the selection
             // highlight), so use the light-on-dark palette in dark mode.
             dark ? BlockquoteConfig.darkConfig : const BlockquoteConfig(),
+            // Tables: markdown_widget sizes columns intrinsically, so a wide
+            // table would stick out past the bubble and its right side could
+            // never be seen. Hand the table the full available width and let it
+            // scroll horizontally instead.
+            TableConfig(
+              wrapper: (child) => SizedBox(
+                width: double.infinity,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: child,
+                ),
+              ),
+            ),
           ],
         ),
         generator: MarkdownGenerator(

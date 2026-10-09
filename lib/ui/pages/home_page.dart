@@ -317,33 +317,60 @@ class _HomePageState extends State<HomePage> {
                   MaterialPageRoute(builder: (_) => const ProvidersPage()),
                 ),
               ),
-              IconButton(
-                tooltip: '手动搜索',
-                icon: const Icon(Icons.travel_explore),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SearchPage()),
-                ),
-              ),
-              IconButton(
-                tooltip: '工具管理',
-                icon: const Icon(Icons.handyman_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ToolsPage()),
-                ),
-              ),
-              IconButton(
-                tooltip: '归档管理',
-                icon: const Icon(Icons.archive_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ArchivePage()),
-                ),
-              ),
-              IconButton(
-                tooltip: '设置',
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsPage()),
-                ),
+              // 其余入口收进「更多」菜单，避免图标挤成一行放不下。
+              PopupMenuButton<String>(
+                tooltip: '更多',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'search':
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SearchPage()),
+                      );
+                    case 'tools':
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ToolsPage()),
+                      );
+                    case 'archive':
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ArchivePage()),
+                      );
+                    case 'settings':
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SettingsPage()),
+                      );
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: 'search',
+                    child: _MoreMenuItem(
+                      icon: Icons.travel_explore,
+                      label: '手动搜索',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'tools',
+                    child: _MoreMenuItem(
+                      icon: Icons.handyman_outlined,
+                      label: '工具管理',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'archive',
+                    child: _MoreMenuItem(
+                      icon: Icons.archive_outlined,
+                      label: '归档管理',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'settings',
+                    child: _MoreMenuItem(
+                      icon: Icons.settings_outlined,
+                      label: '设置',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -409,6 +436,8 @@ class _HomePageState extends State<HomePage> {
                   onRefreshSessions: _refreshSessions,
                   refreshingSessions: _refreshingSessions,
                   showHeader: false,
+                  // Room for the floating「新建会话」button (FAB + margins).
+                  bottomInset: 96,
                   onSelect: (id) async {
                     await _openSession(context, id);
                     if (!context.mounted) return;
@@ -428,8 +457,28 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+/// One row of the app-bar「更多」menu: icon + label.
+class _MoreMenuItem extends StatelessWidget {
+  const _MoreMenuItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Text(label),
+      ],
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
+
 
   @override
   Widget build(BuildContext context) {
@@ -514,6 +563,7 @@ class _Sidebar extends StatelessWidget {
     required this.onGlobalExpandedChanged,
     required this.onRefreshSessions,
     required this.refreshingSessions,
+    this.bottomInset = 0,
     this.onEditProject,
     this.showHeader = false,
   });
@@ -537,6 +587,10 @@ class _Sidebar extends StatelessWidget {
 
   /// Whether the refresh is running — swaps the icon for a spinner.
   final bool refreshingSessions;
+
+  /// Extra space reserved at the end of the list so the floating
+  /// 「新建会话」button never covers the last rows.
+  final double bottomInset;
   final void Function(Project project)? onEditProject;
   final bool showHeader;
 
@@ -588,6 +642,8 @@ class _Sidebar extends StatelessWidget {
           ),
         Expanded(
           child: ListView(
+            // Keep the trailing rows clear of the floating「新建会话」button.
+            padding: EdgeInsets.only(bottom: bottomInset),
             children: [
               // ---- 标签筛选 ------------------------------------------
               if (allTags.isNotEmpty)
