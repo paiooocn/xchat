@@ -323,7 +323,7 @@ class BuiltinTools {
             'query': outcome.query,
             'engine': outcome.engine,
             'results': outcome.results,
-            if (outcome.query != query) 'note': '原 query 未命中，已退化为精炼关键词检索',
+            if (outcome.query != query) 'note': '原 query 未命中，已用改写关键词重试命中',
             if (outcome.notes.isNotEmpty) 'paging': outcome.notes,
             if (outcome.dropped > 0)
               'filtered': 'dropped ${outcome.dropped} junk/irrelevant/duplicate items',
@@ -379,13 +379,16 @@ class BuiltinTools {
 
     final outcome = await run(query);
     if (!filter || outcome.results.isNotEmpty) return outcome;
-    // Long natural-language queries are the easiest target for cloaking; retry
-    // once with a keyword-only query.
-    final compact = SearchFilter.compactQuery(query);
-    if (compact.isEmpty || compact == query) return outcome;
-    outcome.errors.add('no usable results for the original query, retrying with keywords: $compact');
-    final retry = await run(compact);
-    return retry.results.isNotEmpty ? retry : outcome;
+    // Long natural-language queries are the easiest target for cloaking, and a
+    // date-leading query (`11月-3月国内…`) is misread by the engines (SERPs
+    // anchor on the leading token) — retry with rewritten keywords: qualifiers
+    // moved behind the intent words, then a keyword-only form.
+    for (final variant in SearchFilter.retryQueries(query)) {
+      outcome.errors.add('no usable results for the original query, retrying with: $variant');
+      final retry = await run(variant);
+      if (retry.results.isNotEmpty) return retry;
+    }
+    return outcome;
   }
 
   static LlmTool _datetime() => FunctionTool(

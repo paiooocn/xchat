@@ -56,3 +56,6 @@ app.*.map.json
 /dist/*.apk
 /dist/*.log
 /dist/*.deb
+
+# 本地调试脚本/临时产物
+.tmp/

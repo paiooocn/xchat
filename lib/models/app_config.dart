@@ -237,7 +237,7 @@ class AppConfig {
       // the removed direct-request mode — drop them, keeping the order.
       final engines =
           list.map(SearchEngineConfig.fromJson).where((e) => e.isReady).toList();
-      if (engines.isNotEmpty) return engines;
+      if (engines.isNotEmpty) return _withChineseEngines(engines);
     }
     // Migrate the legacy single-engine field.
     final legacy = (asString(json['search_engine']) ?? '').trim();
@@ -248,6 +248,20 @@ class AppConfig {
     }
     if (defaults.every((e) => !e.enabled)) return defaults;
     return defaults;
+  }
+
+  /// Appends the built-in Chinese engines (百度/搜狗) when a persisted config is
+  /// missing them: they segment queries server-side (no client fingerprint
+  /// involved) and double as the fallback when a WebView session is served a
+  /// degraded SERP. Older configs predate these built-ins; users can disable
+  /// (rather than delete) them to keep the list short.
+  static List<SearchEngineConfig> _withChineseEngines(
+      List<SearchEngineConfig> engines) {
+    const ids = {'baidu', 'sogou'};
+    final missing = SearchEngineConfig.defaults()
+        .where((e) => ids.contains(e.id) && !engines.any((x) => x.id == e.id))
+        .toList();
+    return missing.isEmpty ? engines : [...engines, ...missing];
   }
 
   static ProxyConfig _decodeProxy(Map<String, Object?> json) {

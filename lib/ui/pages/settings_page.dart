@@ -407,6 +407,23 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (existing == null) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final preset in SearchEngineConfig.defaults())
+                        ActionChip(
+                          label: Text(preset.name),
+                          onPressed: () {
+                            name.text = preset.name;
+                            url.text = preset.urlTemplate;
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(controller: name, decoration: const InputDecoration(labelText: '名称')),
                 const SizedBox(height: 12),
                 TextField(

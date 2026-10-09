@@ -111,9 +111,9 @@ class SearchEngineConfig {
       id: id,
       name: asString(json['name']) ?? id,
       enabled: asBool(json['enabled'], fallback: true),
-      urlTemplate: urlTemplate.isNotEmpty
+      urlTemplate: _withBingLocale(urlTemplate.isNotEmpty
           ? urlTemplate
-          : _legacyTemplates[kind] ?? _legacyTemplates[id] ?? '',
+          : _legacyTemplates[kind] ?? _legacyTemplates[id] ?? ''),
       resultSelector: asString(json['result_selector']) ?? '',
       titleSelector: asString(json['title_selector']) ?? '',
       linkSelector: asString(json['link_selector']) ?? '',
@@ -128,17 +128,35 @@ class SearchEngineConfig {
   /// SERP templates for the engines of the removed direct-request mode; all of
   /// them have a built-in extraction script, so the URL alone is enough.
   static const _legacyTemplates = <String, String>{
-    'bing': 'https://cn.bing.com/search?q={query}',
+    'bing': _bingTemplate,
     'duckduckgo': 'https://duckduckgo.com/?q={query}',
     'webview': 'https://www.google.com/search?q={query}&num=20',
   };
+
+  /// Bing SERP pinned to the Chinese market: without `mkt/setlang/ensearch`
+  /// the session may land on the international SERP, whose query
+  /// understanding anchors on a leading number/date token
+  /// (`11月-3月…` → `Windows 11`).
+  static const _bingTemplate =
+      'https://cn.bing.com/search?q={query}&mkt=zh-CN&setlang=zh-hans&ensearch=0';
+
+  /// Upgrades a persisted bing template that predates the locale parameters.
+  static String _withBingLocale(String template) {
+    if (!template.contains('{query}') ||
+        !template.contains('bing.com') ||
+        template.contains('mkt=')) {
+      return template;
+    }
+    final joiner = template.contains('?') ? '&' : '?';
+    return '$template${joiner}mkt=zh-CN&setlang=zh-hans&ensearch=0';
+  }
 
   /// The built-in engines offered by default, in fallback order.
   static List<SearchEngineConfig> defaults() => <SearchEngineConfig>[
         SearchEngineConfig(
           id: 'bing',
           name: 'Bing',
-          urlTemplate: 'https://cn.bing.com/search?q={query}',
+          urlTemplate: _bingTemplate,
           pages: 2,
         ),
         SearchEngineConfig(

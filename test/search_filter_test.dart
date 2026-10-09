@@ -150,5 +150,69 @@ void main() {
       final long = 'a' * 100;
       expect(SearchFilter.compactQuery(long).length, lessThanOrEqualTo(40));
     });
+
+    test('keeps date units and ranges instead of stripping their digits', () {
+      expect(SearchFilter.compactQuery('11月-3月国内海边旅游推荐目的地'),
+          '11月 3月 国内海边旅游推荐目的地');
+      expect(SearchFilter.compactQuery('11月到3月去海边'), '11月到3月 去海边');
+      expect(SearchFilter.compactQuery('2025年旅行攻略合集'), '2025年 旅行攻略合集');
+    });
+  });
+
+  group('SearchFilter query rewriting', () {
+    test('normalizeRanges rewrites range hyphens to 至', () {
+      expect(SearchFilter.normalizeRanges('11月-3月国内海边旅游推荐目的地'),
+          '11月至3月国内海边旅游推荐目的地');
+      expect(SearchFilter.normalizeRanges('2025年~2026年规划'), '2025年至2026年规划');
+    });
+
+    test('moveQualifiersBack puts intent words first', () {
+      expect(SearchFilter.moveQualifiersBack('11月-3月国内海边旅游推荐目的地'),
+          '海边旅游推荐目的地 11月-3月 国内');
+      expect(SearchFilter.moveQualifiersBack('11月 海边旅游'), '海边旅游 11月');
+      expect(SearchFilter.moveQualifiersBack('2025年 海边旅游推荐'), '海边旅游推荐 2025年');
+      expect(SearchFilter.moveQualifiersBack('海边旅游'), '海边旅游');
+    });
+
+    test('retryQueries offers rewritten variants, best first', () {
+      expect(SearchFilter.retryQueries('11月-3月国内海边旅游推荐目的地'),
+          <String>[
+            '海边旅游推荐目的地 11月至3月 国内',
+            '11月 3月 国内海边旅游推荐目的地',
+          ]);
+      expect(SearchFilter.retryQueries('海边旅游'), isEmpty);
+    });
+  });
+
+  group('SearchFilter regression: number-pivot SERPs', () {
+    // Bing answers date-leading queries with pages about the *number*
+    // ("Windows 11", "iPhone 12"): they echo `11`/`12` and a date-stamp `月`
+    // but none of the query's intent words — they must not count as relevant.
+    const windowsJunkTitle = '认识 Windows 11:功能、外观、优势及更多优秀功能 | Microsoft';
+    const windowsJunkSnippet = '2025年3月27日 · 这是 Microsoft 发布的最新 Windows 版本。';
+
+    test('rejects number-only matches (needs a strong term hit)', () {
+      expect(
+        SearchFilter.isRelevant(
+            '11月-3月国内海边旅游推荐目的地', windowsJunkTitle, windowsJunkSnippet),
+        isFalse,
+      );
+      expect(
+        SearchFilter.isRelevant('12月 海边旅游推荐', 'iPhone 12 - 技术规格', '12 能被写成两个连续自然数相乘'),
+        isFalse,
+      );
+    });
+
+    test('still accepts results sharing the intent words', () {
+      expect(
+        SearchFilter.isRelevant('11月-3月国内海边旅游推荐目的地', '国内10大海边旅游景点',
+            '海边旅游景点排行，适合 11月至3月 过冬'),
+        isTrue,
+      );
+    });
+
+    test('numeric-only queries keep the old behaviour', () {
+      expect(SearchFilter.isRelevant('2026', '2026年新年', ''), isTrue);
+    });
   });
 }

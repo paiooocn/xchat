@@ -84,7 +84,13 @@ class WebViewExtractor {
   static WebViewExtractor get shared => _shared;
 
   static const _ua =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+  /// Sent with every navigation: a real domestic Chrome user's requests carry
+  /// a Chinese Accept-Language, and SERPs (Bing) do query understanding with it.
+  static const _requestHeaders = <String, String>{
+    'Accept-Language': 'zh-CN,zh;q=0.9',
+  };
 
   /// How long to wait, per trigger, for a page change to become observable.
   static const _pageChangeTimeout = Duration(seconds: 10);
@@ -109,6 +115,9 @@ class WebViewExtractor {
   bool _unavailable = false;
   String _reason = '';
   Future<void> _lock = Future<void>.value();
+
+  /// Hosts whose session was already warmed up this run (see [_primeSession]).
+  final Set<String> _primed = <String>{};
 
   /// Whether an offscreen WebView can be created on this platform.
   bool get available => !_unavailable;
@@ -145,12 +154,13 @@ class WebViewExtractor {
         if (!loaded.isCompleted) loaded.complete();
       },
     ));
-    await controller.loadRequest(url);
+    await controller.loadRequest(url, headers: _requestHeaders);
     try {
       await loaded.future.timeout(timeout);
     } on TimeoutException {
       // A partial render is still worth attempting to parse.
     }
+    await _patchFingerprint(controller);
     // Check for a challenge page *before* waiting on a selector: otherwise a
     // captcha wall would just time the selector wait out and hide the cause.
     if (await _looksBlocked(controller)) {
@@ -200,12 +210,13 @@ class WebViewExtractor {
         if (!loaded.isCompleted) loaded.complete();
       },
     ));
-    await controller.loadRequest(url);
+    await controller.loadRequest(url, headers: _requestHeaders);
     try {
       await loaded.future.timeout(timeout);
     } on TimeoutException {
       // A partial render is still useful for a dump.
     }
+    await _patchFingerprint(controller);
     if (waitSelector.trim().isNotEmpty) {
       await _waitFor(controller, waitSelector.trim(), timeout);
     }
@@ -270,7 +281,9 @@ class WebViewExtractor {
     var stalled = '';
     var strategy = '';
 
+    await _primeSession(controller, url);
     await _loadAndWait(controller, url, timeout);
+    await _patchFingerprint(controller);
     if (await _looksBlocked(controller)) {
       throw WebViewBlockedException(url.toString());
     }
@@ -290,6 +303,7 @@ class WebViewExtractor {
         }
         strategy = advanced.strategy;
         trace.add('第 ${page + 1} 页：via ${advanced.strategy}');
+        await _patchFingerprint(controller);
         if (await _looksBlocked(controller)) {
           throw WebViewBlockedException(url.toString());
         }
@@ -404,7 +418,7 @@ class WebViewExtractor {
       case 'loadRequest':
         if (!nextHref.startsWith('http')) return false;
         try {
-          await controller.loadRequest(Uri.parse(nextHref));
+          await controller.loadRequest(Uri.parse(nextHref), headers: _requestHeaders);
           return true;
         } catch (_) {
           return false;
@@ -530,7 +544,7 @@ class WebViewExtractor {
         if (!loaded.isCompleted) loaded.complete();
       },
     ));
-    await controller.loadRequest(url);
+    await controller.loadRequest(url, headers: _requestHeaders);
     try {
       await loaded.future.timeout(timeout);
     } on TimeoutException {
@@ -544,6 +558,110 @@ class WebViewExtractor {
     } catch (_) {
       // Some engines refuse UA overrides — not fatal.
     }
+  }
+
+  /// Re-declares the JS-visible identity (`navigator.*`) to match [_ua] after
+  /// each navigation: the underlying engine is WebKitGTK, so a UA override
+  /// alone leaves `navigator.platform`/`userAgentData` telling a different
+  /// story — engines (Bing) fingerprint that and serve a degraded SERP.
+  ///
+  /// Best-effort by design: patches cannot reach scripts that read `navigator`
+  /// before injection, so the caller must not depend on them.
+  Future<void> _patchFingerprint(WebViewController controller) async {
+    await _eval(controller, _fingerprintPatchJs());
+  }
+
+  static String _fingerprintPatchJs() => '''
+(function () {
+  try {
+    var ua = ${jsonEncode(_ua)};
+    var defs = {
+      userAgent: ua,
+      appVersion: ua.replace('Mozilla/', ''),
+      platform: 'Win32',
+      vendor: 'Google Inc.',
+      language: 'zh-CN',
+      languages: ['zh-CN', 'zh', 'en']
+    };
+    Object.keys(defs).forEach(function (key) {
+      try {
+        Object.defineProperty(navigator, key, {
+          get: function () { return defs[key]; },
+          configurable: true
+        });
+      } catch (e) {}
+    });
+    var brands = [
+      { brand: 'Chromium', version: '124' },
+      { brand: 'Google Chrome', version: '124' },
+      { brand: 'Not-A.Brand', version: '99' }
+    ];
+    var uad = {
+      brands: brands,
+      mobile: false,
+      platform: 'Windows',
+      toJSON: function () {
+        return { brands: brands, mobile: false, platform: 'Windows' };
+      },
+      getHighEntropyValues: function () {
+        return Promise.resolve({
+          brands: brands,
+          mobile: false,
+          platform: 'Windows',
+          platformVersion: '15.0.0',
+          architecture: 'x86',
+          bitness: '64',
+          model: '',
+          fullVersionList: brands,
+          uaFullVersion: '124.0.0.0',
+          wow64: false
+        });
+      }
+    };
+    Object.defineProperty(navigator, 'userAgentData', {
+      get: function () { return uad; },
+      configurable: true
+    });
+  } catch (e) {}
+  return 'ok';
+})()''';
+
+  /// Warms the browser session on [url]'s host once per session, so the first
+  /// search runs in a warmed context like a real user's: the engine's homepage
+  /// has been opened and its market cookies are in place (Bing ranks a
+  /// `11月…` query differently for a fresh, market-less session).
+  ///
+  /// Best-effort — a failed warm-up must never abort the actual request.
+  Future<void> _primeSession(WebViewController controller, Uri url) async {
+    final host = url.host;
+    if (host.isEmpty || !_primed.add(host)) return;
+    try {
+      final origin = Uri(scheme: url.scheme, host: host);
+      await _loadAndWait(controller, origin, const Duration(seconds: 15));
+      final seed = _localeCookieJs(host);
+      if (seed.isNotEmpty) await _eval(controller, seed);
+    } catch (_) {
+      // Warm-up is best-effort.
+    }
+  }
+
+  /// Market/locale cookies seeded on the engine host, JS-run on the page so
+  /// they belong to the right domain and jar.
+  static String _localeCookieJs(String host) {
+    if (host.endsWith('bing.com')) {
+      return '''
+(function () {
+  var list = [
+    'SRCHHPGUSR=SRCHLANG=zh-Hans&NEWWND=0&BRW=W&BRH=S&CW=1512&CH=824&DPR=1&UTC=480&DM=0&EXLTT=1',
+    '_EDGE_S=mkt=zh-cn&ui=zh-cn&F=1'
+  ];
+  for (var i = 0; i < list.length; i++) {
+    document.cookie = list[i] + '; path=/; max-age=31536000';
+  }
+  return 'ok';
+})()''';
+    }
+    return '';
   }
 
   /// Releases the offscreen session (idempotent).
