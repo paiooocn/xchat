@@ -204,7 +204,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
             minLines: 4,
             maxLines: 10,
             decoration: const InputDecoration(
-              labelText: '系统提示词（{sandbox} 自动替换为会话 sandbox 路径）',
+              labelText: '系统提示词（顶行自动写入 工作空间根目录: <sandbox 绝对路径>）',
             ),
           ),
           const SizedBox(height: 12),

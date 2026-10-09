@@ -3,6 +3,7 @@ import 'package:llm_api/llm_api.dart' as llm;
 
 import '../core/app_paths.dart';
 import '../core/ids.dart';
+import '../core/prompt_utils.dart';
 import '../data/config_repository.dart';
 import '../data/index_repository.dart';
 import '../data/models_dev_repository.dart';
@@ -269,7 +270,13 @@ class AppState extends ChangeNotifier {
       tools: tools ?? List<String>.of(config.defaultTools),
       params: params ?? config.defaultParams.copyWith(),
       messages: <SessionMessage>[
-        SessionMessage(role: MessageRole.system, content: systemPrompt ?? ''),
+        // The workspace-root line (`工作空间根目录: <绝对路径>`) is written to the
+        // top of the system prompt automatically; users never type it (nor the
+        // old `工作空间根目录: {sandbox}` placeholder) themselves.
+        SessionMessage(
+          role: MessageRole.system,
+          content: injectWorkspaceRoot(systemPrompt ?? '', resolvedSandbox),
+        ),
         ...?extraMessages,
       ],
     );

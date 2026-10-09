@@ -156,6 +156,20 @@ void main() {
       expect(session.sandbox, built.paths.sessionSandboxDir(session.id));
     });
 
+    test('createSession writes the workspace-root line to the prompt top',
+        () async {
+      final built = await buildState();
+      final session = await built.state.createSession(
+        sandbox: 'work',
+        systemPrompt: '工作空间根目录: {sandbox}\n你是一个助手。',
+      );
+      final system = session.messages.first.content;
+      expect(
+        system,
+        '工作空间根目录: ${p.join(built.root, 'projects', 'work')}\n\n你是一个助手。',
+      );
+    });
+
     test('saveProject normalizes an edited relative sandbox', () async {
       final built = await buildState();
       final project = await built.state.createProject(sandbox: 'first');
