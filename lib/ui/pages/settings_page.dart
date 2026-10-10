@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
+import '../../core/window_prefs.dart';
 import '../../models/app_config.dart';
 import '../../models/search_engine_config.dart';
 import '../../models/session_params.dart';
@@ -319,7 +320,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text('窗口尺寸（桌面端，下次启动生效）'),
+            child: Text('窗口尺寸（桌面端）'),
           ),
           const SizedBox(height: 6),
           SegmentedButton<String>(
@@ -332,9 +333,16 @@ class _SettingsPageState extends State<SettingsPage> {
               config.windowSize = value.first;
               final messenger = ScaffoldMessenger.of(context);
               await state.saveConfig();
-              messenger.showSnackBar(
-                SnackBar(content: Text('窗口尺寸已设为 ${value.first}，下次启动生效')),
-              );
+              var text = '窗口尺寸已设为 ${value.first}';
+              if (isDesktopWindow) {
+                // Apply immediately; `applyWindowSize` is idempotent so the
+                // startup re-apply stays harmless.
+                await applyWindowSize(value.first);
+                text += '，已生效';
+              } else {
+                text += '，下次启动生效';
+              }
+              messenger.showSnackBar(SnackBar(content: Text(text)));
             },
           ),
           const SizedBox(height: 12),
