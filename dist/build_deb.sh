@@ -53,7 +53,7 @@ Section: utils
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: xchat
-Depends: libgtk-3-0, libblkid1, liblzma5, libstdc++6
+Depends: libgtk-3-0, libblkid1, liblzma5, libstdc++6, libwebkit2gtk-4.1-0
 Description: XChat - cross-platform LLM agent GUI
  ReAct + XML session based desktop client for LLM agents.
 EOF
