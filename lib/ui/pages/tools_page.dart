@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import '../../agent/tools/builtin_tools.dart';
 import '../../core/json_utils.dart';
 import '../../models/agent_mode.dart';
 import '../../models/app_config.dart';
+import '../../models/shell_exec.dart';
 import '../../state/app_state.dart';
 import '../theme/app_fonts.dart';
 import '../widgets/confirm_dialog.dart';
@@ -265,6 +268,161 @@ class _ToolsPageState extends State<ToolsPage> {
     );
   }
 
+  /// Card showing (and letting the user edit) the shell launcher used by the
+  /// `shell` tool: executable + argument template (`{command}` placeholder).
+  Widget _shellExecCard(BuildContext context, AppState state, AppConfig config) {
+    final theme = Theme.of(context);
+    final resolved = config.shellExec.resolve(isWindows: Platform.isWindows);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _infoRow(
+              theme,
+              '可执行文件',
+              config.shellExec.isDefault
+                  ? '${resolved.executable}（默认）'
+                  : resolved.executable,
+            ),
+            _infoRow(
+              theme,
+              '参数模板',
+              '${resolved.argsTemplate}（{command} 处替换为完整命令）',
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('修改'),
+                onPressed: () => _showShellExecDialog(context, state, config),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Presets for the current platform plus a non-filling `自定义` entry, so the
+  /// dropdown can also represent settings that match no preset.
+  List<ShellExecPreset> _presetItems(String presetId, bool isWindows) {
+    final presets = shellExecPresets(isWindows: isWindows);
+    return presetId == 'custom'
+        ? <ShellExecPreset>[
+            ...presets,
+            const ShellExecPreset(
+              id: 'custom',
+              label: '自定义',
+              executable: '',
+              argsTemplate: '',
+            ),
+          ]
+        : presets;
+  }
+
+  /// Id of the preset matching the current setting; `custom` when none does.
+  String _presetIdFor(ShellExecConfig config, bool isWindows) {
+    for (final preset in shellExecPresets(isWindows: isWindows)) {
+      if (preset.executable.trim() == config.executable.trim() &&
+          preset.argsTemplate.trim() == config.argsTemplate.trim()) {
+        return preset.id;
+      }
+    }
+    return 'custom';
+  }
+
+  /// Dialog to pick a shell preset or type a custom executable/args template.
+  Future<void> _showShellExecDialog(
+    BuildContext context,
+    AppState state,
+    AppConfig config,
+  ) async {
+    final exeController = TextEditingController(text: config.shellExecutable);
+    final argsController = TextEditingController(text: config.shellArgs);
+    var presetId = _presetIdFor(config.shellExec, Platform.isWindows);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Shell 执行程序'),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('预设'),
+                    const SizedBox(width: 12),
+                    DropdownButton<String>(
+                      value: presetId,
+                      items: [
+                        for (final preset in _presetItems(presetId, Platform.isWindows))
+                          DropdownMenuItem(
+                            value: preset.id,
+                            child: Text(
+                              preset.label,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null || value == 'custom') return;
+                        final preset =
+                            _presetItems(presetId, Platform.isWindows)
+                                .firstWhere((p) => p.id == value);
+                        setDialogState(() {
+                          presetId = preset.id;
+                          exeController.text = preset.executable;
+                          argsController.text = preset.argsTemplate;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: exeController,
+                  decoration: const InputDecoration(
+                    labelText: '可执行文件',
+                    hintText: r'cmd / powershell / /bin/bash 或完整路径',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: argsController,
+                  decoration: const InputDecoration(
+                    labelText: '参数模板',
+                    hintText: r'/c {command} 或 -lc {command}',
+                    helperText: r'{command} 处替换为完整命令；留空则按可执行文件自动推导',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+    state.config.shellExecutable = exeController.text.trim();
+    state.config.shellArgs = argsController.text.trim();
+    await state.saveConfig();
+  }
+
   Widget _infoRow(ThemeData theme, String tag, String detail) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -345,6 +503,11 @@ class _ToolsPageState extends State<ToolsPage> {
                       ),
               ),
             ),
+          const SizedBox(height: 12),
+          const SizedBox(height: 12),
+          Text('Shell 执行程序', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _shellExecCard(context, state, config),
           const SizedBox(height: 12),
           Text('Shell 命令名单', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),

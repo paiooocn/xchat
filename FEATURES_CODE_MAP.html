@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XChat 功能点 → 入口/核心代码 手册（FEATURES.md 对照）</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1f2430; --muted:#6b7280;
+    --line:#e3e6ec; --accent:#2563eb; --accent-soft:#eaf1ff;
+    --chip-bg:#eef2f7; --chip-ink:#0f3d91; --warn-bg:#fff7e6; --warn-line:#f0c36d;
+    --code-bg:#0f172a; --code-ink:#d7e2f4;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:76px}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    font-size:14px; line-height:1.75;
+  }
+  header{
+    position:sticky; top:0; z-index:50; background:#111827; color:#f3f4f6;
+    padding:12px 22px; box-shadow:0 2px 10px rgba(0,0,0,.18);
+  }
+  header h1{margin:0; font-size:18px; font-weight:650; letter-spacing:.3px}
+  header .sub{color:#b6bfcd; font-size:12.5px; margin-top:2px}
+  header .tools{margin-top:8px; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  #filter{
+    flex:1 1 260px; max-width:520px; padding:7px 11px; border-radius:8px;
+    border:1px solid #374151; background:#1f2937; color:#f9fafb; font-size:13px; outline:none;
+  }
+  #filter:focus{border-color:#60a5fa}
+  .layout{display:flex; align-items:flex-start; max-width:1500px; margin:0 auto}
+  nav{
+    position:sticky; top:74px; width:262px; flex:0 0 262px; max-height:calc(100vh - 90px);
+    overflow:auto; padding:18px 12px 40px 20px;
+  }
+  nav .grp{font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:16px 0 6px}
+  nav a{
+    display:block; padding:5px 9px; border-radius:7px; color:#374151; text-decoration:none;
+    font-size:13px; border-left:2px solid transparent;
+  }
+  nav a:hover{background:var(--accent-soft); color:var(--accent); border-left-color:var(--accent)}
+  main{flex:1 1 auto; min-width:0; padding:20px 26px 90px}
+  section{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:20px 24px 24px; margin-bottom:22px;
+  }
+  h2{font-size:19px; margin:2px 0 6px; padding-bottom:10px; border-bottom:2px solid var(--accent-soft)}
+  h2 .no{color:var(--accent); font-weight:800; margin-right:8px}
+  h3{font-size:15px; margin:22px 0 8px; color:#111827}
+  h3::before{content:"▍"; color:var(--accent); margin-right:6px}
+  p{margin:8px 0}
+  .lead{color:var(--muted); font-size:13px}
+  table{width:100%; border-collapse:collapse; margin:10px 0 6px; font-size:13px}
+  th,td{border:1px solid var(--line); padding:8px 10px; vertical-align:top; text-align:left}
+  th{background:#f2f5fa; font-weight:650; white-space:nowrap}
+  tr:nth-child(even) td{background:#fbfcfe}
+  tr.hidden{display:none}
+  code{
+    font-family:Consolas,"Cascadia Mono","JetBrains Mono",monospace; font-size:12.2px;
+    background:var(--chip-bg); color:var(--chip-ink); padding:1.5px 6px; border-radius:5px;
+    border:1px solid #dde3ec; white-space:nowrap;
+  }
+  code.blk{display:block; white-space:normal; margin:3px 0}
+  pre{
+    background:var(--code-bg); color:var(--code-ink); padding:14px 16px; border-radius:10px;
+    overflow:auto; font-family:Consolas,"Cascadia Mono",monospace; font-size:12.2px; line-height:1.65;
+  }
+  pre code{background:none; color:inherit; border:none; padding:0; white-space:pre}
+  .tag{
+    display:inline-block; padding:1px 8px; border-radius:20px; font-size:11px; font-weight:600;
+    margin-right:6px; vertical-align:1px;
+  }
+  .t-core{background:#e6f4ea; color:#137333}
+  .t-entry{background:#e8f0fe; color:#174ea6}
+  .t-ui{background:#f3e8fd; color:#7627bb}
+  .t-risk{background:var(--warn-bg); color:#a15c00}
+  .note{
+    background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:10px;
+    padding:10px 14px; margin:12px 0; font-size:13px;
+  }
+  .ok{background:#eefaf1; border-color:#a7dcb8}
+  .tree{font-family:Consolas,monospace; font-size:12.4px; background:#fafbfc; border:1px solid var(--line); border-radius:10px; padding:14px 18px; overflow:auto}
+  .tree .c{color:var(--muted)}
+  .kpi{display:flex; gap:12px; flex-wrap:wrap; margin:12px 0 4px}
+  .kpi .card{flex:1 1 180px; border:1px solid var(--line); border-radius:12px; padding:12px 16px; background:#fbfcff}
+  .kpi .num{font-size:22px; font-weight:750; color:var(--accent)}
+  .kpi .lbl{font-size:12px; color:var(--muted)}
+  footer{color:var(--muted); font-size:12px; text-align:center; padding:18px 0 40px}
+  .pill{font-size:11px; color:var(--muted); background:#f1f3f7; border:1px solid var(--line); border-radius:20px; padding:1px 9px; margin-left:6px}
+  @media (max-width:980px){
+    nav{display:none}
+    main{padding:14px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>XChat 功能点 → 入口代码 / 核心代码 手册</h1>
+  <div class="sub">
+    对照文档：<code style="background:#374151;color:#e5e7eb;border-color:#4b5563">FEATURES.md</code>（功能点全清单） ·
+    代码基线：当前工作区 <code style="background:#374151;color:#e5e7eb;border-color:#4b5563">lib/ + packages/llm_api/</code> ·
+    全部行号以本仓库当前版本为准 · 标注「需验证」处为未逐行确认的细节
+  </div>
+  <div class="tools">
+    <input id="filter" type="search" placeholder="🔍 过滤功能点 / 文件 / 符号（如：审批、agent_engine、CDATA、web_search…）">
+    <span class="pill">点 <b>§</b> 跳转章节</span>
+    <span class="pill">共 13 章 · 90+ 功能点</span>
+  </div>
+</header>
+
+<div class="layout">
+<nav id="nav">
+  <div class="grp">章节导航</div>
+  <a href="#s0">0. 总览与应用入口</a>
+  <a href="#s1">1. 数据层 / 持久化</a>
+  <a href="#s2">2. 核心数据模型</a>
+  <a href="#s3">3. LLM 层</a>
+  <a href="#s4">4. Agent 引擎</a>
+  <a href="#s5">5. 工具系统</a>
+  <a href="#s6">6. WebView 搜索与脚本提取</a>
+  <a href="#s7">7. 会话功能</a>
+  <a href="#s8">8. 全局配置与 models.dev</a>
+  <a href="#s9">9. UI 页面与组件</a>
+  <a href="#s10">10. 平台差异</a>
+  <a href="#s11">11. 测试与构建</a>
+  <a href="#s12">12. 隐性契约 → 代码落点</a>
+  <div class="grp">附录</div>
+  <a href="#appA">A. 目录结构与文件职责</a>
+  <a href="#appB">B. 按文件反查功能点</a>
+</nav>
+
+<main>
+
+<!-- ============================ 0 ============================ -->
+<section id="s0">
+  <h2><span class="no">0</span>总览与应用入口</h2>
+  <p class="lead">形态：原生 GUI 的 LLM Agent 客户端（Flutter，Android/iOS/macOS/Windows/Linux）；协议 OpenAI 兼容（含 Anthropic / Gemini 适配）；Agent 为 ReAct 循环；持久化为本地 XML/JSON。</p>
+  <div class="kpi">
+    <div class="card"><div class="num">78</div><div class="lbl">lib/ 下 Dart 源文件</div></div>
+    <div class="card"><div class="num">27</div><div class="lbl">packages/llm_api 源文件（vendor 包）</div></div>
+    <div class="card"><div class="num">15</div><div class="lbl">Agent 可调用内置工具</div></div>
+    <div class="card"><div class="num">15</div><div class="lbl">单测文件（test/）</div></div>
+  </div>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>程序入口</td>
+      <td>
+        <code class="blk">lib/main.dart:18  main()</code>
+        <code class="blk">lib/app.dart:8    XChatApp</code>
+      </td>
+      <td><span class="tag t-entry">入口</span> <code>main()</code> 内完成 <code>AppPaths.init()</code> → 载入 <code>AppState.load()</code> → 窗口尺寸 <code>_showWindow</code>(main.dart:63) → <code>runApp</code>(main.dart:49)。</td>
+    </tr>
+    <tr>
+      <td>全局状态容器</td>
+      <td><code class="blk">lib/state/app_state.dart:33  AppState</code></td>
+      <td><span class="tag t-core">核心</span> 聚合配置、会话/模板/项目列表、provider 列表、<code>controllerFor()</code>(:84) 全局持有各会话控制器（多会话并行的基础）。</td>
+    </tr>
+    <tr>
+      <td>窗口尺寸记忆（桌面）</td>
+      <td>
+        <code class="blk">lib/core/window_prefs.dart:21  applyWindowSize()</code>
+        <code class="blk">lib/main.dart:58 / main.dart:63</code>
+      </td>
+      <td>下次启动生效；配置项 <code>window_size</code>。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section id="s1">
+  <h2><span class="no">1</span>数据层 / 持久化</h2>
+
+  <h3>1.1 目录布局（AppPaths）</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>数据根目录解析</td>
+      <td>
+        <code class="blk">lib/core/app_paths.dart:29   class AppPaths</code>
+        <code class="blk">lib/core/app_paths.dart:65   AppPaths.init()</code>
+        <code class="blk">lib/core/app_paths.dart:227  _defaultRoots()</code>
+      </td>
+      <td><span class="tag t-core">核心</span> <code>Documents/XChat/</code> 作为数据根；候选目录逐个探测 <code>_firstUsable</code>(:196)，全不可用走 <code>_emergencyRoot</code>(:253)。</td>
+    </tr>
+    <tr>
+      <td>首次启动建目录</td>
+      <td><code class="blk">lib/core/app_paths.dart:177  ensureDirs()</code></td>
+      <td>建立 <code>sessions/ projects/ templates/ scripts/ logs/</code> 等。</td>
+    </tr>
+    <tr>
+      <td>路径拼装 API</td>
+      <td>
+        <code class="blk">app_paths.dart:153 sessionFile()  :154 templateFile()</code>
+        <code class="blk">app_paths.dart:155 projectFile() :158 scriptFile()</code>
+        <code class="blk">app_paths.dart:161 sessionSandboxDir() :164 projectSandboxDir()</code>
+        <code class="blk">app_paths.dart:170 resolveSandbox()</code>
+      </td>
+      <td>会话文件 = <code>sessions/&lt;uuid&gt;.xml</code>；项目工作目录 = <code>projects/&lt;id&gt;/</code>。</td>
+    </tr>
+    <tr>
+      <td>Android 外部存储申请/迁移</td>
+      <td>
+        <code class="blk">app_paths.dart:115 requestSharedAccess()</code>
+        <code class="blk">app_paths.dart:87  setRoot()</code>
+        <code class="blk">app_paths.dart:294 _migrateLegacy()</code>
+      </td>
+      <td>未授权回退 App 私有目录；设置页可查看/迁移。<span class="pill">Android 专属</span></td>
+    </tr>
+    <tr>
+      <td>原子写盘（tmp + rename）</td>
+      <td>
+        <code class="blk">lib/data/session_repository.dart:67  _writeAtomic()</code>
+        <code class="blk">lib/data/config_repository.dart:29  save()</code>
+        <code class="blk">lib/data/index_repository.dart:162  _persist()</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 先写 <code>.tmp</code> 再 rename，避免写一半损坏。</td>
+    </tr>
+    <tr>
+      <td>仓库层（CRUD）</td>
+      <td>
+        <code class="blk">lib/data/session_repository.dart:12  SessionRepository</code>
+        <code class="blk">lib/data/template_repository.dart:8  TemplateRepository</code>
+        <code class="blk">lib/data/project_repository.dart:10  ProjectRepository</code>
+        <code class="blk">lib/data/config_repository.dart:8    ConfigRepository</code>
+      </td>
+      <td><code>list/listArchived/read/write/delete</code>；会话导出走 <code>writeTo</code>(session_repository.dart:58)。</td>
+    </tr>
+  </table>
+
+  <h3>1.2 会话 XML 格式（核心契约）</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>会话 XML 编码</td>
+      <td>
+        <code class="blk">lib/data/xml/session_xml.dart:15  class SessionXml</code>
+        <code class="blk">lib/data/xml/session_xml.dart:29  encode()</code>
+        <code class="blk">lib/data/xml/session_xml.dart:112 _attrs()</code>
+        <code class="blk">lib/data/xml/session_xml.dart:129 _usageAttrs()</code>
+      </td>
+      <td><span class="tag t-core">核心</span> 根元素 <code>&lt;chat sandbox=…&gt;</code>；<code>system</code> 元素承载累计 usage（encode 内 :73）；数值属性缺失不写 0。</td>
+    </tr>
+    <tr>
+      <td>会话 XML 解码</td>
+      <td>
+        <code class="blk">session_xml.dart:148 decode()</code>
+        <code class="blk">session_xml.dart:249 _decodeAssistant()</code>
+        <code class="blk">session_xml.dart:233 _decodeAttachments()</code>
+        <code class="blk">session_xml.dart:273 _decodeParams()  :283 _decodeTools()</code>
+      </td>
+      <td>数值属性缺失 ⇒ <code>null</code>；未知元素忽略；空 <code>&lt;system&gt;</code> 保留。</td>
+    </tr>
+    <tr>
+      <td>CDATA 读写</td>
+      <td>
+        <code class="blk">lib/data/xml/cdata.dart:4   cdataElement()</code>
+        <code class="blk">lib/data/xml/cdata.dart:16  readText() / :22 readTextOrEmpty()</code>
+        <code class="blk">lib/data/xml/xml_writer.dart:66  XmlOut._cdata()</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 文本一律 CDATA，不做实体转义；属性值转义 <code>xml_writer.dart:53 _escapeAttr()</code>。</td>
+    </tr>
+    <tr>
+      <td>XML 写出器</td>
+      <td>
+        <code class="blk">lib/data/xml/xml_writer.dart:4   class XmlOut</code>
+        <code class="blk">xml_writer.dart:14 open() :19 close() :25 leaf() :40 build()</code>
+      </td>
+      <td>缩进输出、统一属性序列化。</td>
+    </tr>
+    <tr>
+      <td>XML 校验（内置编辑器保存前）</td>
+      <td><code class="blk">lib/ui/pages/xml_editor_page.dart:12  XmlEditorPage</code></td>
+      <td>保存前解析校验，失败提示且不落盘。</td>
+    </tr>
+  </table>
+
+  <h3>1.3 模板 XML / 项目 XML</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>模板 XML 编解码</td>
+      <td>
+        <code class="blk">lib/data/xml/template_xml.dart:10  class TemplateXml</code>
+        <code class="blk">template_xml.dart:22 encode() :48 decode()</code>
+      </td>
+      <td>与会话同构但无 messages（可含预置 system/few-shot）。</td>
+    </tr>
+    <tr>
+      <td>项目 XML 编解码</td>
+      <td>
+        <code class="blk">lib/data/xml/project_xml.dart:22  class ProjectXml</code>
+        <code class="blk">project_xml.dart:25 encode() :43 decode()</code>
+      </td>
+      <td><code>id/name/description/sandbox/created_at/updated_at/provider/model/archived_at</code>。</td>
+    </tr>
+    <tr>
+      <td>模板 / 项目模型</td>
+      <td>
+        <code class="blk">lib/models/session_template.dart:7  class SessionTemplate</code>
+        <code class="blk">lib/models/project.dart:7           class Project</code>
+      </td>
+      <td>—</td>
+    </tr>
+  </table>
+
+  <h3>1.4 Token usage 口径</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>TokenUsage 模型</td>
+      <td>
+        <code class="blk">lib/models/token_usage.dart:7   class TokenUsage</code>
+        <code class="blk">token_usage.dart:28 merge()  :34 diff()</code>
+      </td>
+      <td><code>TokenUsage{input, output, cache}</code>；<code>context = 最近一次 input+output</code>。</td>
+    </tr>
+    <tr>
+      <td>单次 / 累计 写盘</td>
+      <td>
+        <code class="blk">lib/agent/agent_engine.dart:155-160</code>
+        <code class="blk">lib/data/xml/session_xml.dart:73 / :129 _usageAttrs()</code>
+        <code class="blk">lib/models/session.dart:103  recomputeUsage()</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 单次写 <code>assistant</code> 属性、累计写 <code>system</code> 属性；每次 usage 到达即累加 + 更新 <code>updated_at</code> + 原子写盘。</td>
+    </tr>
+    <tr>
+      <td>llm 侧 usage 解析</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/core/usage.dart:11  TokenUsage</code>
+        <code class="blk">usage.dart:54 fromOpenAi() :68 fromAnthropic() :75 fromGemini()</code>
+      </td>
+      <td>三协议 usage 归一化；未上报项保持 null。</td>
+    </tr>
+  </table>
+
+  <h3>1.5 目录索引 index.json</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>四桶目录模型</td>
+      <td>
+        <code class="blk">lib/models/catalog_index.dart:219  class CatalogIndex</code>
+        <code class="blk">catalog_index.dart:11  SessionIndexEntry</code>
+        <code class="blk">catalog_index.dart:140 ProjectIndexEntry</code>
+      </td>
+      <td><code>sessions / projects / archivedSessions / archivedProjects</code>。</td>
+    </tr>
+    <tr>
+      <td>索引仓库 / 漂移检测</td>
+      <td>
+        <code class="blk">lib/data/index_repository.dart:18  class IndexRepository</code>
+        <code class="blk">index_repository.dart:25 load() :42 rebuild()</code>
+        <code class="blk">index_repository.dart:131 _matchesDisk() :138 _dirIds()</code>
+        <code class="blk">index_repository.dart:77 upsertSession() :85 removeSession()</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 加载时按 id 集合与磁盘比对，不一致透明重建；损坏文件跳过不阻塞。</td>
+    </tr>
+    <tr>
+      <td>索引条目 → 领域对象</td>
+      <td>
+        <code class="blk">catalog_index.dart:118 toSession()</code>
+        <code class="blk">catalog_index.dart:204 toProject()</code>
+      </td>
+      <td>列表渲染无需解析整份 XML。</td>
+    </tr>
+  </table>
+
+  <h3>1.6 会话归档</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>归档 / 恢复</td>
+      <td>
+        <code class="blk">lib/state/app_state.dart:368  setSessionArchived()</code>
+        <code class="blk">lib/state/app_state.dart:543  setProjectArchived()</code>
+      </td>
+      <td><code>archived_at</code> 时间戳；活动列表 ↔ 归档页。</td>
+    </tr>
+    <tr>
+      <td>归档列表读取</td>
+      <td>
+        <code class="blk">lib/data/session_repository.dart:29  listArchived()</code>
+        <code class="blk">lib/data/project_repository.dart:27  listArchived()</code>
+      </td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>归档页 UI</td>
+      <td>
+        <code class="blk">lib/ui/pages/archive_page.dart:8   ArchivePage</code>
+        <code class="blk">archive_page.dart:37 _ArchivedSessions  :93 _ArchivedProjects</code>
+      </td>
+      <td><span class="tag t-ui">UI</span> 恢复 / 彻底删除。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section id="s2">
+  <h2><span class="no">2</span>核心数据模型</h2>
+  <table>
+    <tr><th style="width:170px">模型</th><th style="width:330px">定义位置</th><th>关键成员</th></tr>
+    <tr><td>Session</td><td><code class="blk">lib/models/session.dart:16  class Session</code></td>
+      <td>克隆切片：<code>cloneEmpty:129</code> / <code>cloneToFirstUser:132</code> / <code>cloneWithFirstTurn:136</code> / <code>cloneFull:139</code>（内部 <code>_messagesToSystem:173</code>、<code>_messagesToFirstUser:182</code>、<code>_messagesThroughFirstTurn:209</code>）；<code>ensureSystem:86</code>（空 system 保留）；<code>recomputeUsage:103</code>、<code>recomputeToolCalls:119</code></td></tr>
+    <tr><td>SessionMessage</td><td><code class="blk">lib/models/session_message.dart:69</code></td>
+      <td>role/id/content/reasoning(+mode)/toolCalls/tool_call_id/name/is_error/usage/attachments；<code>copyWith:114</code>、<code>ToolCallData:46</code></td></tr>
+    <tr><td>SessionParams</td><td><code class="blk">lib/models/session_params.dart:37</code></td>
+      <td>temperature/top_p/max_tokens/thinking(<code>ThinkingSwitch:17</code> auto|on|off)/reasoning_effort/reasoning_budget</td></tr>
+    <tr><td>ThinkingReplyMode</td><td><code class="blk">lib/models/session_message.dart:6</code></td>
+      <td>auto | reasoning_content | think_tag（<code>parse:16</code>）</td></tr>
+    <tr><td>ProviderConfig</td><td><code class="blk">lib/models/provider_config.dart:60</code></td>
+      <td>id/name/preset/baseUrl/apiKey/headers/reasoning_source/reasoning_style/thinking_reply_mode/contextWindow/models[]/modelSpecs{}；<code>specFor:112</code>、<code>contextWindowFor:115</code></td></tr>
+    <tr><td>ModelSpec</td><td><code class="blk">lib/models/provider_config.dart:6</code></td>
+      <td>contextWindow / maxOutputTokens / reasoning / toolCall / status</td></tr>
+    <tr><td>AppConfig</td><td><code class="blk">lib/models/app_config.dart:60</code></td>
+      <td><code>toolApprovalLevel:152</code>、<code>providerById:154</code>、<code>toJson:164</code>；默认值工厂 <code>defaultCompressPrompts:292</code> / <code>defaultToolApprovals:305</code> / <code>defaultShellLevel1Commands:330</code> / <code>defaultShellLevel2Commands:344</code> / <code>defaultShellDeniedCommands:359</code> / <code>defaultProviders:379</code>；<code>ContinueMode:31</code></td></tr>
+    <tr><td>MessageAttachment</td><td><code class="blk">lib/models/message_attachment.dart:14</code></td>
+      <td><code>fromFile:27</code>、<code>readBytes:56</code>、<code>mimeForExtension:114</code>（png/jpg/jpeg/webp/gif/bmp）</td></tr>
+    <tr><td>SearchEngineConfig</td><td><code class="blk">lib/models/search_engine_config.dart:10</code></td>
+      <td>urlTemplate({query})/ready_selector/item_selector/title_selector/link_selector/snippet_selector/next_selector/pages/priority；<code>defaults:155</code></td></tr>
+    <tr><td>ProxyConfig</td><td><code class="blk">lib/models/proxy_config.dart:6</code></td>
+      <td><code>proxyFor:47</code>、<code>bypass:57</code>（CIDR :74）、<code>buildProxiedHttpClient:113</code></td></tr>
+    <tr><td>ExtractScript + UrlMatcher</td><td><code class="blk">lib/models/extract_script.dart:77</code> / <code class="blk">:10</code></td>
+      <td><code>UrlMatcher.score:30</code>（url_pattern &gt; host 精确 &gt; host 后缀，同分比 priority）；<code>buildSelectorScript:236</code></td></tr>
+    <tr><td>CatalogIndex</td><td><code class="blk">lib/models/catalog_index.dart:219</code></td>
+      <td>见 §1.5</td></tr>
+    <tr><td>AgentMode</td><td><code class="blk">lib/models/agent_mode.dart:9</code></td>
+      <td>普通(1)/自动(2)/托管(3)；<code>requiresApproval:34</code>、<code>approvalLevelLabel:44</code></td></tr>
+    <tr><td>ShellPolicy</td><td><code class="blk">lib/models/shell_policy.dart:11</code> / <code class="blk">:14</code></td>
+      <td><code>ShellMatch{deny,level2,level1,base}</code>、<code>ShellClassification</code>；见 §5.3</td></tr>
+    <tr><td>TokenUsage</td><td><code class="blk">lib/models/token_usage.dart:7</code></td>
+      <td>见 §1.4</td></tr>
+    <tr><td>ModelsDev*</td><td><code class="blk">lib/models/models_dev.dart:266</code> 等</td>
+      <td><code>ModelsDevCatalog</code>/<code>ModelsDevProvider:172</code>/<code>ModelsDevModel:68</code>/<code>ReasoningOption:42</code>；见 §8</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section id="s3">
+  <h2><span class="no">3</span>LLM 层</h2>
+
+  <h3>3.1 客户端能力（vendor 包 <code>packages/llm_api</code>）</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>Provider 抽象</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/providers/provider.dart:97   abstract class LlmProvider</code>
+        <code class="blk">provider.dart:124  abstract class HttpLlmProvider</code>
+        <code class="blk">provider.dart:108  stream()   :112 complete()  :116 listModels()</code>
+      </td>
+      <td><span class="tag t-core">核心</span> <code>stream()</code> 为 SSE 流式主入口；<code>HttpLlmProvider.stream:179</code>、<code>sseJsonPayloads:232</code>、<code>postJson:265</code>。</td>
+    </tr>
+    <tr>
+      <td>OpenAI 兼容实现</td>
+      <td>
+        <code class="blk">providers/openai_compatible.dart:172  OpenAiCompatibleProvider</code>
+        <code class="blk">openai_compatible.dart:218 buildRequestBody()（含 stream_options.include_usage）</code>
+        <code class="blk">openai_compatible.dart:323 encodeMessage()</code>
+        <code class="blk">openai_compatible.dart:377 decodeChunk()</code>
+      </td>
+      <td>工具调用（function calling）+ usage 采集；<code>OpenAiReasoningRequestStyle:29</code>（字段式/标签式请求形态）。</td>
+    </tr>
+    <tr>
+      <td>Anthropic / Gemini 适配</td>
+      <td>
+        <code class="blk">providers/anthropic.dart:107  AnthropicProvider（buildRequestBody:157 / decodeChunk:344）</code>
+        <code class="blk">providers/gemini.dart:90      GeminiProvider（buildRequestBody:152 / decodeChunk:321）</code>
+      </td>
+      <td>三协议消息/工具/usage 差异收敛在各自 <code>buildRequestBody/decodeChunk</code>。</td>
+    </tr>
+    <tr>
+      <td>预设 presets</td>
+      <td><code class="blk">providers/presets.dart:27-303</code></td>
+      <td>openai:56 / deepseek:81 / qwen:100 / zhipu:121 / mimo:139 / moonshot:155 / openRouter:173 / groq:199 / mistral:202 / xai:205 / siliconflow:208 / together:211 / ollama:233 / local:255 / anthropic:282 / gemini:303。</td>
+    </tr>
+    <tr>
+      <td>SSE 解析</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/stream/sse.dart:35  decodeSse()</code>
+        <code class="blk">sse.dart:8  class SseEvent</code>
+      </td>
+      <td>按行解析 event/id/retry/data。</td>
+    </tr>
+    <tr>
+      <td>流式聚合器</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/core/aggregator.dart:19  ChatStreamAggregator</code>
+        <code class="blk">aggregator.dart:42 feed()  :80 build()  :150 _ToolCallBuilder</code>
+      </td>
+      <td><span class="tag t-core">核心</span> tool_calls 增量拼接、重复片段只补缺（<code>_ToolCallBuilder.appendArguments:168</code>）。</td>
+    </tr>
+    <tr>
+      <td>思考归一化</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/thinking/reasoning_router.dart:32  ReasoningRouter</code>
+        <code class="blk">thinking/think_tag_parser.dart:68  ThinkTagParser（add:118 / flush:132 / split:280）</code>
+      </td>
+      <td><code>reasoning_content</code> 字段与内联 <code>&lt;think&gt;…&lt;/think&gt;</code> 统一产出 <code>ReasoningDelta</code>。</td>
+    </tr>
+    <tr>
+      <td>取消</td>
+      <td><code class="blk">packages/llm_api/lib/src/transport/cancel_token.dart:13  CancelToken</code></td>
+      <td><code>cancel:39</code>、<code>throwIfCancelled:46</code>、<code>whenCancelled</code>（审批挂起时联动，见 §4.3）。</td>
+    </tr>
+    <tr>
+      <td>工具注册表</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/agent/tool_registry.dart:83  ToolRegistry</code>
+        <code class="blk">tool_registry.dart:12 LlmTool  :53 FunctionTool  :130 invoke()</code>
+      </td>
+      <td>结果截断上限（默认 24k 字符）在 <code>invoke</code> 内实现。</td>
+    </tr>
+    <tr>
+      <td>错误模型</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/core/errors.dart:7   LlmApiException</code>
+        <code class="blk">errors.dart:53 Authentication :71 ModelNotFound :89 RateLimit</code>
+        <code class="blk">errors.dart:113 ContextLength :131 Transport :150 Protocol  :166 mapHttpError()</code>
+      </td>
+      <td>网络 / 协议 / 限流分类。</td>
+    </tr>
+    <tr>
+      <td>测试桩</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/testing/mock_transport.dart:68  MockHttpTransport</code>
+        <code class="blk">mock_transport.dart:135 ScriptedTransport  :36 sseBytes()</code>
+      </td>
+      <td>单测协议层用。</td>
+    </tr>
+    <tr>
+      <td>请求规整（tool 序列）</td>
+      <td>
+        <code class="blk">packages/llm_api/lib/src/agent/chat_session.dart:101  sendMessage()</code>
+        <code class="blk">应用侧：lib/llm/outbound_adapter.dart:34  buildChatMessages()</code>
+      </td>
+      <td>assistant{tool_calls} 后必须紧跟对应 tool 结果、丢弃孤立 tool。<span class="pill">具体规整实现位置需验证（chat_session 或 outbound_adapter）</span></td>
+    </tr>
+    <tr>
+      <td>会话工具循环（包内）</td>
+      <td><code class="blk">packages/llm_api/lib/src/agent/chat_session.dart:26  ChatSession</code></td>
+      <td><code>send:96</code>、<code>ask:166</code>、<code>cancel:190</code>、<code>toJson:273 / restore:282</code>；应用侧未使用，属于包自带能力。</td>
+    </tr>
+  </table>
+
+  <h3>3.2 思考回发（OutboundAdapter）</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>回发形态决策</td>
+      <td><code class="blk">lib/llm/outbound_adapter.dart:12  resolveEchoMode()</code></td>
+      <td><span class="tag t-core">核心</span> 优先级：会话显式模式 → provider 默认 → 按 preset 推导（<code>minimax</code>→think_tag，其余→reasoning_content）。</td>
+    </tr>
+    <tr>
+      <td>历史消息出站编码</td>
+      <td><code class="blk">lib/llm/outbound_adapter.dart:34  buildChatMessages()</code></td>
+      <td>assistant 分支：<code>think_tag</code> 把思考包成 <code>&lt;think&gt;…&lt;/think&gt;</code> 拼在 content 前；<code>reasoning_content</code> 用字段回传；<code>thinking=off</code> 不回发（<code>shouldEchoReasoning:124</code>）。同时完成 <code>{sandbox}</code> 变量展开、附件转 <code>ContentPart</code>。</td>
+    </tr>
+    <tr>
+      <td>reasoning 归属标注</td>
+      <td><code class="blk">lib/agent/agent_engine.dart:304  _reasoningModeLabel()</code></td>
+      <td>按 <code>providerConfig.reasoningSource</code> 标注 reasoning_content / think_tag。</td>
+    </tr>
+  </table>
+
+  <h3>3.3 LLM 工厂与辅助</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>Provider 工厂</td>
+      <td>
+        <code class="blk">lib/llm/llm_factory.dart:9   createProvider()</code>
+        <code class="blk">llm_factory.dart:39 fetchModels()  :50 testProvider()</code>
+      </td>
+      <td>baseUrl 归一化补 <code>/v1</code>、自定义 headers、代理注入（<code>ProxyConfig.buildProxiedHttpClient</code>）。</td>
+    </tr>
+    <tr>
+      <td>会话自动命名</td>
+      <td>
+        <code class="blk">lib/llm/session_namer.dart:11  generateSessionTitle()</code>
+        <code class="blk">session_namer.dart:46 _firstTurn()  :67 _clean()</code>
+        <code class="blk">lib/state/app_state.dart:408 autoNameSession()  :412 autoNameFirstTurn()</code>
+      </td>
+      <td>首轮截 2000 字、temperature 0.3、maxTokens 64、清洗装饰符截 30 字。</td>
+    </tr>
+    <tr>
+      <td>会话压缩</td>
+      <td>
+        <code class="blk">lib/llm/session_compressor.dart:20  compressSessionContent()（流式 onProgress:26）</code>
+        <code class="blk">session_compressor.dart:63 buildCompressRequest()  :75 buildTranscript()  :90 buildCompressHandoff()</code>
+        <code class="blk">lib/state/app_state.dart:422  compressSession()</code>
+      </td>
+      <td>产物 = 摘要 handoff + 后续对话；预置提示词见 <code>app_config.dart:292</code>。</td>
+    </tr>
+    <tr>
+      <td>系统提示词生成器</td>
+      <td>
+        <code class="blk">lib/llm/prompt_assistant.dart:17  generateSystemPrompt()</code>
+        <code class="blk">prompt_assistant.dart:50  refineSystemPrompt()（迭代改写）</code>
+      </td>
+      <td>模板向导用；场景类别一键生成 UI：<code>lib/ui/pages/template_wizard_page.dart</code>（预置场景区 :265）。</td>
+    </tr>
+    <tr>
+      <td>系统提示词沙箱注入</td>
+      <td><code class="blk">lib/core/prompt_utils.dart:16  injectWorkspaceRoot()</code></td>
+      <td>把工作目录根注入 system prompt。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section id="s4">
+  <h2><span class="no">4</span>Agent 引擎</h2>
+
+  <h3>4.1 ReAct 主循环</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>主循环</td>
+      <td>
+        <code class="blk">lib/agent/agent_engine.dart:26  class AgentEngine</code>
+        <code class="blk">lib/agent/agent_engine.dart:64  Stream&lt;AgentEvent&gt; run()</code>
+      </td>
+      <td><span class="tag t-core">核心</span> while 循环（约 L105–260）：构建请求（<code>buildChatMessages</code> + 工具定义）→ <code>provider.stream</code>(:130) → 聚合 → assistant 落盘 → 执行工具 → 回到循环。</td>
+    </tr>
+    <tr>
+      <td>事件流</td>
+      <td>
+        <code class="blk">lib/agent/agent_events.dart:6  class AgentEvent</code>
+        <code class="blk">RoundStarted:9 / ReasoningDelta:15 / ContentDelta:21 / ToolCallStarted:27</code>
+        <code class="blk">ToolCallArgumentsDelta:42 / ToolResult:52 / AssistantCompleted:66</code>
+        <code class="blk">ContinueDecision:73 / UsageUpdated:80 / Error:87 / Finished:93 / Stopped:100</code>
+      </td>
+      <td>llm 事件映射：<code>agent_engine.dart:315 _mapStreamEvent()</code>。</td>
+    </tr>
+    <tr>
+      <td>每轮原子落盘</td>
+      <td><code class="blk">agent_engine.dart:56  _persist()</code>（调用点 :103 / :157 / :237 / :255）</td>
+      <td>错误上抛事件但保留已生成内容（catch :263-265）。</td>
+    </tr>
+    <tr>
+      <td>停止</td>
+      <td>
+        <code class="blk">agent_engine.dart:52  stop()</code>
+        <code class="blk">agent_engine.dart:273 _awaitApproval()</code>
+      </td>
+      <td><code>CancelToken</code> 取消；挂起审批用 <code>Future.any</code> 立即按「拒绝」丢弃（:279-286）。</td>
+    </tr>
+    <tr>
+      <td>事件 → UI 状态</td>
+      <td><code class="blk">lib/session/session_controller.dart:174-202</code>（switch 分发）</td>
+      <td>流式增量写入临时 buffer，完成态落库。</td>
+    </tr>
+    <tr>
+      <td>安全轮次上限</td>
+      <td><code class="blk">agent_engine.dart:50  _hardRoundCap = 200</code></td>
+      <td>防死循环硬顶。</td>
+    </tr>
+  </table>
+
+  <h3>4.2 工具次数预算与自动续判 ★</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>累计计数 vs 本轮预算</td>
+      <td>
+        <code class="blk">agent_engine.dart:233  session.toolCalls += 1（累计）</code>
+        <code class="blk">agent_engine.dart:110  var budgetRound = 0（本轮预算）</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 两个概念分离；续判后 <code>budgetRound = 0</code>（:253）。</td>
+    </tr>
+    <tr>
+      <td>达到上限 → 追加续判消息</td>
+      <td>
+        <code class="blk">agent_engine.dart:241-256</code>
+        <code class="blk">continuePrompt 占位符替换 {n} / {limit}</code>
+      </td>
+      <td>请求仍带工具定义（registry.definitions 全程携带），模型自判直接答复或继续调工具。</td>
+    </tr>
+    <tr>
+      <td>续判事件</td>
+      <td><code class="blk">lib/agent/agent_events.dart:73  AgentContinueDecision</code></td>
+      <td><code>{cumulative, limit}</code> 供 UI 提示。</td>
+    </tr>
+    <tr>
+      <td>续判模式 / 模板 / 单轮上限</td>
+      <td>
+        <code class="blk">lib/models/app_config.dart:31  enum ContinueMode</code>
+        <code class="blk">config.continueMode / continuePrompt / maxToolCallsPerTurn</code>
+      </td>
+      <td><code>ContinueMode.stop</code>（直接结束）在 engine 内处理（:243-246）；<span class="pill">「询问用户」模式的交互落点需验证（疑在 session_controller/UI）</span>；<code>maxToolCallsPerTurn</code> 使用点<span class="pill">需验证</span>。</td>
+    </tr>
+    <tr>
+      <td>tool_calls_limit == 0</td>
+      <td><code class="blk">agent_engine.dart:86-88</code></td>
+      <td>表示该会话禁用工具（enabledTools 置空）。</td>
+    </tr>
+  </table>
+
+  <h3>4.3 执行模式与审批 ★</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>执行模式</td>
+      <td>
+        <code class="blk">lib/models/agent_mode.dart:9  enum AgentMode</code>
+        <code class="blk">agent_mode.dart:34  requiresApproval(level, mode)</code>
+        <code class="blk">lib/session/session_controller.dart:118  setMode()</code>
+      </td>
+      <td>普通(1)/自动(2)/托管(3)，持久化在会话上，可切换。</td>
+    </tr>
+    <tr>
+      <td>审批判定</td>
+      <td><code class="blk">lib/agent/agent_engine.dart:172-200</code></td>
+      <td>需要审批 ⇔ <code>mode值 &lt;= 等级</code>；工具等级来源 <code>AppConfig.toolApprovalLevel</code>(app_config.dart:152)，默认表 <code>defaultToolApprovals</code>(app_config.dart:305)。</td>
+    </tr>
+    <tr>
+      <td>全局审批中心</td>
+      <td>
+        <code class="blk">lib/state/approval_center.dart:52  class ApprovalCenter</code>
+        <code class="blk">approval_center.dart:61 request()  :83 resolve()  :94 dropForSession()</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 跨会话队列（Completer 挂起）；会话停止/删除时批量按「拒绝」唤醒引擎。</td>
+    </tr>
+    <tr>
+      <td>审批接入引擎</td>
+      <td>
+        <code class="blk">lib/agent/agent_engine.dart:44  onApproval 回调</code>
+        <code class="blk">lib/session/session_controller.dart:29  approvalHandler</code>
+        <code class="blk">lib/state/app_state.dart:84  controllerFor()</code>
+      </td>
+      <td>由 AppState 把 <code>ApprovalCenter.request</code> 挂到各 SessionController。</td>
+    </tr>
+    <tr>
+      <td>审批 UI（列表 / 详情）</td>
+      <td>
+        <code class="blk">lib/ui/pages/home_page.dart:1826  _ApprovalList</code>
+        <code class="blk">lib/ui/pages/home_page.dart:1878  _ApprovalDetail</code>
+      </td>
+      <td><span class="tag t-ui">UI</span> 展示「为何要审批」：<code>approvalNote</code> 由 <code>agent_engine.dart:182-190</code> 生成（命中 1 级/2 级名单、或按工具基础等级）。</td>
+    </tr>
+    <tr>
+      <td>停止时丢弃审批</td>
+      <td><code class="blk">approval_center.dart:94  dropForSession()</code> + <code class="blk">agent_engine.dart:273 _awaitApproval()</code></td>
+      <td>双保险：中心主动丢弃 / 引擎随 CancelToken 抛 <code>RequestCancelledException</code>。</td>
+    </tr>
+  </table>
+
+  <h3>4.4 图片附件链路</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>格式与体积校验</td>
+      <td>
+        <code class="blk">lib/agent/tools/image_attach.dart:83  resolveAttachableImage()</code>
+        <code class="blk">image_attach.dart:21 looksLikeImagePath()  :29 toolImagePath()</code>
+      </td>
+      <td>png/jpg/jpeg/webp/gif/bmp + <code>maxAttachmentBytes</code>（默认 5MB，0=不限，硬顶 64MB）。</td>
+    </tr>
+    <tr>
+      <td>落盘沙箱附件目录</td>
+      <td><code class="blk">lib/agent/agent_engine.dart:379  _storeAttachments()</code>（:409 _extensionForMime）</td>
+      <td>复制到 <code>&lt;sandbox&gt;/attachments/&lt;id&gt;-&lt;n&gt;.&lt;ext&gt;</code>，会话自包含。</td>
+    </tr>
+    <tr>
+      <td>出站编码（协议限制）</td>
+      <td>
+        <code class="blk">lib/llm/outbound_adapter.dart:34 buildChatMessages()（tool 分支补图片 user 消息）</code>
+        <code class="blk">outbound_adapter.dart:105 _imageParts()（base64 image_url）</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 图片紧跟 tool 消息单独成条 user 消息；文本 part 放图片 part 之后（<code>_userParts</code>）。</td>
+    </tr>
+    <tr>
+      <td>Agent 产生图片</td>
+      <td><code class="blk">lib/agent/agent_engine.dart:352  _attachToolImage()</code></td>
+      <td>检测 <code>attach_image</code> / <code>read_file</code> 读图，二次校验后挂到 tool 消息。</td>
+    </tr>
+    <tr>
+      <td>用户选图 UI</td>
+      <td><code class="blk">lib/ui/widgets/input_area.dart:26  InputArea</code></td>
+      <td>多选、缩略图、可移除；发送回调 <code>onSend:44</code>。</td>
+    </tr>
+    <tr>
+      <td>附件模型</td><td><code class="blk">lib/models/message_attachment.dart:14</code></td><td>path（沙箱相对）或 base64 data。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section id="s5">
+  <h2><span class="no">5</span>工具系统（Agent 可调用）</h2>
+
+  <h3>5.1 内置工具清单</h3>
+  <table>
+    <tr><th style="width:150px">工具</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr><td>工具装配入口</td><td><code class="blk">lib/agent/tools/builtin_tools.dart:23  class BuiltinTools</code><code class="blk">builtin_tools.dart:52  static build()</code></td><td>按会话 <code>tools</code> 字段启用（engine 侧过滤：<code>agent_engine.dart:86-93</code>）。</td></tr>
+    <tr><td><code>read_file</code></td><td><code class="blk">builtin_tools.dart:96  _readFile()</code></td><td>限沙箱；图片文件返回图像。</td></tr>
+    <tr><td><code>write_file</code></td><td><code class="blk">builtin_tools.dart:131 _writeFile()</code></td><td>覆盖写，自动建父目录。</td></tr>
+    <tr><td><code>edit_file</code></td><td><code class="blk">builtin_tools.dart:151 _editFile()</code></td><td>精确字符串替换（old_string/new_string/replace_all）。</td></tr>
+    <tr><td><code>list_dir</code></td><td><code class="blk">builtin_tools.dart:180 _listDir()</code></td><td>列目录（followLinks: false）。</td></tr>
+    <tr><td><code>glob</code></td><td><code class="blk">builtin_tools.dart:203 _glob()</code>（正则转换 :623 _globToRegExp）</td><td>glob 匹配文件。</td></tr>
+    <tr><td><code>shell</code></td><td><code class="blk">builtin_tools.dart:231 _shell() → :692 class _ShellTool</code><code class="blk">builtin_tools.dart:713 call()  :732 kill()</code></td><td>工作目录=沙箱；需启用+审批；取消联动 kill（:740）。</td></tr>
+    <tr><td><code>attach_image</code></td><td><code class="blk">builtin_tools.dart:233 _attachImage()</code></td><td>沙箱内图片附加到对话（下一轮可见）。</td></tr>
+    <tr><td><code>http_fetch</code></td><td><code class="blk">builtin_tools.dart:258 _httpFetch()</code></td><td>GET 抓取，HTML 转纯文本，可走代理。</td></tr>
+    <tr><td><code>web_search</code></td><td><code class="blk">builtin_tools.dart:292 _webSearch()</code></td><td>隐藏 WebView 搜索（详见 §6）。</td></tr>
+    <tr><td><code>datetime</code></td><td><code class="blk">builtin_tools.dart:394 _datetime()</code></td><td>本地 + UTC 时间。</td></tr>
+    <tr><td><code>webview_fetch</code></td><td><code class="blk">lib/agent/tools/webview_tools.dart:24 _fetch()</code><code class="blk">webview_tools.dart:246 outlineProbeScript / :270 htmlProbeScript / :287 textProbeScript</code></td><td>outline|html|text 三种取数探针。</td></tr>
+    <tr><td><code>webview_extract</code></td><td><code class="blk">webview_tools.dart:65 _extract()</code></td><td>按脚本提取结构化结果（验证脚本）。</td></tr>
+    <tr><td><code>webview_script_mount</code></td><td><code class="blk">webview_tools.dart:132 _mount()</code></td><td>挂载/更新解析脚本（持久化，需审批）。</td></tr>
+    <tr><td><code>webview_script_list</code></td><td><code class="blk">webview_tools.dart:191 _list()</code></td><td>列出脚本。</td></tr>
+    <tr><td><code>webview_script_unmount</code></td><td><code class="blk">webview_tools.dart:214 _unmount()</code></td><td>卸载（内置脚本仅禁用，需审批）。</td></tr>
+    <tr><td>结果截断</td><td><code class="blk">packages/llm_api/lib/src/agent/tool_registry.dart:130 invoke()</code></td><td>默认 24k 字符；每个工具结果写独立 <code>&lt;tool&gt;</code> 元素（agent_engine.dart:219-231）。</td></tr>
+  </table>
+
+  <h3>5.2 沙箱安全</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>路径守卫</td>
+      <td>
+        <code class="blk">lib/agent/tools/path_guard.dart:16  class PathGuard</code>
+        <code class="blk">path_guard.dart:21 resolve()  :36 resolveReal()</code>
+        <code class="blk">path_guard.dart:6   class SandboxViolation</code>
+      </td>
+      <td><span class="tag t-core">核心</span> realpath 前缀校验，拦截 <code>..</code> 与符号链接逃逸。</td>
+    </tr>
+    <tr>
+      <td>沙箱解析测试</td>
+      <td><code class="blk">test/sandbox_resolution_test.dart</code></td>
+      <td>—</td>
+    </tr>
+  </table>
+
+  <h3>5.3 Shell 命令策略（正则名单）★</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>分级分类</td>
+      <td>
+        <code class="blk">lib/models/shell_policy.dart:35  classifyShellCommand()</code>
+        <code class="blk">shell_policy.dart:11 enum ShellMatch  :14 class ShellClassification</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 优先级 F(deny) &gt; level2 &gt; level1 &gt; base；非法正则退化子串匹配（matches:42）。</td>
+    </tr>
+    <tr>
+      <td>默认三条名单</td>
+      <td>
+        <code class="blk">lib/models/app_config.dart:359  defaultShellDeniedCommands()</code>
+        <code class="blk">app_config.dart:344 defaultShellLevel2Commands()</code>
+        <code class="blk">app_config.dart:330 defaultShellLevel1Commands()</code>
+      </td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>调用与审批联动</td>
+      <td>
+        <code class="blk">lib/agent/agent_engine.dart:174-197</code>
+        <code class="blk">agent_engine.dart:336  _shellCommand()（取 command 参数）</code>
+      </td>
+      <td>shell 基础等级锁定 3（:176）；命中名单生成 <code>approvalNote</code>。</td>
+    </tr>
+    <tr>
+      <td>任一名单为空 ⇒ 整体禁用</td>
+      <td>
+        <code class="blk">AppConfig.shellCommandsConfigured</code>
+        <code class="blk">agent_engine.dart:91  shellEnabled: config.shellCommandsConfigured</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span></td>
+    </tr>
+    <tr>
+      <td>名单编辑 / 导入导出</td>
+      <td>
+        <code class="blk">lib/ui/pages/tools_page.dart:17  ToolsPage</code>
+        <code class="blk">tools_page.dart:413 _ShellListsDialog（正则校验/一键默认）</code>
+        <code class="blk">tools_page.dart:392 _ToolSettingsImport  :140 parseList()</code>
+      </td>
+      <td><span class="tag t-ui">UI</span> 工具配置 JSON 导入/导出。</td>
+    </tr>
+    <tr>
+      <td>策略单测</td><td><code class="blk">test/shell_policy_test.dart</code></td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section id="s6">
+  <h2><span class="no">6</span>隐藏 WebView 搜索与脚本提取</h2>
+
+  <h3>6.1 动机与通道</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>离屏 WebView 会话（L3）</td>
+      <td>
+        <code class="blk">lib/agent/tools/webview_extractor.dart:685  _ensure()（OffscreenWebViewSession）</code>
+        <code class="blk">webview_extractor.dart:536 _loadAndWait()  :668 close()</code>
+      </td>
+      <td><span class="tag t-core">核心</span> 真实浏览器环境（各平台系统 WebView / Linux WebKitGTK）。</td>
+    </tr>
+    <tr>
+      <td>反指纹 / UA</td>
+      <td>
+        <code class="blk">webview_extractor.dart:555 _applyUserAgent()</code>
+        <code class="blk">webview_extractor.dart:570 _patchFingerprint()（:574 指纹补丁 JS）</code>
+        <code class="blk">webview_extractor.dart:635 _primeSession()（预热 + locale cookie :650）</code>
+      </td>
+      <td>dump 与搜索共用桌面 Chrome UA。</td>
+    </tr>
+    <tr>
+      <td>L1 HTTP 通道（http_fetch 用）</td>
+      <td><code class="blk">lib/agent/tools/browser_session.dart:36  class BrowserSession</code></td>
+      <td><code>get:86</code>、<code>postJson:130</code>、cookie 罐 :226、代理 :68；<code>looksBlocked:76</code>。</td>
+    </tr>
+    <tr>
+      <td>L2 headless</td>
+      <td><code class="blk">browser_session.dart:155  render()</code> / <code class="blk">:193 _locateBrowser()</code></td>
+      <td>探测本地 Chrome/Chromium。</td>
+    </tr>
+    <tr>
+      <td>被拦截检测 / 诊断</td>
+      <td>
+        <code class="blk">webview_extractor.dart:730 _looksBlocked()  :744 _diagnose()</code>
+        <code class="blk">webview_extractor.dart:9  class WebViewBlockedException</code>
+      </td>
+      <td>不可用时逐层回退。</td>
+    </tr>
+    <tr>
+      <td>JS 求值约束</td>
+      <td><code class="blk">webview_extractor.dart:518  _eval()</code></td>
+      <td><span class="tag t-risk">隐性契约</span> 使用 <code>runJavaScriptReturningResult</code>（不能用 callAsyncJavaScript，会丢 IIFE 返回值）。</td>
+    </tr>
+  </table>
+
+  <h3>6.2 搜索流程</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>搜索入口 / 多引擎回退</td>
+      <td>
+        <code class="blk">lib/agent/tools/builtin_tools.dart:292  _webSearch()</code>
+        <code class="blk">builtin_tools.dart:341  static search()</code>
+        <code class="blk">builtin_tools.dart:490  _searchOne()（单引擎）</code>
+      </td>
+      <td><span class="tag t-core">核心</span> 引擎按配置顺序回退；SERP URL 由 <code>searchUrl:441</code>（{query} 占位）生成。</td>
+    </tr>
+    <tr>
+      <td>等待 / 解析 / 过滤链</td>
+      <td>
+        <code class="blk">_searchOne()：ready_selector 等待 → 脚本解析 → 过滤</code>
+        <code class="blk">lib/agent/tools/search_filter.dart:8  class SearchFilter</code>
+        <code class="blk">search_filter.dart:56 isRelevant()  :74 isJunk()  :86 usable()  :109 dedupe()</code>
+        <code class="blk">builtin_tools.dart:561 _unwrapLinks()（跳转链接解包）</code>
+      </td>
+      <td>跳转解包 → 去重 → 相关性过滤 → max_results 截断。</td>
+    </tr>
+    <tr>
+      <td>多页聚合</td>
+      <td>
+        <code class="blk">lib/agent/tools/webview_extractor.dart:246  evaluatePaged()</code>
+        <code class="blk">webview_extractor.dart:263 _evaluatePaged()（跨页去重合并）</code>
+        <code class="blk">builtin_tools.dart:480  _nextSelector()</code>
+      </td>
+      <td>页数：参数 &gt; 引擎配置（1–10）；缺下一页或无新增提前结束，附诊断 notes。</td>
+    </tr>
+    <tr>
+      <td>翻页验证式触发 ★</td>
+      <td>
+        <code class="blk">webview_extractor.dart:351  _advance()</code>
+        <code class="blk">webview_extractor.dart:407  _trigger()（①鼠标事件序列 → ②location.assign → ③loadRequest）</code>
+        <code class="blk">webview_extractor.dart:451 _click()  :474 _assign()</code>
+        <code class="blk">webview_extractor.dart:485 _waitForChange()  :507 _signature()</code>
+        <code class="blk">webview_extractor.dart:797 class _PagingAttempt（最多 3 轮 + 报因）</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 每轮必须等结果集真变化才算前进；「白跑一轮」重试（引擎会重写 pager href）。</td>
+    </tr>
+    <tr>
+      <td>翻页诊断日志</td>
+      <td>
+        <code class="blk">builtin_tools.dart:567  _logPaging()（logs/webview/paging.log）</code>
+        <code class="blk">builtin_tools.dart:590  dumpPageHtml()（logs/webview/last.html）</code>
+      </td>
+      <td>提取为空时落盘页面 HTML 便于排查。</td>
+    </tr>
+  </table>
+
+  <h3>6.3 解析脚本注册表（ScriptRegistry）</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>脚本注册表</td>
+      <td>
+        <code class="blk">lib/agent/tools/script_registry.dart:18  class ScriptRegistry</code>
+        <code class="blk">script_registry.dart:51 reload()  :59 resolve()  :76 mount()  :83 unmount()</code>
+      </td>
+      <td><span class="tag t-core">核心</span> 两源合并：<code>_loadBuiltins:98</code>（assets/scripts/*.json）+ <code>_loadUserScripts:114</code>（&lt;root&gt;/scripts/）；同 id 用户覆盖内置（<code>_put:128</code>）。</td>
+    </tr>
+    <tr>
+      <td>URL 匹配</td>
+      <td>
+        <code class="blk">lib/models/extract_script.dart:10  class UrlMatcher</code>
+        <code class="blk">extract_script.dart:30 score()（url_pattern &gt; 精确 host &gt; host 后缀；同分比 priority）</code>
+      </td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>脚本 JSON 模型</td>
+      <td>
+        <code class="blk">lib/models/extract_script.dart:77  class ExtractScript</code>
+        <code class="blk">extract_script.dart:236 buildSelectorScript()（选择器模式兜底）</code>
+      </td>
+      <td>字段：id/name/created_by/origin_url/match/ready_selector/next_selector/priority/enabled/created_at/updated_at/body(IIFE)。</td>
+    </tr>
+    <tr>
+      <td>内置脚本</td>
+      <td>
+        <code class="blk">assets/scripts/google.json · bing.json · duckduckgo.json · baidu.json · sogou.json</code>
+      </td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>脚本测试</td><td><code class="blk">test/extract_script_test.dart</code></td><td>—</td></tr>
+  </table>
+
+  <h3>6.4 Agent 闭环 &nbsp;/&nbsp; 6.5 手动搜索页</h3>
+  <table>
+    <tr><th style="width:180px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>闭环工具链</td>
+      <td><code class="blk">webview_tools.dart:24 _fetch → :65 _extract → :132 _mount</code></td>
+      <td><code>webview_fetch(outline)</code> → <code>webview_fetch(html, selector)</code> → 写脚本 → <code>webview_extract</code> 验证 → <code>webview_script_mount</code> 持久化，后续搜索/提取自动复用。</td>
+    </tr>
+    <tr>
+      <td>手动搜索页（GUI 验证台）</td>
+      <td>
+        <code class="blk">lib/ui/pages/search_page.dart:19  class SearchPage</code>
+        <code class="blk">search_page.dart:26  _SearchPageState</code>
+      </td>
+      <td><span class="tag t-ui">UI</span> 复用与 <code>web_search</code> 同一实现（<code>BuiltinTools.search</code>）；单击条目用 <code>EditorLaunchResult.openUrl</code>(editor_launcher.dart:62) 打开系统浏览器；「解析」按钮走隐藏 WebView。</td>
+    </tr>
+    <tr>
+      <td>过滤开关 / 完全原始</td>
+      <td><code class="blk">search_page.dart（开关区 :203-300）</code> + <code class="blk">search_filter.dart:86 usable()</code></td>
+      <td>关=只去重截断；完全原始=不去重不筛不截断。</td>
+    </tr>
+    <tr>
+      <td>浏览器渲染验证脚本</td>
+      <td><code class="blk">tool/browser_render_check.dart</code></td>
+      <td>调试用。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section id="s7">
+  <h2><span class="no">7</span>会话功能</h2>
+  <table>
+    <tr><th style="width:170px">功能点</th><th style="width:330px">入口 / 核心代码</th><th>说明</th></tr>
+    <tr>
+      <td>创建向导</td>
+      <td>
+        <code class="blk">lib/ui/pages/session_wizard_page.dart:16  SessionWizardPage</code>
+        <code class="blk">lib/state/app_state.dart:232  createSession()</code>
+      </td>
+      <td>分步：起点 → 模型参数 → 系统提示 → 工具与预算 → 存储与标识；<code>createFromTemplate:292</code>。</td>
+    </tr>
+    <tr>
+      <td>会话模板</td>
+      <td>
+        <code class="blk">lib/ui/pages/templates_page.dart:14  TemplatesPage</code>
+        <code class="blk">lib/ui/pages/template_wizard_page.dart（LLM 生成/改写提示词）</code>
+        <code class="blk">lib/state/app_state.dart:494 saveTemplate()  :499 deleteTemplate()</code>
+      </td>
+      <td>CRUD + 「用此模板新建会话」。</td>
+    </tr>
+    <tr>
+      <td>克隆（3 种）</td>
+      <td>
+        <code class="blk">lib/models/session.dart:132 cloneToFirstUser() / :136 cloneWithFirstTurn() / :139 cloneFull()</code>
+        <code class="blk">lib/state/app_state.dart:320 cloneSession() / :326 cloneSessionWithFirstTurn() / :332 cloneSessionFull()</code>
+        <code class="blk">app_state.dart:337 _cloneSession()（统一新 id/时间戳/清零）</code>
+      </td>
+      <td>保留配置，tool_calls/usage 清零。</td>
+    </tr>
+    <tr>
+      <td>编辑重发</td>
+      <td>
+        <code class="blk">lib/session/session_ops.dart:19  editLastUser()</code>
+        <code class="blk">lib/session/session_controller.dart:93  resend()</code>
+      </td>
+      <td>定位最后一个 <code>&lt;user&gt;</code>、删除其后元素、重算计数后立即重发。</td>
+    </tr>
+    <tr>
+      <td>重新生成</td>
+      <td><code class="blk">lib/session/session_ops.dart:32  dropLastAssistant()</code> + <code class="blk">session_controller.dart:93</code></td>
+      <td>删除最后一条 assistant（及其后 tool 结果）后重发。</td>
+    </tr>
+    <tr>
+      <td>删除消息</td>
+      <td><code class="blk">lib/session/session_ops.dart:49  deleteMessage()</code></td>
+      <td>assistant 带 tool_calls 时连带删除其后 tool 结果；system 不可删。</td>
+    </tr>
+    <tr>
+      <td>会话操作测试</td><td><code class="blk">test/session_ops_test.dart</code></td><td>—</td></tr>
+    <tr>
+      <td>自动命名</td>
+      <td>
+        <code class="blk">lib/llm/session_namer.dart:11</code>
+        <code class="blk">lib/state/app_state.dart:408 autoNameSession() / :412 autoNameFirstTurn()</code>
+      </td>
+      <td>亦可手动重命名：<code>app_state.dart:352 renameSession()</code>。</td>
+    </tr>
+    <tr>
+      <td>会话压缩</td>
+      <td>
+        <code class="blk">lib/llm/session_compressor.dart:20</code>
+        <code class="blk">lib/state/app_state.dart:422  compressSession()</code>
+        <code class="blk">lib/ui/pages/compress_prompts_page.dart:9  showCompressDialog()</code>
+        <code class="blk">lib/ui/pages/home_page.dart:1655  _CompressProgressDialog</code>
+      </td>
+      <td>流式进度展示；压缩提示词维护页 <code>CompressPromptsPage:86</code>。</td>
+    </tr>
+    <tr>
+      <td>归档</td>
+      <td><code class="blk">lib/state/app_state.dart:368 / :543</code></td><td>见 §1.6。</td>
+    </tr>
+    <tr>
+      <td>标签</td>
+      <td>
+        <code class="blk">lib/state/app_state.dart:360  setSessionTags()</code>
+        <code class="blk">lib/ui/pages/home_page.dart:551  _Sidebar（标签筛选）</code>
+      </td>
+      <td>会话多标签 + 全局标签汇总。</td>
+    </tr>
+    <tr>
+      <td>项目分组</td>
+      <td>
+        <code class="blk">lib/state/app_state.dart:506 createProject()  :532 saveProject()  :553 deleteProject()</code>
+        <code class="blk">lib/ui/pages/home_page.dart:747  _ProjectGroup（行尾「+」新建会话）</code>
+      </td>
+      <td>项目=会话分组 + 共享沙箱 + 默认 provider/model。</td>
+    </tr>
+    <tr>
+      <td>编辑器打开 / 内置 XML 编辑</td>
+      <td>
+        <code class="blk">lib/util/editor_launcher.dart:15  openInEditor()（{file} 命令模板）</code>
+        <code class="blk">lib/ui/pages/xml_editor_page.dart:12  XmlEditorPage</code>
+      </td>
+      <td>未配置外部编辑器用系统默认程序；移动端用内置编辑器（等宽、保存前校验、保存后重载）。</td>
+    </tr>
+    <tr>
+      <td>打开工作目录</td>
+      <td><code class="blk">lib/util/editor_launcher.dart:43  openDirectory()</code></td>
+      <td>open / explorer / xdg-open。</td>
+    </tr>
+    <tr>
+      <td>多会话并行</td>
+      <td>
+        <code class="blk">lib/state/app_state.dart:84  controllerFor()</code>
+        <code class="blk">lib/session/session_controller.dart:16  class SessionController</code>
+        <code class="blk">lib/ui/pages/home_page.dart:847  _SessionTile（进行中旋转圈）</code>
+      </td>
+      <td>控制器按会话 id 全局持有，切换不中断后台流式。</td>
+    </tr>
+    <tr>
+      <td>导入 / 导出</td>
+      <td>
+        <code class="blk">lib/data/session_repository.dart:58  writeTo()（导出 XML）</code>
+        <code class="blk">lib/ui/pages/tools_page.dart:392 _ToolSettingsImport（工具 JSON）</code>
+      </td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>搜索 / 筛选</td>
+      <td><code class="blk">lib/ui/pages/home_page.dart:551  _Sidebar</code></td>
+      <td>会话搜索 + 标签/项目筛选 + 更新时间排序。</td>
+    </tr>
+    <tr>
+      <td>发送 / 停止 / 模式切换</td>
+      <td>
+        <code class="blk">lib/session/session_controller.dart:82  send()</code>
+        <code class="blk">session_controller.dart:107 stop()  :118 setMode()  :127 setModel()  :136 setWebSearch()</code>
+      </td>
+      <td>web_search 本轮开关；执行模式切换。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section id="s8">
+  <h2><span class="no">8</span>全局配置（config.json）与 models.dev</h2>
+  <table>
+    <tr><th style="width:200px">配置项</th><th style="width:330px">定义 / 落点</th><th>说明</th></tr>
+    <tr><td>config.json 读写</td><td><code class="blk">lib/data/config_repository.dart:8  ConfigRepository（load:13 / save:29）</code><code class="blk">lib/models/app_config.dart:60  class AppConfig（toJson:164）</code></td><td>整体持久化。</td></tr>
+    <tr><td>providers[] + 当前选择</td><td><code class="blk">app_config.dart（providers/current_provider/current_model）</code><code class="blk">lib/state/app_state.dart:624 upsertProvider()  :634 removeProvider()</code></td><td>—</td></tr>
+    <tr><td>default_params</td><td><code class="blk">lib/models/session_params.dart:37  SessionParams</code></td><td>新会话默认参数。</td></tr>
+    <tr><td>default_tools / default_tool_calls_limit</td><td><code class="blk">AppConfig.defaultTools / defaultToolCallsLimit</code></td><td>向导「工具与预算」步骤回填。</td></tr>
+    <tr><td>continue_mode / continue_prompt / max_tool_calls_per_turn</td><td><code class="blk">lib/models/app_config.dart:31  enum ContinueMode</code><code class="blk">消费点：lib/agent/agent_engine.dart:241-256</code></td><td>见 §4.2。</td></tr>
+    <tr><td>editor_command</td><td><code class="blk">lib/util/editor_launcher.dart:15</code></td><td>{file} 占位。</td></tr>
+    <tr><td>theme_mode</td><td><code class="blk">lib/app.dart:8  XChatApp</code>（system/light/dark）</td><td>—</td></tr>
+    <tr><td>window_size</td><td><code class="blk">lib/core/window_prefs.dart:21</code></td><td>下次启动生效。</td></tr>
+    <tr><td>max_attachment_bytes</td><td><code class="blk">lib/agent/tools/image_attach.dart:83</code>（消费）</td><td>—</td></tr>
+    <tr><td>search_engines[]</td><td><code class="blk">lib/models/search_engine_config.dart:10</code>（默认 :155）<code class="blk">app_config.dart:233 _decodeSearchEngines()（:258 中文引擎合并）</code></td><td>设置页可增删改排序。</td></tr>
+    <tr><td>proxy</td><td><code class="blk">lib/models/proxy_config.dart:6</code>（buildProxiedHttpClient:113）</td><td>可仅作用于 http_fetch。</td></tr>
+    <tr><td>tool_approvals{}</td><td><code class="blk">app_config.dart:152 toolApprovalLevel()  :277 _decodeApprovals()  :305 defaultToolApprovals()</code></td><td>0..3。</td></tr>
+    <tr><td>shell_*_commands</td><td><code class="blk">app_config.dart:330/344/359</code></td><td>见 §5.3。</td></tr>
+    <tr><td>compress_prompts[]</td><td><code class="blk">app_config.dart:292 defaultCompressPrompts()</code><code class="blk">lib/ui/pages/compress_prompts_page.dart:86</code></td><td>内置 3 条预置。</td></tr>
+    <tr>
+      <td>models.dev 拉取与缓存</td>
+      <td>
+        <code class="blk">lib/data/models_dev_repository.dart:36  ModelsDevRepository</code>
+        <code class="blk">models_dev_repository.dart:61 refresh()  :46 loadCached()  :16 loadBundledModelsDev()</code>
+      </td>
+      <td>回退链：联网 → 缓存 <code>models_dev.json</code> → 内置快照 <code>assets/models_dev/models_dev.json</code>。</td>
+    </tr>
+    <tr>
+      <td>一键同步（不覆盖用户自定义）★</td>
+      <td>
+        <code class="blk">lib/models/models_dev.dart:373  applyModelsDev()</code>
+        <code class="blk">models_dev.dart:286 matchFor()（ID → host → 预设别名）</code>
+        <code class="blk">models_dev.dart:159 toSpec()（写 model_specs）</code>
+        <code class="blk">lib/state/app_state.dart:580  syncModelsDev()</code>
+      </td>
+      <td><span class="tag t-risk">隐性契约</span> 自定义镜像/API Key/Headers/思考回发永不覆盖；端点仅在为空/同 host/内置默认时改写。</td>
+    </tr>
+    <tr>
+      <td>从 models.dev 填充 / 添加向导</td>
+      <td>
+        <code class="blk">lib/state/app_state.dart:615  fillFromModelsDev()</code>
+        <code class="blk">lib/ui/pages/providers_page.dart:465  _ModelsDevWizardPage</code>
+      </td>
+      <td>默认预选最新 10 个支持工具调用的模型。</td>
+    </tr>
+    <tr>
+      <td>models.dev 测试</td><td><code class="blk">test/models_dev_test.dart</code></td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section id="s9">
+  <h2><span class="no">9</span>UI 页面与组件</h2>
+
+  <h3>9.1 页面</h3>
+  <table>
+    <tr><th style="width:170px">页面</th><th style="width:330px">入口代码</th><th>关键子组件 / 说明</th></tr>
+    <tr>
+      <td>首页 HomePage</td>
+      <td><code class="blk">lib/ui/pages/home_page.dart:34  HomePage</code></td>
+      <td>自适应布局 <code>build:291</code>；<code>_Sidebar:551</code>（搜索/项目/标签）、<code>_ProjectGroup:747</code>、<code>_SessionTile:847</code>、<code>_SessionMenu:915</code>（右键/长按菜单）、<code>_MobileChatPage:500</code>（窄屏路由）、<code>_EmptyState:479</code>、AppBar「更多」<code>_MoreMenuItem:461</code>。</td>
+    </tr>
+    <tr>
+      <td>聊天面板</td>
+      <td><code class="blk">home_page.dart:1085  SessionChatPanel</code></td>
+      <td><code>_Header:1488</code>、<code>_ModelSelector:1545</code>、<code>_LiveStream:1586</code>（实时流）、<code>_StatusBar:1620</code>、<code>_CompressProgressDialog:1655</code>、<code>_ApprovalList:1826</code>。</td>
+    </tr>
+    <tr><td>创建向导</td><td><code class="blk">lib/ui/pages/session_wizard_page.dart:16</code></td><td>分步表单（§7）。</td></tr>
+    <tr><td>模板页 + 向导</td><td><code class="blk">lib/ui/pages/templates_page.dart:14 / template_wizard_page.dart</code></td><td><code>_TemplateEditorPage:128</code>；向导含场景类别一键生成（:265）。</td></tr>
+    <tr><td>模型服务页</td><td><code class="blk">lib/ui/pages/providers_page.dart:12  ProvidersPage</code></td><td><code>_ProviderEditorPage:232</code>、<code>_ModelsDevWizardPage:465</code>、<code>_FeatureModelBanner:160</code>、<code>_ErrorView:720</code>；测试连接/拉取模型走 <code>llm_factory.dart:39/50</code>。</td></tr>
+    <tr><td>设置页</td><td><code class="blk">lib/ui/pages/settings_page.dart:19  SettingsPage</code></td><td>数据目录/迁移（<code>app_paths.dart:87/115</code>）、编辑器、主题、窗口尺寸、默认参数、续判、图片上限、代理、搜索引擎、压缩提示词、字体测试、本机信息、打开 config.json；<code>PathsSection:541</code>。</td></tr>
+    <tr><td>工具管理页</td><td><code class="blk">lib/ui/pages/tools_page.dart:17  ToolsPage</code></td><td>审批等级、shell 三名单（<code>_ShellListsDialog:413</code>）、导入导出（<code>_ToolSettingsImport:392</code>）。</td></tr>
+    <tr><td>手动搜索页</td><td><code class="blk">lib/ui/pages/search_page.dart:19</code></td><td>见 §6.5。</td></tr>
+    <tr><td>归档页</td><td><code class="blk">lib/ui/pages/archive_page.dart:8</code></td><td>恢复/删除。</td></tr>
+    <tr><td>压缩提示词页</td><td><code class="blk">lib/ui/pages/compress_prompts_page.dart:86</code></td><td>预置提示词增删改。</td></tr>
+    <tr><td>XML 编辑器页</td><td><code class="blk">lib/ui/pages/xml_editor_page.dart:12</code></td><td>保存前 XML 校验。</td></tr>
+    <tr><td>字体测试页</td><td><code class="blk">lib/ui/pages/font_test_page.dart:28  FontTestPanel</code></td><td>渲染/来源探测 <code>_FontSourceProbe:122</code>。</td></tr>
+  </table>
+
+  <h3>9.2 消息与输入组件</h3>
+  <table>
+    <tr><th style="width:170px">组件</th><th style="width:330px">入口代码</th><th>说明</th></tr>
+    <tr><td>消息气泡</td><td><code class="blk">lib/ui/widgets/message_bubble.dart:14  MessageBubble</code></td><td>时间/操作按钮（编辑重发、重新生成、删除、复制 <code>copyRaw:33</code>）。</td></tr>
+    <tr><td>Markdown 渲染</td><td><code class="blk">lib/ui/widgets/markdown_view.dart:18  markdownView()</code></td><td>代码高亮/表格/列表；<code>_SafeCodeBlockNode:104</code>（安全代码块）、<code>_ItalicBlockquoteNode:92</code>（斜体引用块）。</td></tr>
+    <tr><td>思考块</td><td><code class="blk">lib/ui/widgets/thinking_block.dart:4  ThinkingBlock</code></td><td>默认折叠、流式自动展开、来源模式标注。</td></tr>
+    <tr><td>工具调用块</td><td><code class="blk">lib/ui/widgets/tool_call_block.dart:8  ToolCallBlock</code> / <code class="blk">:103 ToolResultBlock</code></td><td>命令+参数+结果摘要，可展开全文；错误态样式；流式参数增量。</td></tr>
+    <tr><td>用量角标</td><td><code class="blk">lib/ui/widgets/usage_badge.dart:6  UsageBadge</code></td><td>单条 in/out/cache；状态栏累计 + 上下文条（窗口取 <code>ProviderConfig.contextWindowFor</code>(provider_config.dart:115)）。</td></tr>
+    <tr><td>输入区</td><td><code class="blk">lib/ui/widgets/input_area.dart:26  InputArea</code></td><td>快捷键映射 :296-303（Enter 发送 / Ctrl+Enter 换行，可切换）；图片多选；web_search 开关；执行模式切换；压缩入口。</td></tr>
+    <tr><td>确认对话框</td><td><code class="blk">lib/ui/widgets/confirm_dialog.dart:6  confirmDelete()</code></td><td>—</td></tr>
+    <tr><td>字体</td><td><code class="blk">lib/ui/theme/app_fonts.dart</code></td><td>NotoSansSC + JetBrainsMono。</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 10 ============================ -->
+<section id="s10">
+  <h2><span class="no">10</span>平台差异</h2>
+  <table>
+    <tr><th style="width:150px">平台</th><th style="width:330px">代码落点</th><th>要点</th></tr>
+    <tr>
+      <td>Android</td>
+      <td>
+        <code class="blk">lib/core/app_paths.dart:227 _defaultRoots()（私有目录优先）</code>
+        <code class="blk">app_paths.dart:115 requestSharedAccess()（外部存储授权/迁移）</code>
+      </td>
+      <td>单 Activity；系统 WebView。<span class="pill">原生侧在 android/ 目录，需验证具体通道实现</span></td>
+    </tr>
+    <tr>
+      <td>iOS / macOS</td>
+      <td><code class="blk">ios/ macos/（WKWebView 平台侧）</code></td>
+      <td>Documents 目录。</td>
+    </tr>
+    <tr>
+      <td>Windows</td>
+      <td>
+        <code class="blk">lib/util/editor_launcher.dart:43 openDirectory()（explorer / start）</code>
+        <code class="blk">windows/（WebView2）</code>
+      </td>
+      <td>窗口尺寸记忆 <code>core/window_prefs.dart:21</code>。</td>
+    </tr>
+    <tr>
+      <td>Linux</td>
+      <td>
+        <code class="blk">linux/（WebKitGTK 4.1，构建依赖 libwebkit2gtk-4.1-dev）</code>
+        <code class="blk">lib/util/editor_launcher.dart:43（xdg-open）</code>
+      </td>
+      <td>CI 见 <code>.github/workflows/build-linux-deb.yml</code>。</td>
+    </tr>
+    <tr>
+      <td>桌面通用</td>
+      <td>
+        <code class="blk">lib/agent/tools/builtin_tools.dart:692 _ShellTool（shell 工具）</code>
+        <code class="blk">lib/util/editor_launcher.dart（外部编辑器）</code>
+        <code class="blk">lib/core/window_prefs.dart</code>
+      </td>
+      <td>shell / 外部编辑器 / 窗口记忆 / 打开工作目录。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 11 ============================ -->
+<section id="s11">
+  <h2><span class="no">11</span>测试与构建</h2>
+  <table>
+    <tr><th style="width:220px">覆盖领域</th><th style="width:330px">测试文件</th><th>说明</th></tr>
+    <tr><td>XML round-trip（CDATA/思考/usage）</td><td><code class="blk">test/session_xml_test.dart</code></td><td>核心契约回归。</td></tr>
+    <tr><td>会话操作（克隆/编辑重发）</td><td><code class="blk">test/session_ops_test.dart</code></td><td>—</td></tr>
+    <tr><td>压缩</td><td><code class="blk">test/compress_test.dart</code></td><td>—</td></tr>
+    <tr><td>附件</td><td><code class="blk">test/message_attachment_test.dart</code> / <code class="blk">test/agent_image_attach_test.dart</code></td><td>—</td></tr>
+    <tr><td>模型目录</td><td><code class="blk">test/models_dev_test.dart</code></td><td>—</td></tr>
+    <tr><td>提示词工具</td><td><code class="blk">test/prompt_utils_test.dart</code></td><td>—</td></tr>
+    <tr><td>沙箱解析</td><td><code class="blk">test/sandbox_resolution_test.dart</code></td><td>—</td></tr>
+    <tr><td>搜索引擎配置 / 过滤</td><td><code class="blk">test/search_engine_config_test.dart</code> / <code class="blk">test/search_filter_test.dart</code></td><td>—</td></tr>
+    <tr><td>shell 策略</td><td><code class="blk">test/shell_policy_test.dart</code></td><td>—</td></tr>
+    <tr><td>索引仓库</td><td><code class="blk">test/index_repository_test.dart</code></td><td>—</td></tr>
+    <tr><td>脚本匹配</td><td><code class="blk">test/extract_script_test.dart</code></td><td>—</td></tr>
+    <tr><td>版本号</td><td><code class="blk">test/app_version_test.dart</code>（<code>lib/core/app_version.dart</code>）</td><td>—</td></tr>
+    <tr><td>首页流程</td><td><code class="blk">test/home_flow_test.dart</code></td><td>—</td></tr>
+    <tr>
+      <td>llm_api 包单测</td>
+      <td><code class="blk">packages/llm_api/test/（协议 / SSE / 工具循环 / think 标签）</code></td>
+      <td><span class="pill">目录未在本次枚举中列出，需验证实际文件名</span></td>
+    </tr>
+    <tr>
+      <td>CI 工作流</td>
+      <td>
+        <code class="blk">.github/workflows/build-android-apk.yml</code>
+        <code class="blk">.github/workflows/build-linux-deb.yml</code>
+        <code class="blk">.github/workflows/build-windows.yml</code>
+        <code class="blk">.github/workflows/sync-gitcode.yml</code>
+      </td>
+      <td>Windows zip 按版本命名 <code>xchat-windows-x64-vX.Y.Z.zip</code>；GitCode 同步脚本。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================ 12 ============================ -->
+<section id="s12">
+  <h2><span class="no">12</span>重写要点速查：隐性契约 → 代码落点</h2>
+  <table>
+    <tr><th style="width:30px">#</th><th style="width:300px">隐性契约</th><th style="width:330px">代码落点</th><th>校验建议</th></tr>
+    <tr><td>1</td><td>XML 文本必须 CDATA（不转义）；属性承载 usage 数值，缺失 ≠ 0</td>
+      <td><code class="blk">lib/data/xml/xml_writer.dart:66 _cdata()</code><code class="blk">lib/data/xml/session_xml.dart:129 _usageAttrs()</code></td>
+      <td>跑 <code>test/session_xml_test.dart</code>，检查 round-trip 后 usage 为 null 而非 0。</td></tr>
+    <tr><td>2</td><td><code>system</code> 元素即使内容为空也保留（累计 usage 载体）</td>
+      <td><code class="blk">lib/models/session.dart:86 ensureSystem()</code><code class="blk">lib/data/xml/session_xml.dart:29 encode()（:73 system usage）</code></td>
+      <td>构造无 system prompt 会话，确认输出仍含空 <code>&lt;system&gt;</code>。</td></tr>
+    <tr><td>3</td><td><code>tool_calls</code> 累计 与 本轮预算 是两个概念</td>
+      <td><code class="blk">agent_engine.dart:233（累计）/ :110（budgetRound）/ :253（续判重置）</code></td>
+      <td>触发续判后检查 meta.tool_calls 仍单调递增。</td></tr>
+    <tr><td>4</td><td>思考回发是硬需求：开思考必回发，形态分字段式/标签式</td>
+      <td><code class="blk">lib/llm/outbound_adapter.dart:12 resolveEchoMode() / :34 buildChatMessages()</code></td>
+      <td>对 deepseek（字段）与 minimax（标签）各跑一轮含历史思考的请求。</td></tr>
+    <tr><td>5</td><td>图片必须紧跟 tool 消息后单独成条 user 图片消息</td>
+      <td><code class="blk">lib/llm/outbound_adapter.dart（tool 分支 + _imageParts:105）</code></td>
+      <td>抓取出站 messages，确认顺序与 role。</td></tr>
+    <tr><td>6</td><td>审批队列必须全局化，否则切会话会丢审批</td>
+      <td><code class="blk">lib/state/approval_center.dart:52</code><code class="blk">接入：lib/session/session_controller.dart:29 / lib/state/app_state.dart:84</code></td>
+      <td>两会话并发触发 shell 审批，切换面板后仍可应答。</td></tr>
+    <tr><td>7</td><td>shell 三名单任一为空 ⇒ 整体禁用；F &gt; 2 &gt; 1 &gt; base</td>
+      <td><code class="blk">lib/models/shell_policy.dart:35</code><code class="blk">lib/agent/agent_engine.dart:91（shellEnabled）/ :176（base=3）</code></td>
+      <td>清空任意名单后调用 shell，应直接拒绝。</td></tr>
+    <tr><td>8</td><td>搜索只能走隐藏 WebView；翻页必须验证结果集变化并重试</td>
+      <td><code class="blk">lib/agent/tools/webview_extractor.dart:246-513（evaluatePaged/_advance/_waitForChange/_signature）</code></td>
+      <td>多页搜索后查看 <code>logs/webview/paging.log</code> 的重试记录。</td></tr>
+    <tr><td>9</td><td>写盘原子（tmp+rename）；index.json 需与磁盘比对</td>
+      <td><code class="blk">lib/data/session_repository.dart:67 _writeAtomic()</code><code class="blk">lib/data/index_repository.dart:131 _matchesDisk()</code></td>
+      <td>外部删一个会话文件后启动，列表应自动重建。</td></tr>
+    <tr><td>10</td><td>models.dev 同步不得覆盖用户自定义</td>
+      <td><code class="blk">lib/models/models_dev.dart:373 applyModelsDev()</code></td>
+      <td>改 baseUrl/apiKey/headers 后执行同步，确认字段未被改写。</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 附录 A ============================ -->
+<section id="appA">
+  <h2><span class="no">A</span>目录结构与文件职责</h2>
+  <div class="tree">
+<pre><code>xchat/
+├── lib/
+│   ├── main.dart                 <span class="c"># 入口：AppPaths.init → AppState.load → runApp（:18）</span>
+│   ├── app.dart                  <span class="c"># MaterialApp / 主题（:8）</span>
+│   ├── agent/
+│   │   ├── agent_engine.dart     <span class="c"># ★ ReAct 主循环 / 预算 / 审批 / 附件（:64 run）</span>
+│   │   ├── agent_events.dart     <span class="c"># 12 种 AgentEvent</span>
+│   │   └── tools/
+│   │       ├── builtin_tools.dart    <span class="c"># 10 个内置工具 + web_search 全流程</span>
+│   │       ├── webview_tools.dart    <span class="c"># 5 个 webview_* 工具</span>
+│   │       ├── webview_extractor.dart<span class="c"># ★ 离屏 WebView / 翻页验证 / 指纹补丁</span>
+│   │       ├── browser_session.dart  <span class="c"># L1 HTTP / L2 headless 通道</span>
+│   │       ├── script_registry.dart  <span class="c"># 解析脚本注册表</span>
+│   │       ├── search_filter.dart    <span class="c"># 相关性/去重/垃圾过滤</span>
+│   │       ├── path_guard.dart       <span class="c"># 沙箱路径守卫</span>
+│   │       └── image_attach.dart     <span class="c"># 图片校验/落盘</span>
+│   ├── core/
+│   │   ├── app_paths.dart        <span class="c"># ★ 数据根/目录布局/迁移</span>
+│   │   ├── window_prefs.dart     <span class="c"># 窗口尺寸记忆</span>
+│   │   ├── prompt_utils.dart     <span class="c"># {sandbox} 注入</span>
+│   │   ├── ids.dart / json_utils.dart / app_version.dart
+│   ├── data/
+│   │   ├── session_repository.dart / template_repository.dart
+│   │   ├── project_repository.dart / config_repository.dart
+│   │   ├── index_repository.dart <span class="c"># ★ index.json + 漂移检测</span>
+│   │   ├── models_dev_repository.dart
+│   │   └── xml/                  <span class="c"># session_xml / template_xml / project_xml / cdata / xml_writer</span>
+│   ├── llm/
+│   │   ├── llm_factory.dart      <span class="c"># createProvider / fetchModels / testProvider</span>
+│   │   ├── outbound_adapter.dart <span class="c"># ★ 思考回发 + 出站消息构建</span>
+│   │   ├── session_namer.dart / session_compressor.dart / prompt_assistant.dart
+│   ├── models/                   <span class="c"># 领域模型（见 §2 表）</span>
+│   ├── session/
+│   │   ├── session_controller.dart<span class="c"># 单会话运行态（send/resend/stop/事件分发）</span>
+│   │   └── session_ops.dart      <span class="c"># 编辑重发/重生成/删消息</span>
+│   ├── state/
+│   │   ├── app_state.dart        <span class="c"># ★ 全局状态 / 会话操作 API</span>
+│   │   └── approval_center.dart  <span class="c"># ★ 全局审批队列</span>
+│   ├── ui/
+│   │   ├── pages/                <span class="c"># home/settings/providers/tools/search/templates/…（见 §9）</span>
+│   │   ├── widgets/              <span class="c"># message_bubble/markdown_view/thinking_block/…</span>
+│   │   └── theme/app_fonts.dart
+│   └── util/editor_launcher.dart <span class="c"># 外部编辑器 / 打开目录 / 打开 URL</span>
+├── packages/llm_api/             <span class="c"># vendor LLM 协议包（providers/stream/thinking/transport/agent/testing）</span>
+├── assets/scripts/               <span class="c"># 内置搜索解析脚本 ×5</span>
+├── assets/models_dev/            <span class="c"># models.dev 内置裁剪快照</span>
+├── test/                         <span class="c"># 单测 ×15（见 §11）</span>
+├── tool/browser_render_check.dart
+└── .github/workflows/            <span class="c"># android apk / linux deb / windows zip / gitcode 同步</span></code></pre>
+  </div>
+</section>
+
+<!-- ============================ 附录 B ============================ -->
+<section id="appB">
+  <h2><span class="no">B</span>按文件反查功能点（速查）</h2>
+  <table>
+    <tr><th style="width:300px">文件</th><th style="width:220px">职责</th><th>对应 FEATURES.md 章节</th></tr>
+    <tr><td><code>lib/agent/agent_engine.dart</code></td><td>ReAct 循环 / 预算 / 审批 / 图片</td><td>§4.1–§4.4</td></tr>
+    <tr><td><code>lib/agent/agent_events.dart</code></td><td>事件模型</td><td>§4.1</td></tr>
+    <tr><td><code>lib/agent/tools/builtin_tools.dart</code></td><td>内置工具 + web_search</td><td>§5.1、§6.2</td></tr>
+    <tr><td><code>lib/agent/tools/webview_tools.dart</code></td><td>webview_* 工具</td><td>§5.1、§6.4</td></tr>
+    <tr><td><code>lib/agent/tools/webview_extractor.dart</code></td><td>离屏 WebView / 翻页</td><td>§6.1、§6.2</td></tr>
+    <tr><td><code>lib/agent/tools/script_registry.dart</code></td><td>脚本注册表</td><td>§6.3</td></tr>
+    <tr><td><code>lib/agent/tools/search_filter.dart</code></td><td>搜索过滤</td><td>§6.2</td></tr>
+    <tr><td><code>lib/agent/tools/path_guard.dart</code></td><td>沙箱守卫</td><td>§5.2</td></tr>
+    <tr><td><code>lib/agent/tools/image_attach.dart</code></td><td>图片校验</td><td>§4.4</td></tr>
+    <tr><td><code>lib/core/app_paths.dart</code></td><td>目录布局 / 迁移</td><td>§1.1、§10</td></tr>
+    <tr><td><code>lib/data/xml/session_xml.dart</code></td><td>会话 XML 契约</td><td>§1.2、§1.4</td></tr>
+    <tr><td><code>lib/data/session_repository.dart</code></td><td>会话读写 / 原子落盘</td><td>§1.1、§1.6</td></tr>
+    <tr><td><code>lib/data/index_repository.dart</code></td><td>目录索引</td><td>§1.5</td></tr>
+    <tr><td><code>lib/llm/outbound_adapter.dart</code></td><td>思考回发 / 出站编码</td><td>§3.2、§4.4</td></tr>
+    <tr><td><code>lib/llm/llm_factory.dart</code></td><td>Provider 构造</td><td>§3.3</td></tr>
+    <tr><td><code>lib/llm/session_namer.dart</code></td><td>自动命名</td><td>§3.3、§7</td></tr>
+    <tr><td><code>lib/llm/session_compressor.dart</code></td><td>会话压缩</td><td>§3.3、§7</td></tr>
+    <tr><td><code>lib/llm/prompt_assistant.dart</code></td><td>系统提示词生成/改写</td><td>§3.3、§7</td></tr>
+    <tr><td><code>lib/models/app_config.dart</code></td><td>全局配置 + 默认值</td><td>§8、§5.3</td></tr>
+    <tr><td><code>lib/models/shell_policy.dart</code></td><td>shell 分级</td><td>§5.3</td></tr>
+    <tr><td><code>lib/models/models_dev.dart</code></td><td>models.dev 同步</td><td>§8</td></tr>
+    <tr><td><code>lib/models/session.dart</code></td><td>会话模型 / 克隆切片</td><td>§2、§7</td></tr>
+    <tr><td><code>lib/session/session_controller.dart</code></td><td>会话运行态</td><td>§4.1、§7</td></tr>
+    <tr><td><code>lib/session/session_ops.dart</code></td><td>编辑重发/重生成/删消息</td><td>§7</td></tr>
+    <tr><td><code>lib/state/app_state.dart</code></td><td>全局状态 / 业务 API</td><td>§7、§8</td></tr>
+    <tr><td><code>lib/state/approval_center.dart</code></td><td>全局审批队列</td><td>§4.3</td></tr>
+    <tr><td><code>lib/ui/pages/home_page.dart</code></td><td>首页 + 聊天面板</td><td>§9.1、§9.2</td></tr>
+    <tr><td><code>lib/ui/pages/settings_page.dart</code></td><td>设置</td><td>§8、§9.1</td></tr>
+    <tr><td><code>lib/ui/pages/providers_page.dart</code></td><td>模型服务 / models.dev 向导</td><td>§8</td></tr>
+    <tr><td><code>lib/ui/pages/tools_page.dart</code></td><td>工具管理 / shell 名单</td><td>§5.3</td></tr>
+    <tr><td><code>lib/ui/pages/search_page.dart</code></td><td>手动搜索台</td><td>§6.5</td></tr>
+    <tr><td><code>packages/llm_api/lib/src/providers/*</code></td><td>三协议实现 + 预设</td><td>§3.1</td></tr>
+    <tr><td><code>packages/llm_api/lib/src/core/*</code></td><td>事件/消息/工具/usage/错误</td><td>§3.1</td></tr>
+    <tr><td><code>packages/llm_api/lib/src/thinking/*</code></td><td>思考归一化</td><td>§3.1</td></tr>
+    <tr><td><code>packages/llm_api/lib/src/transport/*</code></td><td>传输/取消</td><td>§3.1</td></tr>
+  </table>
+
+  <div class="note">
+    <b>使用说明与已知限制：</b>
+    <ul style="margin:6px 0 0 18px">
+      <li>行号基于当前工作区代码快照；随代码演进会漂移，检索时请配合符号名（类/方法名）定位。</li>
+      <li>标注「需验证」的条目（续判「询问用户」交互落点、<code>maxToolCallsPerTurn</code> 使用点、请求规整的确切实现文件、llm_api 包测试目录文件名、Android 原生通道）为本次未逐行确认之处。</li>
+      <li>浏览器 Ctrl+F / 顶部搜索框均可过滤；表格行按关键词（功能名、文件名、符号名）即时筛选。</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  XChat · 功能点 → 代码映射手册 · 依据 <b>FEATURES.md</b> 生成 · 供人工代码审查使用
+</footer>
+
+</main>
+</div>
+
+<script>
+(function(){
+  var filter = document.getElementById('filter');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('main table tr'));
+  var sections = Array.prototype.slice.call(document.querySelectorAll('main section'));
+  filter.addEventListener('input', function(){
+    var q = this.value.trim().toLowerCase();
+    if(!q){
+      rows.forEach(function(r){ r.classList.remove('hidden'); });
+      sections.forEach(function(s){ s.style.display = ''; });
+      return;
+    }
+    rows.forEach(function(r){
+      if(r.querySelector('th')) return;
+      var txt = r.textContent.toLowerCase();
+      r.classList.toggle('hidden', txt.indexOf(q) === -1);
+    });
+    sections.forEach(function(s){
+      var visible = s.querySelectorAll('table tr:not(.hidden)').length;
+      var hasRow = s.querySelectorAll('table tr').length > 1;
+      s.style.display = (hasRow && visible === 0) ? 'none' : '';
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

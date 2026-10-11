@@ -88,6 +88,7 @@ class AgentEngine {
       searchEngines: config.searchEngines,
       proxy: config.proxy,
       shellEnabled: config.shellCommandsConfigured,
+      shellExec: config.shellExec,
       maxAttachmentBytes: config.maxAttachmentBytes,
     ));
 

@@ -3,6 +3,12 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - packages/**
+    - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
   errors:
     unused_import: warning
     unused_element: warning

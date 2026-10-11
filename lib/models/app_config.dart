@@ -4,6 +4,7 @@ import 'provider_config.dart';
 import 'search_engine_config.dart';
 import 'session_message.dart';
 import 'session_params.dart';
+import 'shell_exec.dart';
 
 /// Preset desktop window sizes (`宽x高`), applied on the next launch.
 const kWindowSizes = <String>['1280x720', '1280x850', '1280x960'];
@@ -75,6 +76,8 @@ class AppConfig {
     List<SearchEngineConfig>? searchEngines,
     ProxyConfig? proxy,
     Map<String, int>? toolApprovals,
+    this.shellExecutable = '',
+    this.shellArgs = '',
     List<String>? shellLevel1Commands,
     List<String>? shellLevel2Commands,
     List<String>? shellDeniedCommands,
@@ -131,6 +134,14 @@ class AppConfig {
   /// * level1 → approval level 1
   /// * level2 → approval level 2
   /// * denied → never executed (F级)
+  /// Shell launcher for the `shell` tool. Empty = platform default
+  /// (`cmd` on Windows, `/bin/bash` elsewhere). See `models/shell_exec.dart`.
+  String shellExecutable;
+
+  /// Argument template for [shellExecutable]; `{command}` marks where the
+  /// command string goes. Empty = derived from the executable's basename.
+  String shellArgs;
+
   List<String> shellLevel1Commands;
   List<String> shellLevel2Commands;
   List<String> shellDeniedCommands;
@@ -144,6 +155,10 @@ class AppConfig {
 
   /// Whether every shell command list is non-empty. If any of the 1级/2级/F级
   /// lists is empty the shell tool is disabled entirely.
+  /// Launcher settings for the `shell` tool (raw, unresolved).
+  ShellExecConfig get shellExec =>
+      ShellExecConfig(executable: shellExecutable, argsTemplate: shellArgs);
+
   bool get shellCommandsConfigured =>
       shellLevel1Commands.any((e) => e.trim().isNotEmpty) &&
       shellLevel2Commands.any((e) => e.trim().isNotEmpty) &&
@@ -178,6 +193,8 @@ class AppConfig {
         'search_engines': searchEngines.map((e) => e.toJson()).toList(),
         'proxy': proxy.toJson(),
         'tool_approvals': toolApprovals,
+        'shell_executable': shellExecutable,
+        'shell_args': shellArgs,
         'shell_level1_commands': shellLevel1Commands,
         'shell_level2_commands': shellLevel2Commands,
         'shell_denied_commands': shellDeniedCommands,
@@ -210,6 +227,8 @@ class AppConfig {
       searchEngines: _decodeSearchEngines(json),
       proxy: _decodeProxy(json),
       toolApprovals: _decodeApprovals(json['tool_approvals']),
+      shellExecutable: asString(json['shell_executable']) ?? '',
+      shellArgs: asString(json['shell_args']) ?? '',
       shellLevel1Commands: json.containsKey('shell_level1_commands')
           ? asStringList(json['shell_level1_commands'])
           : defaultShellLevel1Commands(),

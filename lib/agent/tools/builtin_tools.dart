@@ -11,6 +11,7 @@ import '../../models/app_config.dart';
 import '../../models/extract_script.dart';
 import '../../models/proxy_config.dart';
 import '../../models/search_engine_config.dart';
+import '../../models/shell_exec.dart';
 import 'browser_session.dart';
 import 'image_attach.dart';
 import 'path_guard.dart';
@@ -55,6 +56,7 @@ class BuiltinTools {
     List<SearchEngineConfig> searchEngines = const <SearchEngineConfig>[],
     ProxyConfig? proxy,
     bool shellEnabled = true,
+    ShellExecConfig shellExec = const ShellExecConfig(),
     int maxAttachmentBytes = kDefaultMaxAttachmentBytes,
   }) {
     final guard = PathGuard(sandbox);
@@ -79,7 +81,7 @@ class BuiltinTools {
         case 'glob':
           tools.add(_glob(guard));
         case 'shell':
-          if (shellEnabled) tools.add(_shell(sandbox));
+          if (shellEnabled) tools.add(_shell(sandbox, shellExec));
         case 'http_fetch':
           tools.add(_httpFetch(proxyConfig));
         case 'web_search':
@@ -228,7 +230,8 @@ class BuiltinTools {
         },
       );
 
-  static LlmTool _shell(String sandbox) => _ShellTool(sandbox);
+  static LlmTool _shell(String sandbox, ShellExecConfig shellExec) =>
+      _ShellTool(sandbox, shellExec);
 
   static LlmTool _attachImage(PathGuard guard, int maxBytes) => FunctionTool(
         name: 'attach_image',
@@ -690,20 +693,32 @@ class WebSearchOutcome {
 /// stopped, so [停止] takes effect immediately instead of waiting for the
 /// command (or its timeout) to finish.
 class _ShellTool extends LlmTool {
-  _ShellTool(this.sandbox);
+  _ShellTool(this.sandbox, this.shellExec);
 
   final String sandbox;
+
+  /// User-configured shell launcher (executable + args template).
+  final ShellExecConfig shellExec;
 
   @override
   String get name => 'shell';
 
   @override
-  String get description => '执行 shell 命令（桌面端，工作目录=沙箱）并返回标准输出/错误。';
+  String get description {
+    final resolved = shellExec.resolve(isWindows: Platform.isWindows);
+    return '执行 shell 命令（桌面端，工作目录=沙箱）并返回标准输出/错误。'
+        '命令由 ${resolved.executable} 以「${resolved.argsTemplate}」方式执行，'
+        '参数模板中 {command} 处替换为完整命令。命令书写规范：\n'
+        '${commandSyntaxNotes(shellFamilyFor(resolved.executable))}';
+  }
 
   @override
   Map<String, Object?> get parameters => objectSchema(
         properties: {
-          'command': stringSchema(description: '要执行的命令'),
+          'command': stringSchema(
+            description:
+                '要执行的命令（按 ${shellExec.resolve(isWindows: Platform.isWindows).executable} 的语法编写；引号/转义规范见工具说明）',
+          ),
           'timeout_seconds': integerSchema(description: '超时秒数', minimum: 1),
         },
         required: ['command'],
@@ -717,17 +732,24 @@ class _ShellTool extends LlmTool {
     final command = '${args['command'] ?? ''}';
     if (command.isEmpty) return 'ERROR: command required';
     final timeout = (args['timeout_seconds'] as num?)?.toInt() ?? 60;
-    final isWindows = Platform.isWindows;
+    final resolved = shellExec.resolve(isWindows: Platform.isWindows);
 
-    final process = await Process.start(
-      isWindows ? 'cmd' : '/bin/bash',
-      isWindows ? ['/c', command] : ['-lc', command],
-      workingDirectory: sandbox,
-    );
-    final stdoutBuf = StringBuffer();
-    final stderrBuf = StringBuffer();
-    final out = process.stdout.transform(utf8.decoder).listen(stdoutBuf.write);
-    final err = process.stderr.transform(utf8.decoder).listen(stderrBuf.write);
+    final Process process;
+    try {
+      process = await Process.start(
+        resolved.executable,
+        resolved.argumentsFor(command),
+        workingDirectory: sandbox,
+      );
+    } on ProcessException catch (error) {
+      // A misconfigured/missing shell must not crash the turn; report it as a
+      // tool error so the model (or the user) can adjust the setting.
+      return 'ERROR: failed to start shell ${resolved.executable}: ${error.message}';
+    }
+    final stdoutBytes = <int>[];
+    final stderrBytes = <int>[];
+    final out = process.stdout.listen(stdoutBytes.addAll);
+    final err = process.stderr.listen(stderrBytes.addAll);
 
     void kill() {
       try {
@@ -755,8 +777,10 @@ class _ShellTool extends LlmTool {
     await err.cancel();
 
     final buffer = StringBuffer();
-    if (stdoutBuf.isNotEmpty) buffer.writeln(stdoutBuf);
-    if (stderrBuf.isNotEmpty) buffer.writeln('[stderr]\n$stderrBuf');
+    final stdoutText = decodeShellOutput(stdoutBytes);
+    final stderrText = decodeShellOutput(stderrBytes);
+    if (stdoutText.isNotEmpty) buffer.writeln(stdoutText);
+    if (stderrText.isNotEmpty) buffer.writeln('[stderr]\n$stderrText');
     buffer.writeln('[exit code] $exitCode');
     return buffer.toString();
   }
