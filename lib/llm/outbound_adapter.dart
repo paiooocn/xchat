@@ -37,15 +37,35 @@ Future<List<llm.ChatMessage>> buildChatMessages(
   final thinkingOn = session.params.thinkingEnabled;
   final out = <llm.ChatMessage>[];
 
+  // An OpenAI-compatible `tool` message can only carry a string, so an image
+  // the agent produced has to ride on a user message. But that user message
+  // cannot be injected *inside* a tool block: an assistant `tool_calls`
+  // message must be followed by one `tool` message per call id, and anything
+  // in between makes the request invalid (DeepSeek: "insufficient tool
+  // messages following tool calls message"). So tool images are queued and
+  // flushed as a single user message once the whole tool block is written.
+  final pendingToolImages = <SessionMessage>[];
+  Future<void> flushToolImages() async {
+    if (pendingToolImages.isEmpty) return;
+    final parts = <llm.ContentPart>[];
+    for (final message in pendingToolImages) {
+      parts.addAll(await _imageParts(message));
+    }
+    pendingToolImages.clear();
+    out.add(llm.ChatMessage.userParts(parts));
+  }
+
   for (final message in source) {
     switch (message.role) {
       case MessageRole.system:
+        await flushToolImages();
         // `{sandbox}` in the system-prompt template is expanded to the session's
         // configured sandbox path.
         out.add(llm.ChatMessage.system(
           (message.content ?? '').replaceAll('{sandbox}', session.sandbox),
         ));
       case MessageRole.user:
+        await flushToolImages();
         final parts = await _userParts(message);
         if (parts == null) {
           out.add(llm.ChatMessage.user(message.content ?? ''));
@@ -59,14 +79,9 @@ Future<List<llm.ChatMessage>> buildChatMessages(
           name: message.toolName,
           isError: message.isError,
         ));
-        // An OpenAI-compatible `tool` message can only carry a string, so an
-        // image the agent produced cannot ride on it. Follow it with a user
-        // message holding just the image parts — the one encoding all
-        // OpenAI-compatible endpoints agree on.
-        if (message.hasAttachments) {
-          out.add(llm.ChatMessage.userParts(await _imageParts(message)));
-        }
+        if (message.hasAttachments) pendingToolImages.add(message);
       case MessageRole.assistant:
+        await flushToolImages();
         final calls = message.toolCalls
             .map((call) => llm.ToolCall(
                   id: call.id,
@@ -86,6 +101,46 @@ Future<List<llm.ChatMessage>> buildChatMessages(
             toolCalls: calls,
           ));
         }
+    }
+  }
+  await flushToolImages();
+  return _enforceToolProtocol(out);
+}
+
+/// Repairs the outbound history so it satisfies the tool-call protocol every
+/// OpenAI-compatible endpoint enforces: an assistant `tool_calls` message must
+/// be followed by exactly one `tool` message per `tool_call_id`. Missing
+/// replies (a turn stopped mid-tool-loop, a deleted tool message …) become
+/// error placeholders, and orphan `tool` messages are dropped — providers
+/// reject the entire request otherwise ("insufficient tool messages following
+/// tool calls message").
+List<llm.ChatMessage> _enforceToolProtocol(List<llm.ChatMessage> input) {
+  final out = <llm.ChatMessage>[];
+  var i = 0;
+  while (i < input.length) {
+    final message = input[i++];
+    final calls = message.toolCalls;
+    if (calls.isEmpty) {
+      // A `tool` reply without the assistant call it answers can never be sent
+      // legally; drop it. (`toolCallId` is only set on tool messages.)
+      if (message.toolCallId == null) out.add(message);
+      continue;
+    }
+    out.add(message);
+    final replies = <String, llm.ChatMessage>{};
+    while (i < input.length && input[i].toolCallId != null) {
+      final reply = input[i++];
+      replies[reply.toolCallId!] = reply;
+    }
+    for (final call in calls) {
+      out.add(replies.remove(call.id) ??
+          llm.ChatMessage.tool(
+            toolCallId: call.id,
+            name: call.name,
+            content: 'ERROR: 该工具调用的结果已从历史中丢失（可能因中断），'
+                '如仍需要该结果，请重新调用该工具。',
+            isError: true,
+          ));
     }
   }
   return out;
