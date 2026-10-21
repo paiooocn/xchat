@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchat/agent/tools/builtin_tools.dart';
 import 'package:xchat/core/python_packages.dart';
 import 'package:xchat/core/python_runtime.dart';
 import 'package:xchat/models/proxy_config.dart';
+import 'package:xchat/models/shell_exec.dart';
 
 void main() {
   group('pip 镜像链', () {
@@ -54,6 +57,18 @@ void main() {
     test('额外 PYTHONPATH 目录追加在包目录之后', () {
       final env = runtime().childEnvironment(extraPaths: <String>['/data/extra']);
       expect(env['PYTHONPATH'], '/data/runtime/pypkgs$kPathListSeparator/data/extra');
+    });
+
+    test('pip 缓存目录写入环境变量', () {
+      final env = runtime().childEnvironment(pipCacheDir: '/data/runtime/pip-cache');
+      expect(env['PIP_CACHE_DIR'], '/data/runtime/pip-cache');
+    });
+
+    test('PATH 沿用父环境的大小写写法，不会出现 PATH/Path 两条记录', () {
+      final env = runtime().childEnvironment();
+      final pathKeys = env.keys.where((k) => k.toUpperCase() == 'PATH').toList();
+      expect(pathKeys.length, 1, reason: 'PATH 必须唯一，否则子进程取到哪一条不确定');
+      expect(env[pathKeys.single]!.startsWith('/opt/python/bin'), isTrue);
     });
   });
 
@@ -119,6 +134,8 @@ void main() {
       expect(shell.description, contains('3.12.13'));
       expect(shell.description, contains('内置'));
       expect(shell.description, contains('python3 xxx.py'));
+      // 登录型 shell 可能重写 PATH，故说明里必须给出解释器绝对路径兜底。
+      expect(shell.description, contains('/opt/python/bin/python3'));
       // 参数 schema 一并可读（工具管理页展示用）。
       expect(shell.parameters['properties'], isA<Map>());
     });
@@ -130,5 +147,40 @@ void main() {
         expect(tool.description, isNotEmpty, reason: tool.name);
       }
     });
+  });
+
+  group('shell 工具的 Python 环境注入', () {
+    test('PYTHONPATH / PIP_CACHE_DIR / PIP_INDEX_URL 传给子进程', () async {
+      if (Platform.isWindows) return; // Windows 无 POSIX shell
+      final tools = BuiltinTools.build(
+        sandbox: Directory.systemTemp.path,
+        enabled: const <String>['shell'],
+        shellExec: const ShellExecConfig(
+          executable: '/bin/sh',
+          argsTemplate: '-c $kShellCommandPlaceholder',
+        ),
+        pythonRuntime: const PythonRuntime(
+          executable: '/usr/bin/python3',
+          home: '/usr',
+          binDir: '/usr/bin',
+          packagesDir: '/data/runtime/pypkgs',
+          origin: PythonOrigin.builtin,
+          version: '3.12.13',
+        ),
+        pipIndexes: kDefaultPipIndexUrls,
+        pythonExtraPaths: const <String>['/data/extra'],
+        pipCacheDir: '/data/runtime/pip-cache',
+      );
+      final out = await tools.first.call(<String, Object?>{
+        'command': 'env | grep -E "^(PYTHONPATH|PIP_CACHE_DIR|PIP_INDEX_URL|PATH)="',
+      });
+      final text = '$out';
+      expect(text, contains('/data/runtime/pypkgs'));
+      expect(text, contains('/data/extra'));
+      expect(text, contains('/data/runtime/pip-cache'));
+      expect(text, contains(kDefaultPipIndexUrls.first));
+      // 内置解释器目录被前置到 PATH 首位。
+      expect(RegExp(r'^PATH=/usr/bin[:;]', multiLine: true).hasMatch(text), isTrue);
+    }, timeout: const Timeout(Duration(seconds: 30)));
   });
 }

@@ -443,6 +443,8 @@ class _ToolsPageState extends State<ToolsPage> {
       shellExec: config.shellExec,
       pythonRuntime: runtime,
       pipIndexes: config.pipIndexUrls,
+      pythonExtraPaths: config.pythonExtraPaths,
+      pipCacheDir: AppPaths.isReady ? AppPaths.instance.pipCacheDir : null,
       proxy: config.proxy,
     );
     llm.LlmTool? tool;

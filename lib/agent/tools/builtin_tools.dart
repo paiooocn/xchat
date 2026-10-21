@@ -63,6 +63,8 @@ class BuiltinTools {
     ShellExecConfig shellExec = const ShellExecConfig(),
     PythonRuntime? pythonRuntime,
     List<String> pipIndexes = const <String>[],
+    List<String> pythonExtraPaths = const <String>[],
+    String? pipCacheDir,
     int maxAttachmentBytes = kDefaultMaxAttachmentBytes,
   }) {
     final guard = PathGuard(sandbox);
@@ -92,7 +94,8 @@ class BuiltinTools {
           tools.add(_glob(guard));
         case 'shell':
           if (shellEnabled) {
-            tools.add(_shell(sandbox, shellExec, pythonRuntime, pipIndexes, proxyConfig));
+            tools.add(_shell(sandbox, shellExec, pythonRuntime, pipIndexes, proxyConfig,
+                pythonExtraPaths, pipCacheDir));
           }
         case 'http_fetch':
           tools.add(_httpFetch(proxyConfig));
@@ -117,6 +120,8 @@ class BuiltinTools {
     ShellExecConfig shellExec = const ShellExecConfig(),
     PythonRuntime? pythonRuntime,
     List<String> pipIndexes = const <String>[],
+    List<String> pythonExtraPaths = const <String>[],
+    String? pipCacheDir,
     ProxyConfig? proxy,
   }) =>
       build(
@@ -128,6 +133,8 @@ class BuiltinTools {
         shellExec: shellExec,
         pythonRuntime: pythonRuntime,
         pipIndexes: pipIndexes,
+        pythonExtraPaths: pythonExtraPaths,
+        pipCacheDir: pipCacheDir,
       );
 
   static LlmTool _readFile(PathGuard guard) => FunctionTool(
@@ -271,8 +278,11 @@ class BuiltinTools {
     PythonRuntime? pythonRuntime,
     List<String> pipIndexes,
     ProxyConfig proxy,
+    List<String> pythonExtraPaths,
+    String? pipCacheDir,
   ) =>
-      _ShellTool(sandbox, shellExec, pythonRuntime, pipIndexes, proxy);
+      _ShellTool(sandbox, shellExec, pythonRuntime, pipIndexes, proxy,
+          pythonExtraPaths, pipCacheDir);
 
   static LlmTool _attachImage(PathGuard guard, int maxBytes) => FunctionTool(
         name: 'attach_image',
@@ -711,7 +721,8 @@ class WebSearchOutcome {
 /// stopped, so [停止] takes effect immediately instead of waiting for the
 /// command (or its timeout) to finish.
 class _ShellTool extends LlmTool {
-  _ShellTool(this.sandbox, this.shellExec, this.pythonRuntime, this.pipIndexes, this.proxy);
+  _ShellTool(this.sandbox, this.shellExec, this.pythonRuntime, this.pipIndexes, this.proxy,
+      this.pythonExtraPaths, this.pipCacheDir);
 
   final String sandbox;
 
@@ -727,6 +738,12 @@ class _ShellTool extends LlmTool {
   /// Proxy used by python/pip when downloading.
   final ProxyConfig proxy;
 
+  /// Extra directories appended to PYTHONPATH (user setting).
+  final List<String> pythonExtraPaths;
+
+  /// pip download cache dir (keeps $HOME/.cache clean).
+  final String? pipCacheDir;
+
   @override
   String get name => 'shell';
 
@@ -737,7 +754,8 @@ class _ShellTool extends LlmTool {
     final pythonNote = python == null
         ? '当前环境未检测到可用的 Python 3 解释器。'
         : '可用 Python 3（${python.version.isEmpty ? '版本未知' : python.version}，${python.originLabel}）：'
-            '直接执行 `python3 xxx.py` 即可，pip 装的库位于 ${python.packagesDir}。';
+            '直接执行 `python3 xxx.py` 即可（解释器绝对路径：${python.executable}），'
+            'pip 装的库位于 ${python.packagesDir}。';
     return '执行 shell 命令（桌面端，工作目录=沙箱）并返回标准输出/错误。'
         '命令由 ${resolved.executable} 以「${resolved.argsTemplate}」方式执行，'
         '参数模板中 {command} 处替换为完整命令。命令书写规范：\n'
@@ -779,6 +797,8 @@ class _ShellTool extends LlmTool {
         environment: pythonRuntime?.childEnvironment(
           proxy: proxy,
           pipIndexes: pipIndexes,
+          extraPaths: pythonExtraPaths,
+          pipCacheDir: pipCacheDir,
         ),
       );
     } on ProcessException catch (error) {
@@ -788,8 +808,20 @@ class _ShellTool extends LlmTool {
     }
     final stdoutBytes = <int>[];
     final stderrBytes = <int>[];
-    final out = process.stdout.listen(stdoutBytes.addAll);
-    final err = process.stderr.listen(stderrBytes.addAll);
+    // 进程退出时管道里可能还残留未读取的数据：必须等 stdout/stderr 读到
+    // EOF 再取输出，否则会丢掉最后一段输出（`await exitCode` 先于管道读完）。
+    final outDone = Completer<void>();
+    final errDone = Completer<void>();
+    final out = process.stdout.listen(
+      stdoutBytes.addAll,
+      onDone: outDone.complete,
+      onError: (Object _, StackTrace _) => outDone.complete(),
+    );
+    final err = process.stderr.listen(
+      stderrBytes.addAll,
+      onDone: errDone.complete,
+      onError: (Object _, StackTrace _) => errDone.complete(),
+    );
 
     void kill() {
       try {
@@ -813,6 +845,9 @@ class _ShellTool extends LlmTool {
 
     // Turn was stopped → abort the whole agent turn.
     cancel?.throwIfCancelled();
+    // 等待管道读到 EOF（带兜底超时，避免管道异常时永久挂起）。
+    await outDone.future.timeout(const Duration(seconds: 5), onTimeout: () {});
+    await errDone.future.timeout(const Duration(seconds: 5), onTimeout: () {});
     await out.cancel();
     await err.cancel();
 

@@ -112,6 +112,8 @@ class AgentEngine {
       shellExec: config.shellExec,
       pythonRuntime: await _locatePython(),
       pipIndexes: config.pipIndexUrls,
+      pythonExtraPaths: config.pythonExtraPaths,
+      pipCacheDir: AppPaths.isReady ? AppPaths.instance.pipCacheDir : null,
       maxAttachmentBytes: config.maxAttachmentBytes,
     ));
 

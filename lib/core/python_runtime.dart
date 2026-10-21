@@ -87,8 +87,23 @@ class PythonRuntime {
     String? pipCacheDir,
   }) {
     final env = <String, String>{};
-    final path = Platform.environment['PATH'] ?? '';
-    env['PATH'] = path.isEmpty ? binDir : '$binDir$kPathListSeparator$path';
+
+    // Windows 的环境变量名大小写不敏感，父环境里通常写作 `Path`；Dart 合并父
+    // 环境时按 key 精确匹配，若这里另写一个 `PATH`，子进程会同时拿到 `PATH`
+    // 与 `Path` 两条记录，生效顺序不确定。因此对父环境中所有 PATH 的大小写
+    // 变体统统写入同一个新值，保证子进程看到的 PATH 唯一且确定。
+    final pathKeys = Platform.environment.keys
+        .where((key) => key.toUpperCase() == 'PATH')
+        .toList(growable: false);
+    final path = Platform.environment[pathKeys.isEmpty ? 'PATH' : pathKeys.first] ?? '';
+    final newPath = path.isEmpty ? binDir : '$binDir$kPathListSeparator$path';
+    if (pathKeys.isEmpty) {
+      env['PATH'] = newPath;
+    } else {
+      for (final key in pathKeys) {
+        env[key] = newPath;
+      }
+    }
 
     final paths = <String>[
       packagesDir,
