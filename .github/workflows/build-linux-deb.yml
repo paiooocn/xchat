@@ -34,6 +34,16 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config \
             libgtk-3-dev liblzma-dev libstdc++-12-dev libwebkit2gtk-4.1-dev
 
+      - name: Install uv
+        shell: bash
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch bundled Python 3.12
+        shell: bash
+        run: bash tool/fetch_python.sh
+
       - name: Pub get
         run: flutter pub get
 

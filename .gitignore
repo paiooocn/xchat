@@ -60,3 +60,6 @@ app.*.map.json
 # 本地调试脚本/临时产物
 .tmp/
 /dist/*.zip
+
+# 内置 Python 运行时（由 tool/fetch_python.sh 下载）
+third_party/

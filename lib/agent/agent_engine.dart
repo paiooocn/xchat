@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:llm_api/llm_api.dart' as llm;
 import 'package:path/path.dart' as p;
 
+import '../core/app_paths.dart';
+import '../core/python_runtime.dart';
 import '../data/session_repository.dart';
 import '../llm/llm_factory.dart';
 import '../llm/outbound_adapter.dart';
@@ -58,6 +61,24 @@ class AgentEngine {
     await repository.write(session);
   }
 
+  /// Locates the Python 3 interpreter (bundled first, then the system one).
+  ///
+  /// Returns `null` when no interpreter is available — the shell tool then
+  /// simply runs without the Python additions.
+  Future<PythonRuntime?> _locatePython() async {
+    if (!AppPaths.isReady) return null;
+    try {
+      return await PythonRuntimeLocator.locate(
+        source: config.pythonSource,
+        customPath: config.pythonPath,
+        packagesDir: AppPaths.instance.pythonPackagesDir,
+      );
+    } catch (error) {
+      debugPrint('AgentEngine: Python 解释器定位失败: $error');
+      return null;
+    }
+  }
+
   /// Runs a turn. When [userText] is provided it is appended as a new user
   /// message first (a plain send); otherwise the existing history is used
   /// (a resend after editing the last user message).
@@ -89,6 +110,8 @@ class AgentEngine {
       proxy: config.proxy,
       shellEnabled: config.shellCommandsConfigured,
       shellExec: config.shellExec,
+      pythonRuntime: await _locatePython(),
+      pipIndexes: config.pipIndexUrls,
       maxAttachmentBytes: config.maxAttachmentBytes,
     ));
 

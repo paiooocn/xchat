@@ -32,6 +32,18 @@ mkdir -p "$PKG/DEBIAN" \
 
 cp -r "$BUNDLE/." "$PKG/usr/lib/xchat/"
 ln -sf /usr/lib/xchat/xchat "$PKG/usr/bin/xchat"
+
+# ---- 内置 Python（tool/fetch_python.sh 下载后拷入 /usr/lib/xchat/runtime/python）----
+# 版本单一来源：tool/python_version.txt（如 3.12.13）
+PY_VERSION="$(tr -d '[:space:]' < "$PROJ/tool/python_version.txt" 2>/dev/null || echo 3.12.13)"
+PY_SRC="$(find "$PROJ/third_party/python" -maxdepth 2 -type d -name "cpython-${PY_VERSION}-*" 2>/dev/null | head -1)"
+if [ -n "$PY_SRC" ]; then
+  mkdir -p "$PKG/usr/lib/xchat/runtime"
+  cp -a "$PY_SRC" "$PKG/usr/lib/xchat/runtime/python"
+  echo "==> bundled python: $PY_SRC"
+else
+  echo "!! 未找到 third_party/python/cpython-${PY_VERSION}-*，本次不带内置 Python"
+fi
 cp "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" \
    "$PKG/usr/share/icons/hicolor/192x192/apps/xchat.png"
 

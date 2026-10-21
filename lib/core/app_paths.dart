@@ -142,6 +142,16 @@ class AppPaths {
 
   /// Base directory for projects (`projects/{project_id}.xml` + dirs).
   String get projectsDir => p.join(root, 'projects');
+
+  /// Runtime area for the bundled Python (packages, pip cache) — kept out of
+  /// the app bundle so upgrades never drop user-installed libraries.
+  String get runtimeDir => p.join(root, 'runtime');
+
+  /// Where `pip install --target` puts the third-party libraries.
+  String get pythonPackagesDir => p.join(runtimeDir, 'pypkgs');
+
+  /// pip download cache (keeps `$HOME/.cache` clean).
+  String get pipCacheDir => p.join(runtimeDir, 'pip-cache');
   String get configFile => p.join(root, 'config.json');
 
   /// Catalog index of sessions/projects (active + archived).

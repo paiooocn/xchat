@@ -19,6 +19,7 @@ import '../widgets/input_area.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
+import 'pip_packages_page.dart';
 import '../widgets/usage_badge.dart';
 import '../theme/app_fonts.dart';
 import 'archive_page.dart';
@@ -331,6 +332,10 @@ class _HomePageState extends State<HomePage> {
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const ToolsPage()),
                       );
+                    case 'pip':
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PipPackagesPage()),
+                      );
                     case 'archive':
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const ArchivePage()),
@@ -354,6 +359,13 @@ class _HomePageState extends State<HomePage> {
                     child: _MoreMenuItem(
                       icon: Icons.handyman_outlined,
                       label: '工具管理',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'pip',
+                    child: _MoreMenuItem(
+                      icon: Icons.inventory_2_outlined,
+                      label: 'pip 库管理',
                     ),
                   ),
                   PopupMenuItem(

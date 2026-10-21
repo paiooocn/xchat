@@ -4,10 +4,13 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:llm_api/llm_api.dart' as llm;
 import 'package:provider/provider.dart';
 
 import '../../agent/tools/builtin_tools.dart';
+import '../../core/app_paths.dart';
 import '../../core/json_utils.dart';
+import '../../core/python_runtime.dart';
 import '../../models/agent_mode.dart';
 import '../../models/app_config.dart';
 import '../../models/shell_exec.dart';
@@ -423,6 +426,69 @@ class _ToolsPageState extends State<ToolsPage> {
     await state.saveConfig();
   }
 
+  /// Shows the exact description + JSON schema the model receives for [name].
+  ///
+  /// Built from the live tool objects, so dynamic parts (the shell launcher,
+  /// the bundled Python hint) are shown as they are sent to the model.
+  Future<void> _showToolSpec(AppState state, String name) async {
+    final config = state.config;
+    final packagesDir = AppPaths.isReady ? AppPaths.instance.pythonPackagesDir : '';
+    final runtime = await PythonRuntimeLocator.locate(
+      source: config.pythonSource,
+      customPath: config.pythonPath,
+      packagesDir: packagesDir,
+    );
+    if (!mounted) return;
+    final tools = BuiltinTools.liveTools(
+      shellExec: config.shellExec,
+      pythonRuntime: runtime,
+      pipIndexes: config.pipIndexUrls,
+      proxy: config.proxy,
+    );
+    llm.LlmTool? tool;
+    for (final item in tools) {
+      if (item.name == name) {
+        tool = item;
+        break;
+      }
+    }
+    final found = tool;
+    if (found == null) return;
+    final schema = const JsonEncoder.withIndent('  ').convert(found.parameters);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$name · 发给 Agent 的工具说明'),
+        content: SizedBox(
+          width: 640,
+          height: 460,
+          child: ListView(
+            children: [
+              const Text('说明（description）',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 6),
+              SelectableText(found.description, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 16),
+              const Text('参数（JSON Schema）',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 6),
+              SelectableText(
+                schema,
+                style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _infoRow(ThemeData theme, String tag, String detail) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -484,23 +550,33 @@ class _ToolsPageState extends State<ToolsPage> {
               child: ListTile(
                 title: Text(entry.key),
                 subtitle: Text(entry.value),
-                trailing: entry.key == 'shell'
-                    ? IconButton(
-                        tooltip: '审批详情',
-                        icon: const Icon(Icons.info_outline),
-                        onPressed: () => _showShellApprovalInfo(context, config),
-                      )
-                    : DropdownButton<int>(
-                        value: config.toolApprovalLevel(entry.key).clamp(0, 3),
-                        onChanged: (value) async {
-                          config.toolApprovals[entry.key] = value ?? 0;
-                          await state.saveConfig();
-                        },
-                        items: [
-                          for (var level = 0; level <= 3; level++)
-                            DropdownMenuItem(value: level, child: Text(approvalLevelLabel(level))),
-                        ],
-                      ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: '查看发给 Agent 的说明',
+                      icon: const Icon(Icons.description_outlined),
+                      onPressed: () => _showToolSpec(state, entry.key),
+                    ),
+                    entry.key == 'shell'
+                        ? IconButton(
+                            tooltip: '审批详情',
+                            icon: const Icon(Icons.info_outline),
+                            onPressed: () => _showShellApprovalInfo(context, config),
+                          )
+                        : DropdownButton<int>(
+                            value: config.toolApprovalLevel(entry.key).clamp(0, 3),
+                            onChanged: (value) async {
+                              config.toolApprovals[entry.key] = value ?? 0;
+                              await state.saveConfig();
+                            },
+                            items: [
+                              for (var level = 0; level <= 3; level++)
+                                DropdownMenuItem(value: level, child: Text(approvalLevelLabel(level))),
+                            ],
+                          ),
+                  ],
+                ),
               ),
             ),
           const SizedBox(height: 12),

@@ -139,7 +139,31 @@ void main() {
       expect(built[2].parts!.single, isA<llm.ImagePart>());
     });
 
-    test('a plain tool result stays a single message', () async {
+    test('a tool result paired with its assistant call is kept', () async {
+      final session = sessionWith([
+        SessionMessage(
+          role: MessageRole.assistant,
+          id: 'm0',
+          toolCalls: [ToolCallData(id: 'c1', name: 'read_file', arguments: '{}')],
+        ),
+        SessionMessage(
+          role: MessageRole.tool,
+          id: 'm1',
+          toolCallId: 'c1',
+          toolName: 'read_file',
+          content: 'hello',
+        ),
+      ]);
+      final built = await buildChatMessages(session, provider: provider);
+      expect(built, hasLength(2));
+      expect(built.last.role, llm.ChatRole.tool);
+      expect(built.last.content, 'hello');
+    });
+
+    test('an orphan tool result is dropped (invalid for providers)', () async {
+      // 没有对应 assistant tool_calls 的 tool 消息发出去会被服务端判为非法
+      // （"insufficient tool messages following tool calls message"），
+      // 出站前一律丢弃（见 _enforceToolProtocol）。
       final session = sessionWith([
         SessionMessage(
           role: MessageRole.tool,
@@ -150,8 +174,7 @@ void main() {
         ),
       ]);
       final built = await buildChatMessages(session, provider: provider);
-      expect(built, hasLength(1));
-      expect(built.single.role, llm.ChatRole.tool);
+      expect(built, isEmpty);
     });
 
     test('a user turn with an image is unchanged (one message, text last)',

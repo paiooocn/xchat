@@ -1,4 +1,5 @@
 import '../core/json_utils.dart';
+import '../core/python_runtime.dart';
 import 'proxy_config.dart';
 import 'provider_config.dart';
 import 'search_engine_config.dart';
@@ -82,6 +83,11 @@ class AppConfig {
     List<String>? shellLevel2Commands,
     List<String>? shellDeniedCommands,
     List<String>? compressPrompts,
+    this.pythonSource = 'auto',
+    this.pythonPath = '',
+    List<String>? pythonExtraPaths,
+    List<String>? pipIndexUrls,
+    this.pythonTimeoutSeconds = 300,
   })  : providers = providers ?? defaultProviders(),
         defaultParams = defaultParams ?? SessionParams(),
         defaultTools = defaultTools ?? <String>['read_file'],
@@ -91,7 +97,9 @@ class AppConfig {
         shellLevel1Commands = shellLevel1Commands ?? defaultShellLevel1Commands(),
         shellLevel2Commands = shellLevel2Commands ?? defaultShellLevel2Commands(),
         shellDeniedCommands = shellDeniedCommands ?? defaultShellDeniedCommands(),
-        compressPrompts = compressPrompts ?? defaultCompressPrompts();
+        compressPrompts = compressPrompts ?? defaultCompressPrompts(),
+        pythonExtraPaths = pythonExtraPaths ?? <String>[],
+        pipIndexUrls = pipIndexUrls ?? kDefaultPipIndexUrls;
 
   String currentProviderId;
   String currentModel;
@@ -149,6 +157,22 @@ class AppConfig {
   /// Preset "compress session" prompts the user can pick from.
   List<String> compressPrompts;
 
+  /// Python 解释器来源：`auto`（内置优先，回落系统）/ `builtin` / `system` /
+  /// `custom`（用 [pythonPath] 指定的解释器）。
+  String pythonSource;
+
+  /// 自定义解释器路径（`pythonSource == 'custom'` 时生效）。
+  String pythonPath;
+
+  /// 追加到 PYTHONPATH 的目录。
+  List<String> pythonExtraPaths;
+
+  /// pip 镜像链（按顺序回退）：清华 → 阿里 → 官方。
+  List<String> pipIndexUrls;
+
+  /// pip 安装/卸载的超时秒数。
+  int pythonTimeoutSeconds;
+
   /// Enabled engines in configured order.
   List<SearchEngineConfig> get enabledSearchEngines =>
       searchEngines.where((e) => e.enabled).toList(growable: false);
@@ -199,6 +223,11 @@ class AppConfig {
         'shell_level2_commands': shellLevel2Commands,
         'shell_denied_commands': shellDeniedCommands,
         'compress_prompts': compressPrompts,
+        'python_source': pythonSource,
+        'python_path': pythonPath,
+        'python_extra_paths': pythonExtraPaths,
+        'pip_index_urls': pipIndexUrls,
+        'python_timeout_seconds': pythonTimeoutSeconds,
       };
 
   factory AppConfig.fromJson(Object? value) {
@@ -242,6 +271,15 @@ class AppConfig {
               asStringList(json['compress_prompts']).isNotEmpty
           ? asStringList(json['compress_prompts'])
           : defaultCompressPrompts(),
+      pythonSource: asString(json['python_source']) ?? 'auto',
+      pythonPath: asString(json['python_path']) ?? '',
+      pythonExtraPaths: asStringList(json['python_extra_paths']),
+      pipIndexUrls: json.containsKey('pip_index_urls') &&
+              asStringList(json['pip_index_urls']).isNotEmpty
+          ? asStringList(json['pip_index_urls'])
+          : kDefaultPipIndexUrls,
+      pythonTimeoutSeconds:
+          (asInt(json['python_timeout_seconds']) ?? 300).clamp(30, 3600),
     );
     if (config.currentProviderId.isEmpty && config.providers.isNotEmpty) {
       config.currentProviderId = config.providers.first.id;
@@ -320,11 +358,14 @@ class AppConfig {
       ];
 
   /// Default approval levels: read-only / network tools run unattended; file
-  /// writes ask in 普通/自动 mode; shell always asks.
+  /// writes ask in 普通/自动 mode; `mv_file` (rename/move) asks in 普通 mode
+  /// only; shell always asks.
   static Map<String, int> defaultToolApprovals() => <String, int>{
         'read_file': 0,
         'list_dir': 0,
         'glob': 0,
+        'grep_file': 0,
+        'mv_file': 1,
         'datetime': 0,
         'http_fetch': 0,
         'web_search': 0,

@@ -7,12 +7,14 @@ import 'package:llm_api/llm_api.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/app_paths.dart';
+import '../../core/python_runtime.dart';
 import '../../models/app_config.dart';
 import '../../models/extract_script.dart';
 import '../../models/proxy_config.dart';
 import '../../models/search_engine_config.dart';
 import '../../models/shell_exec.dart';
 import 'browser_session.dart';
+import 'file_ops.dart';
 import 'image_attach.dart';
 import 'path_guard.dart';
 import 'script_registry.dart';
@@ -26,6 +28,8 @@ class BuiltinTools {
     'read_file': '读取文件内容（限会话沙箱目录；图片文件会作为图像返回给模型）',
     'write_file': '写入文件（自动创建目录，限沙箱）',
     'edit_file': '对文件做精确字符串替换编辑',
+    'mv_file': '在沙箱内改名/移动文件或目录',
+    'grep_file': '在沙箱内按正则检索文件内容（Dart 实现，不依赖外部 grep）',
     'list_dir': '列出目录内容',
     'glob': '按通配符匹配文件路径',
     'shell': '执行 shell 命令（桌面端，工作目录=沙箱）',
@@ -57,6 +61,8 @@ class BuiltinTools {
     ProxyConfig? proxy,
     bool shellEnabled = true,
     ShellExecConfig shellExec = const ShellExecConfig(),
+    PythonRuntime? pythonRuntime,
+    List<String> pipIndexes = const <String>[],
     int maxAttachmentBytes = kDefaultMaxAttachmentBytes,
   }) {
     final guard = PathGuard(sandbox);
@@ -76,12 +82,18 @@ class BuiltinTools {
           tools.add(_writeFile(guard));
         case 'edit_file':
           tools.add(_editFile(guard));
+        case 'mv_file':
+          tools.add(buildMvFileTool(guard));
+        case 'grep_file':
+          tools.add(buildGrepFileTool(guard));
         case 'list_dir':
           tools.add(_listDir(guard));
         case 'glob':
           tools.add(_glob(guard));
         case 'shell':
-          if (shellEnabled) tools.add(_shell(sandbox, shellExec));
+          if (shellEnabled) {
+            tools.add(_shell(sandbox, shellExec, pythonRuntime, pipIndexes, proxyConfig));
+          }
         case 'http_fetch':
           tools.add(_httpFetch(proxyConfig));
         case 'web_search':
@@ -94,6 +106,29 @@ class BuiltinTools {
     }
     return tools;
   }
+
+  /// Every built-in tool, built for **inspection only** — the tool management
+  /// page shows the exact description and JSON schema the model receives.
+  ///
+  /// Nothing is executed: handlers are only wired, never called. The sandbox
+  /// is a placeholder, so the paths in the descriptions are illustrative.
+  static List<LlmTool> liveTools({
+    String sandbox = '',
+    ShellExecConfig shellExec = const ShellExecConfig(),
+    PythonRuntime? pythonRuntime,
+    List<String> pipIndexes = const <String>[],
+    ProxyConfig? proxy,
+  }) =>
+      build(
+        sandbox: sandbox,
+        enabled: descriptions.keys,
+        searchEngines: const <SearchEngineConfig>[],
+        proxy: proxy,
+        shellEnabled: true,
+        shellExec: shellExec,
+        pythonRuntime: pythonRuntime,
+        pipIndexes: pipIndexes,
+      );
 
   static LlmTool _readFile(PathGuard guard) => FunctionTool(
         name: 'read_file',
@@ -217,7 +252,7 @@ class BuiltinTools {
           if (pattern.isEmpty) return 'ERROR: pattern required';
           final base = p.normalize(p.absolute(guard.sandbox));
           final matches = <String>[];
-          final regExp = _globToRegExp(pattern);
+          final regExp = globToRegExp(pattern);
           final max = (args['max_results'] as num?)?.toInt() ?? 200;
           await for (final entity in Directory(base).list(recursive: true, followLinks: false)) {
             final rel = p.relative(entity.path, from: base);
@@ -230,8 +265,14 @@ class BuiltinTools {
         },
       );
 
-  static LlmTool _shell(String sandbox, ShellExecConfig shellExec) =>
-      _ShellTool(sandbox, shellExec);
+  static LlmTool _shell(
+    String sandbox,
+    ShellExecConfig shellExec,
+    PythonRuntime? pythonRuntime,
+    List<String> pipIndexes,
+    ProxyConfig proxy,
+  ) =>
+      _ShellTool(sandbox, shellExec, pythonRuntime, pipIndexes, proxy);
 
   static LlmTool _attachImage(PathGuard guard, int maxBytes) => FunctionTool(
         name: 'attach_image',
@@ -622,29 +663,6 @@ class BuiltinTools {
     }
     return page;
   }
-
-  static RegExp _globToRegExp(String glob) {
-    final buffer = StringBuffer('^');
-    for (var i = 0; i < glob.length; i++) {
-      final char = glob[i];
-      if (char == '*') {
-        if (i + 1 < glob.length && glob[i + 1] == '*') {
-          buffer.write('.*');
-          i++;
-        } else {
-          buffer.write('[^/]*');
-        }
-      } else if (char == '?') {
-        buffer.write('[^/]');
-      } else if (r'\^$.|+()[]{}'.contains(char)) {
-        buffer.write('\\$char');
-      } else {
-        buffer.write(char);
-      }
-    }
-    buffer.write(r'$');
-    return RegExp(buffer.toString());
-  }
 }
 
 /// Structured outcome of a web search — shared by the `web_search` tool and the
@@ -693,12 +711,21 @@ class WebSearchOutcome {
 /// stopped, so [停止] takes effect immediately instead of waiting for the
 /// command (or its timeout) to finish.
 class _ShellTool extends LlmTool {
-  _ShellTool(this.sandbox, this.shellExec);
+  _ShellTool(this.sandbox, this.shellExec, this.pythonRuntime, this.pipIndexes, this.proxy);
 
   final String sandbox;
 
   /// User-configured shell launcher (executable + args template).
   final ShellExecConfig shellExec;
+
+  /// Bundled/system Python 3 (injected into PATH so `python3` just works).
+  final PythonRuntime? pythonRuntime;
+
+  /// pip mirror chain (清华 → 阿里 → 官方).
+  final List<String> pipIndexes;
+
+  /// Proxy used by python/pip when downloading.
+  final ProxyConfig proxy;
 
   @override
   String get name => 'shell';
@@ -706,10 +733,16 @@ class _ShellTool extends LlmTool {
   @override
   String get description {
     final resolved = shellExec.resolve(isWindows: Platform.isWindows);
+    final python = pythonRuntime;
+    final pythonNote = python == null
+        ? '当前环境未检测到可用的 Python 3 解释器。'
+        : '可用 Python 3（${python.version.isEmpty ? '版本未知' : python.version}，${python.originLabel}）：'
+            '直接执行 `python3 xxx.py` 即可，pip 装的库位于 ${python.packagesDir}。';
     return '执行 shell 命令（桌面端，工作目录=沙箱）并返回标准输出/错误。'
         '命令由 ${resolved.executable} 以「${resolved.argsTemplate}」方式执行，'
         '参数模板中 {command} 处替换为完整命令。命令书写规范：\n'
-        '${commandSyntaxNotes(shellFamilyFor(resolved.executable))}';
+        '${commandSyntaxNotes(shellFamilyFor(resolved.executable))}\n'
+        '$pythonNote';
   }
 
   @override
@@ -740,6 +773,13 @@ class _ShellTool extends LlmTool {
         resolved.executable,
         resolved.argumentsFor(command),
         workingDirectory: sandbox,
+        // Built-in Python is put first on PATH, so `python3` / `pip` inside the
+        // shell resolve to the bundled interpreter (and use the app proxy +
+        // pip mirror chain).
+        environment: pythonRuntime?.childEnvironment(
+          proxy: proxy,
+          pipIndexes: pipIndexes,
+        ),
       );
     } on ProcessException catch (error) {
       // A misconfigured/missing shell must not crash the turn; report it as a

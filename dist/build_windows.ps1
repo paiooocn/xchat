@@ -35,6 +35,21 @@ if (-not (Test-Path (Join-Path $Bundle 'xchat.exe'))) {
 if (-not (Test-Path (Join-Path $Bundle 'xchat.exe'))) { throw "windows bundle not found (xchat.exe)" }
 Write-Host "==> bundle: $Bundle"
 
+# ---- 内置 Python（tool/fetch_python.sh 下载后拷入 <Bundle>\runtime\python）----
+# 版本单一来源：tool\python_version.txt（如 3.12.13）
+$PyVerFile = Join-Path $Proj 'tool\python_version.txt'
+$PyVer = if (Test-Path $PyVerFile) { (Get-Content $PyVerFile -Raw).Trim() } else { '3.12.13' }
+$PySrc = Get-ChildItem -Path (Join-Path $Proj 'third_party\python') -Directory -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -like "cpython-$PyVer-*" } | Select-Object -First 1
+if ($PySrc) {
+  $PyDest = Join-Path $Bundle 'runtime\python'
+  New-Item -ItemType Directory -Force -Path $PyDest | Out-Null
+  Copy-Item -Path (Join-Path $PySrc.FullName '*') -Destination $PyDest -Recurse -Force
+  Write-Host "==> bundled python: $($PySrc.FullName)"
+} else {
+  Write-Host "!! 未找到 third_party\python\cpython-$PyVer-*，本次不带内置 Python"
+}
+
 # ---- 打包（与 CI build-windows.yml 相同的 Compress-Archive）----
 New-Item -ItemType Directory -Force -Path dist | Out-Null
 $Dest = "dist\xchat-windows-$Arch-v$Version.zip"

@@ -34,6 +34,16 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
+      - name: Install uv
+        shell: bash
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch bundled Python 3.12
+        shell: bash
+        run: bash tool/fetch_python.sh
+
       - name: Pub get
         run: flutter pub get
 
@@ -42,6 +52,18 @@ jobs:
 
       - name: Build Windows (Release)
         run: flutter build windows --release
+
+      - name: Bundle Python runtime
+        shell: pwsh
+        run: |
+          $ver = (Get-Content 'tool\python_version.txt' -Raw).Trim()
+          $src = Get-ChildItem -Path 'third_party\python' -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "cpython-$ver-*" } | Select-Object -First 1
+          if (-not $src) { throw "bundled python cpython-$ver-* not found (run tool/fetch_python.sh)" }
+          $dest = 'build\windows\x64\runner\Release\runtime\python'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path (Join-Path $src.FullName '*') -Destination $dest -Recurse -Force
+          Write-Host "==> bundled python: $($src.FullName)"
 
       - name: Package (zip)
         shell: pwsh
