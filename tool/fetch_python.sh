@@ -67,6 +67,14 @@ else
   PY_EXE="$PY_ROOT/python.exe"
 fi
 
+# ---- Windows 侧补一个 python3.exe 别名 ----
+# python-build-standalone 的 Windows 发行版只带 python.exe，Agent 统一按
+# `python3 xxx.py` 书写（与 POSIX 一致），没有别名会直接 command not found。
+if [ -f "$PY_ROOT/python.exe" ] && [ ! -f "$PY_ROOT/python3.exe" ]; then
+  cp -f "$PY_ROOT/python.exe" "$PY_ROOT/python3.exe"
+  echo "==> 已生成别名 python3.exe（指向 python.exe）"
+fi
+
 # ---- 瘦身：去掉运行时用不到的部分（头文件/文档/Tcl-Tk/IDLE/ensurepip/__pycache__）----
 if [ "${NO_TRIM:-0}" != "1" ]; then
   echo "==> 裁剪运行时"

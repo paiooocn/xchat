@@ -45,6 +45,13 @@ if ($PySrc) {
   $PyDest = Join-Path $Bundle 'runtime\python'
   New-Item -ItemType Directory -Force -Path $PyDest | Out-Null
   Copy-Item -Path (Join-Path $PySrc.FullName '*') -Destination $PyDest -Recurse -Force
+  # Windows 发行版只带 python.exe，Agent 统一写 `python3 xxx.py`：补一个同名别名。
+  $PyExe = Join-Path $PyDest 'python.exe'
+  $Py3Exe = Join-Path $PyDest 'python3.exe'
+  if ((Test-Path $PyExe) -and -not (Test-Path $Py3Exe)) {
+    Copy-Item -Path $PyExe -Destination $Py3Exe -Force
+    Write-Host '==> 已生成别名 python3.exe'
+  }
   Write-Host "==> bundled python: $($PySrc.FullName)"
 } else {
   Write-Host "!! 未找到 third_party\python\cpython-$PyVer-*，本次不带内置 Python"

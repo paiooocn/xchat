@@ -70,6 +70,22 @@ void main() {
       expect(pathKeys.length, 1, reason: 'PATH 必须唯一，否则子进程取到哪一条不确定');
       expect(env[pathKeys.single]!.startsWith('/opt/python/bin'), isTrue);
     });
+
+    test('注入 PATH 只做前置，父环境原有条目一条不丢', () {
+      final env = runtime().childEnvironment();
+      final pathKey = env.keys.firstWhere((k) => k.toUpperCase() == 'PATH');
+      final child = env[pathKey]!;
+      final sep = kPathListSeparator;
+      // 内置解释器目录排在最前。
+      expect(child.split(sep).first, '/opt/python/bin');
+      // 父 PATH 的每一段都必须仍在（只是排在内置目录之后）。
+      final parent = Platform.environment[pathKey] ?? '';
+      for (final segment in parent.split(sep)) {
+        if (segment.isEmpty) continue;
+        expect(child.split(sep).contains(segment), isTrue,
+            reason: '父 PATH 段被覆盖丢失: $segment');
+      }
+    });
   });
 
   group('已安装包解析', () {

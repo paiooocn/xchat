@@ -63,6 +63,13 @@ jobs:
           $dest = 'build\windows\x64\runner\Release\runtime\python'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Copy-Item -Path (Join-Path $src.FullName '*') -Destination $dest -Recurse -Force
+          # Windows 发行版只带 python.exe，Agent 统一写 `python3 xxx.py`：补一个同名别名。
+          $exe = Join-Path $dest 'python.exe'
+          $exe3 = Join-Path $dest 'python3.exe'
+          if ((Test-Path $exe) -and -not (Test-Path $exe3)) {
+            Copy-Item -Path $exe -Destination $exe3 -Force
+            Write-Host '==> 已生成别名 python3.exe'
+          }
           Write-Host "==> bundled python: $($src.FullName)"
 
       - name: Package (zip)
