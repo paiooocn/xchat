@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../llm/llm_factory.dart';
@@ -251,6 +252,11 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
   bool _useMaxCompletionTokens = false;
   Map<String, ModelSpec> _specs = <String, ModelSpec>{};
 
+  /// Whether the API Key is masked. Toggling it off makes the field a plain
+  /// text input, which lets the system keyboard paste normally (Android IMEs
+  /// refuse to paste into password-type fields).
+  bool _obscureApiKey = true;
+
   @override
   void initState() {
     super.initState();
@@ -345,6 +351,32 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     }
   }
 
+  /// Pastes the clipboard content into the API Key field.
+  ///
+  /// Android keyboards refuse to paste into password-type fields, so the
+  /// clipboard is read by the app itself and inserted at the caret — this
+  /// always works, no matter whether the key is masked.
+  Future<void> _pasteApiKey() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = (data?.text ?? '').trim();
+    if (text.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('剪贴板为空')));
+      return;
+    }
+    final value = _apiKey.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    final updated = value.text.replaceRange(start, end, text);
+    _apiKey.value = value.copyWith(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + text.length),
+      composing: TextRange.empty,
+    );
+    messenger.showSnackBar(const SnackBar(content: Text('已从剪贴板粘贴')));
+  }
+
   Future<void> _fetchModels() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -381,8 +413,35 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
           const SizedBox(height: 12),
           TextField(
             controller: _apiKey,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'API Key'),
+            obscureText: _obscureApiKey,
+            // A masked field is a password-type input: Android IMEs refuse to
+            // paste there. Revealing the key turns it into a plain text field
+            // (no autocorrect, suggestions on) so the keyboard paste works.
+            autocorrect: false,
+            enableSuggestions: true,
+            keyboardType: TextInputType.text,
+            decoration: InputDecoration(
+              labelText: 'API Key',
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: '从剪贴板粘贴',
+                    icon: const Icon(Icons.content_paste, size: 18),
+                    onPressed: _pasteApiKey,
+                  ),
+                  IconButton(
+                    tooltip: _obscureApiKey ? '显示 API Key' : '隐藏 API Key',
+                    icon: Icon(
+                      _obscureApiKey ? Icons.visibility_off : Icons.visibility,
+                      size: 18,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscureApiKey = !_obscureApiKey),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(

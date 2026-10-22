@@ -17,6 +17,7 @@ import '../../util/editor_launcher.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/input_area.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/session_info_dialog.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
 import 'pip_packages_page.dart';
@@ -936,7 +937,7 @@ class _SessionMenu extends StatelessWidget {
       icon: const Icon(Icons.more_vert, size: 18),
       onSelected: (value) => _handle(context, value),
       itemBuilder: (context) => const [
-        PopupMenuItem(value: 'system', child: Text('查看系统提示词')),
+        PopupMenuItem(value: 'info', child: Text('查看会话信息')),
         PopupMenuItem(value: 'rename', child: Text('重命名')),
         PopupMenuItem(value: 'tags', child: Text('编辑标签')),
         PopupMenuItem(value: 'autoname', child: Text('AI 自动命名')),
@@ -953,8 +954,8 @@ class _SessionMenu extends StatelessWidget {
 
   Future<void> _handle(BuildContext context, String action) async {
     switch (action) {
-      case 'system':
-        await _showSystemPrompt(context);
+      case 'info':
+        await _showSessionInfo(context);
       case 'rename':
         final text = await _prompt(context, '重命名', session.title);
         if (text != null && text.trim().isNotEmpty) {
@@ -1026,41 +1027,17 @@ class _SessionMenu extends StatelessWidget {
     }
   }
 
-  /// Shows the session's system prompt (with `{sandbox}` expanded) in a
-  /// read-only dialog panel.
-  Future<void> _showSystemPrompt(BuildContext context) async {
+  /// Shows the full session information (file path, token usage, model /
+  /// thinking settings, enabled tools, system prompt, timestamps).
+  Future<void> _showSessionInfo(BuildContext context) async {
     final full = await state.loadFullSession(session.id);
     if (!context.mounted) return;
-    final prompt = full.systemPrompt.replaceAll('{sandbox}', full.sandbox);
+    final path = AppPaths.instance.sessionFile(full.id);
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          '系统提示词',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        content: SizedBox(
-          width: 620,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 480),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                prompt.trim().isEmpty ? '（空）' : prompt,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontFamily: AppFonts.mono,
-                      fontFamilyFallback: AppFonts.monoFallback,
-                      height: 1.5,
-                    ),
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
-          ),
-        ],
+      builder: (context) => SessionInfoDialog(
+        session: full,
+        filePath: path,
       ),
     );
   }

@@ -5,7 +5,7 @@
 library;
 
 /// 语义化版本号，对应 `pubspec.yaml` 中 `version:` 的 `+` 之前部分。
-const String kAppVersion = '0.4.1';
+const String kAppVersion = '0.4.2';
 
 /// 构建号，对应 `pubspec.yaml` 中 `version:` 的 `+` 之后部分。
 const int kAppBuildNumber = 1;
