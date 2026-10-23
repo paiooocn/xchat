@@ -9,6 +9,7 @@ import '../models/message_attachment.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_message.dart';
+import '../models/session_params.dart';
 import '../models/token_usage.dart';
 import 'session_ops.dart';
 
@@ -128,6 +129,29 @@ class SessionController extends ChangeNotifier {
     final session = _session;
     if (session == null || model.isEmpty) return;
     session.model = model;
+    await repository.write(session);
+    notifyListeners();
+  }
+
+  /// Switches the thinking switch (auto / on / off) of the session.
+  ///
+  /// Persisted on the session file (`meta/params/thinking`), so the next
+  /// turn (and every later reload) uses the new setting.
+  Future<void> setThinking(ThinkingSwitch value) async {
+    final session = _session;
+    if (session == null) return;
+    session.params.thinking = value;
+    await repository.write(session);
+    notifyListeners();
+  }
+
+  /// Sets the reasoning effort of the session (empty = not sent).
+  ///
+  /// Persisted on the session file (`meta/params/reasoning_effort`).
+  Future<void> setReasoningEffort(String effort) async {
+    final session = _session;
+    if (session == null) return;
+    session.params.reasoningEffort = effort.isEmpty ? null : effort;
     await repository.write(session);
     notifyListeners();
   }

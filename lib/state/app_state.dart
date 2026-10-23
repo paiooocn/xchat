@@ -151,6 +151,9 @@ class AppState extends ChangeNotifier {
     config = await configRepository.load();
     // Self-heal a stale provider/model selection and persist the repair.
     if (_sanitizeConfig()) await configRepository.save(config);
+    // Local catalog snapshot only (no network on startup): it drives the
+    // per-model reasoning options offered in the session toolbar.
+    modelsDev = await modelsDevRepository.loadCached();
     await refreshSessions();
     await refreshArchived();
     await refreshTemplates();

@@ -13,6 +13,7 @@ import '../../models/session.dart';
 import '../../models/agent_mode.dart';
 import '../../models/message_attachment.dart';
 import '../../models/session_message.dart';
+import '../../models/session_params.dart';
 import '../../models/session_template.dart';
 import '../../session/session_controller.dart';
 import '../../session/session_ops.dart';
@@ -1069,34 +1070,6 @@ class _Sidebar extends StatelessWidget {
               // Keep the trailing rows clear of the floating「新建会话」button.
               padding: EdgeInsets.only(bottom: bottomInset),
               children: [
-                // ---- 会话标题栏 ----------------------------------------
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 10, 2),
-                  child: Row(
-                    children: [
-                      Text(
-                        '会话',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        tooltip: '刷新会话列表',
-                        iconSize: 18,
-                        visualDensity: VisualDensity.compact,
-                        icon: refreshingSessions
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.refresh),
-                        onPressed: refreshingSessions ? null : onRefreshSessions,
-                      ),
-                    ],
-                  ),
-                ),
                 // ---- 标签筛选 ------------------------------------------
                 if (allTags.isNotEmpty)
                   Padding(
@@ -1224,6 +1197,19 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          IconButton(
+            tooltip: '刷新会话列表',
+            iconSize: 20,
+            visualDensity: VisualDensity.compact,
+            icon: refreshingSessions
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: refreshingSessions ? null : onRefreshSessions,
+          ),
           IconButton(
             tooltip: '回到首页',
             icon: const Icon(Icons.home_outlined),
@@ -1362,21 +1348,16 @@ class _ProjectGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ExpansionTile(
       initiallyExpanded: false,
+      dense: true,
+      visualDensity: VisualDensity.compact,
       tilePadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: const Icon(Icons.folder_outlined, size: 20),
       title: Text(
         project.name.isEmpty ? '(未命名项目)' : project.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        project.sandbox,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall,
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1416,14 +1397,6 @@ class _ProjectGroup extends StatelessWidget {
             running: runningIds.contains(session.id),
             indent: 28,
             leading: const Icon(Icons.forum_outlined, size: 18),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text('项目', style: theme.textTheme.labelSmall),
-            ),
             onTap: () => onSelect(session.id),
           ),
         if (sessions.isEmpty)
@@ -1443,7 +1416,6 @@ class _SessionTile extends StatelessWidget {
     required this.selected,
     required this.leading,
     required this.onTap,
-    this.trailing,
     this.indent = 0,
     this.running = false,
   });
@@ -1451,7 +1423,6 @@ class _SessionTile extends StatelessWidget {
   final Session session;
   final bool selected;
   final Widget leading;
-  final Widget? trailing;
   final VoidCallback onTap;
   final double indent;
 
@@ -1464,8 +1435,10 @@ class _SessionTile extends StatelessWidget {
     final theme = Theme.of(context);
     return ListTile(
       dense: true,
+      visualDensity: VisualDensity.compact,
       selected: selected,
       contentPadding: EdgeInsets.only(left: 16 + indent, right: 8),
+      minVerticalPadding: 0,
       leading: running
           ? SizedBox(
               width: 20,
@@ -1481,27 +1454,9 @@ class _SessionTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        '${session.model.isNotEmpty ? session.model : session.provider} · ${_fmt(session.updatedAt)}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ?trailing,
-          _SessionMenu(session: session, state: context.read<AppState>()),
-        ],
-      ),
+      trailing: _SessionMenu(session: session, state: context.read<AppState>()),
       onTap: onTap,
     );
-  }
-
-  static String _fmt(DateTime time) {
-    final local = time.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
   }
 }
 
@@ -2285,7 +2240,14 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
             onCompress: _compressSession,
             onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
             onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
-            trailing: _ModelSelector(controller: controller),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ModelSelector(controller: controller),
+                const SizedBox(width: 6),
+                _ReasoningControls(controller: controller),
+              ],
+            ),
           ),
         ),
       ],
@@ -2506,6 +2468,133 @@ class _ModelSelector extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 思考开关 + 思考强度：与模型选择并排，改动后写回会话文件
+/// （`meta/params/thinking` 与 `meta/params/reasoning_effort`）。
+///
+/// 两个控件都做成紧凑的图标按钮——输入区工具栏已经很挤，长文案会溢出。
+class _ReasoningControls extends StatelessWidget {
+  const _ReasoningControls({required this.controller});
+
+  final SessionController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = controller.session;
+    if (session == null) return const SizedBox.shrink();
+    final params = session.params;
+    final efforts = _effortOptions(context, session);
+    final effort = params.reasoningEffort ?? '';
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PopupMenuButton<ThinkingSwitch>(
+          tooltip: '思考开关：${_thinkingLabel(params.thinking)}',
+          onSelected: (value) => controller.setThinking(value),
+          itemBuilder: (context) => [
+            for (final value in ThinkingSwitch.values)
+              CheckedPopupMenuItem(
+                value: value,
+                checked: value == params.thinking,
+                child: Text(_thinkingLabel(value)),
+              ),
+          ],
+          child: _ReasoningIcon(
+            icon: _thinkingIcon(params.thinking),
+            active: params.thinking == ThinkingSwitch.on,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        if (efforts.isNotEmpty)
+          PopupMenuButton<String>(
+            tooltip: '思考强度：${effort.isEmpty ? '默认（不传入）' : effort}',
+            onSelected: (value) => controller.setReasoningEffort(value),
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem(
+                value: '',
+                checked: effort.isEmpty,
+                child: const Text('默认（不传入）'),
+              ),
+              for (final value in efforts)
+                CheckedPopupMenuItem(
+                  value: value,
+                  checked: value == effort,
+                  child: Text(value),
+                ),
+            ],
+            child: _ReasoningIcon(
+              icon: Icons.tune,
+              active: effort.isNotEmpty,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+
+  static String _thinkingLabel(ThinkingSwitch value) => switch (value) {
+        ThinkingSwitch.auto => 'auto（由模型决定）',
+        ThinkingSwitch.on => 'on（开启思考）',
+        ThinkingSwitch.off => 'off（关闭思考）',
+      };
+
+  static IconData _thinkingIcon(ThinkingSwitch value) => switch (value) {
+        ThinkingSwitch.on => Icons.psychology,
+        ThinkingSwitch.off => Icons.psychology_outlined,
+        ThinkingSwitch.auto => Icons.auto_awesome,
+      };
+
+  /// The effort values the current model accepts: the models.dev catalog wins
+  /// (per-model `reasoning_options`), otherwise the generic list.
+  List<String> _effortOptions(BuildContext context, Session session) {
+    final catalog = context.read<AppState>().modelsDev;
+    if (catalog != null) {
+      final source = catalog.matchFor(controller.activeProvider);
+      final model = source?.models[session.model];
+      if (model != null) {
+        final values = <String>[
+          for (final option in model.reasoningOptions)
+            if (option.effort) ...option.effortValues,
+        ];
+        if (values.isNotEmpty) return values;
+      }
+    }
+    return kReasoningEffortOptions
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+}
+
+/// 思考控件用的紧凑图标按钮（32×32）。
+class _ReasoningIcon extends StatelessWidget {
+  const _ReasoningIcon({
+    required this.icon,
+    required this.active,
+    required this.color,
+  });
+
+  final IconData icon;
+  final bool active;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: active
+            ? scheme.primary.withValues(alpha: 0.12)
+            : scheme.surfaceContainerHigh.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Icon(icon, size: 17, color: active ? scheme.primary : color),
     );
   }
 }
