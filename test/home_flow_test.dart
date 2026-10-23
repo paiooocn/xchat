@@ -44,6 +44,29 @@ Future<void> pumpHome(WidgetTester tester, AppState state) async {
   await tester.pump(const Duration(milliseconds: 50));
 }
 
+/// Pumps until [finder] matches, letting the real (non-fake) async work of the
+/// page finish in between.
+///
+/// Opening a session reads it from disk (`_openSession` → `reloadSession`).
+/// Widget tests only let that I/O progress inside [WidgetTester.runAsync], so
+/// a fixed number of pumps made these tests fail on a loaded machine (the
+/// panel was simply not there yet).
+Future<void> pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 20));
+    if (finder.evaluate().isNotEmpty) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+  }
+  fail('等待超时：$finder');
+}
+
 void main() {
   testWidgets('desktop: opening a project session shows its history', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -59,11 +82,9 @@ void main() {
     // Projects start collapsed — expand first.
     await tester.tap(find.text('P1').first);
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(find.text('(未命名会话)').first);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-    });
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('(未命名会话)').first);
+    await pumpUntilFound(tester, find.byType(SessionChatPanel));
+    await pumpUntilFound(tester, find.text('hello-user'));
     expect(find.byType(SessionChatPanel), findsOneWidget);
     expect(find.text('hello-user'), findsOneWidget);
     expect(find.text('hello-assistant'), findsOneWidget);
@@ -81,12 +102,9 @@ void main() {
     // Projects start collapsed — expand first.
     await tester.tap(find.text('P1').first);
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(find.text('(未命名会话)').first);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-    });
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('(未命名会话)').first);
+    await pumpUntilFound(tester, find.byType(SessionChatPanel));
+    await pumpUntilFound(tester, find.text('hello-user'));
     expect(find.byType(SessionChatPanel), findsOneWidget);
     expect(find.text('hello-user'), findsOneWidget);
   });

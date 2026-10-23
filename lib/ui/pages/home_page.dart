@@ -146,11 +146,15 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// App-bar entry to the approval window; the badge shows the pending count.
+  /// 侧栏工具条里的审批入口；角标显示待处理数量。
   Widget _approvalBadge() {
     final count = context.watch<AppState>().approvalCenter.pending.length;
     return IconButton(
       tooltip: count > 0 ? '工具审批（$count 项待处理）' : '工具审批',
+      iconSize: 20,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      padding: EdgeInsets.zero,
       icon: Badge(
         isLabelVisible: count > 0,
         label: Text('$count'),
@@ -311,30 +315,13 @@ class _HomePageState extends State<HomePage> {
         final scheme = Theme.of(context).colorScheme;
 
         return Scaffold(
-          appBar: wide
-              ? null
-              : AppBar(
-                  title: const Text('XChat'),
-                  actions: [
-                    _approvalBadge(),
-                    _templatesButton(context),
-                    _providersButton(context),
-                    _moreMenu(context),
-                  ],
-                ),
-          floatingActionButton: wide
-              ? null
-              : FloatingActionButton.extended(
-                  onPressed: () => _newSession(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('新建会话'),
-                ),
           body: wide
               ? Row(
                   children: [
                     SizedBox(
                       width: AppTheme.sidebarWidth,
                       child: _Sidebar(
+                        toolbarActions: _sidebarToolbar(context),
                         sessions: sessions,
                         projects: projects,
                         selectedId: _selectedId,
@@ -354,58 +341,37 @@ class _HomePageState extends State<HomePage> {
                         onNewProject: () => _newProject(context),
                         onEditProject: (p) => _editProject(context, p),
                         onNavigate: (id) => _navigate(context, id),
-                        onToggleTheme: _toggleTheme,
                         onGoHome: _goHome,
                       ),
                     ),
                     VerticalDivider(width: 1, color: scheme.outlineVariant),
                     Expanded(
-                      child: Column(
-                        children: [
-                          _TopBar(
-                            leading: Text(
-                              selected == null
-                                  ? 'XChat'
-                                  : _scopeLabel(context, selected),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                      child: selected == null
+                          ? _WelcomeView(
+                              onSend: (text, attachments,
+                                      {SessionTemplate? template,
+                                      required AgentMode mode,
+                                      String? projectPath}) =>
+                                  _startSession(
+                                text,
+                                attachments,
+                                template: template,
+                                mode: mode,
+                                projectPath: projectPath,
+                              ),
+                            )
+                          : SessionChatPanel(
+                              key: ValueKey(selected.id),
+                              sessionId: selected.id,
+                              onCompressCompleted: (id) async {
+                                await _openSession(context, id);
+                              },
                             ),
-                            actions: [
-                              _approvalBadge(),
-                              _templatesButton(context),
-                              _providersButton(context),
-                              _moreMenu(context),
-                            ],
-                          ),
-                          Expanded(
-                            child: selected == null
-                                ? _WelcomeView(
-                                    onSend: (text, attachments,
-                                            {SessionTemplate? template,
-                                            required AgentMode mode,
-                                            String? projectPath}) =>
-                                        _startSession(
-                                      text,
-                                      attachments,
-                                      template: template,
-                                      mode: mode,
-                                      projectPath: projectPath,
-                                    ),
-                                  )
-                                : SessionChatPanel(
-                                    key: ValueKey(selected.id),
-                                    sessionId: selected.id,
-                                    onCompressCompleted: (id) async {
-                                      await _openSession(context, id);
-                                    },
-                                  ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 )
               : _Sidebar(
+                  toolbarActions: _sidebarToolbar(context),
                   sessions: sessions,
                   projects: projects,
                   selectedId: _selectedId,
@@ -419,8 +385,8 @@ class _HomePageState extends State<HomePage> {
                   },
                   onRefreshSessions: _refreshSessions,
                   refreshingSessions: _refreshingSessions,
-                  // Room for the floating「新建会话」button (FAB + margins).
-                  bottomInset: 96,
+                  // 底部工具条已固定在侧栏底部，列表不再需要为悬浮按钮留白。
+                  bottomInset: 8,
                   onSelect: (id) async {
                     await _openSession(context, id);
                     if (!context.mounted) return;
@@ -435,7 +401,6 @@ class _HomePageState extends State<HomePage> {
                   onNewProject: () => _newProject(context),
                   onEditProject: (p) => _editProject(context, p),
                   onNavigate: (id) => _navigate(context, id),
-                  onToggleTheme: _toggleTheme,
                   onGoHome: _goHome,
                 ),
         );
@@ -443,87 +408,124 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 顶部工具条里的「模板」入口。
+  /// 侧栏底部右侧的工具图标栏：审批 / 模板 / 更多。
+  List<Widget> _sidebarToolbar(BuildContext context) => [
+        _approvalBadge(),
+        _templatesButton(context),
+        _moreMenu(context),
+      ];
+
+  /// 侧栏工具条里的「模板」入口。
   Widget _templatesButton(BuildContext context) => IconButton(
         tooltip: '模板',
+        iconSize: 20,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        padding: EdgeInsets.zero,
         icon: const Icon(Icons.dashboard_customize_outlined),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const TemplatesPage()),
         ),
       );
 
-  /// 顶部工具条里的「模型服务」入口。
-  Widget _providersButton(BuildContext context) => IconButton(
-        tooltip: '模型服务',
-        icon: const Icon(Icons.cloud_outlined),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ProvidersPage()),
-        ),
-      );
-
-  /// 顶部工具条里的「更多」菜单。
+  /// 侧栏工具条里的「更多」菜单。
   Widget _moreMenu(BuildContext context) => PopupMenuButton<String>(
         tooltip: '更多',
+        iconSize: 20,
+        padding: EdgeInsets.zero,
         icon: const Icon(Icons.more_vert),
-        onSelected: (value) => _navigate(context, value),
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: 'search',
-            child: _MoreMenuItem(
-              icon: Icons.travel_explore,
-              label: '手动搜索',
+        onSelected: (value) {
+          if (value == 'theme') {
+            _toggleTheme();
+            return;
+          }
+          _navigate(context, value);
+        },
+        itemBuilder: (context) {
+          final mode = context.read<AppState>().config.themeMode;
+          final themeIcon = switch (mode) {
+            'light' => Icons.light_mode_outlined,
+            'dark' => Icons.dark_mode_outlined,
+            _ => Icons.brightness_auto_outlined,
+          };
+          final themeLabel = switch (mode) {
+            'light' => '主题：亮',
+            'dark' => '主题：暗',
+            _ => '主题：跟随系统',
+          };
+          return [
+            PopupMenuItem(
+              value: 'search',
+              child: _MoreMenuItem(
+                icon: Icons.travel_explore,
+                label: '手动搜索',
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: 'tools',
-            child: _MoreMenuItem(
-              icon: Icons.handyman_outlined,
-              label: '工具管理',
+            PopupMenuItem(
+              value: 'tools',
+              child: _MoreMenuItem(
+                icon: Icons.handyman_outlined,
+                label: '工具管理',
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: 'pip',
-            child: _MoreMenuItem(
-              icon: Icons.inventory_2_outlined,
-              label: 'pip 库管理',
+            PopupMenuItem(
+              value: 'pip',
+              child: _MoreMenuItem(
+                icon: Icons.inventory_2_outlined,
+                label: 'pip 库管理',
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: 'archive',
-            child: _MoreMenuItem(
-              icon: Icons.archive_outlined,
-              label: '归档管理',
+            PopupMenuItem(
+              value: 'providers',
+              child: _MoreMenuItem(
+                icon: Icons.cloud_outlined,
+                label: '模型服务',
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: 'settings',
-            child: _MoreMenuItem(
-              icon: Icons.settings_outlined,
-              label: '设置',
+            PopupMenuItem(
+              value: 'archive',
+              child: _MoreMenuItem(
+                icon: Icons.archive_outlined,
+                label: '归档管理',
+              ),
             ),
-          ),
-          PopupMenuDivider(),
-          // 最后一项显示应用版本号（只读，不可点击）。
-          PopupMenuItem(
-            enabled: false,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  '版本 $kAppVersionFull',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
+            PopupMenuItem(
+              value: 'theme',
+              child: _MoreMenuItem(
+                icon: themeIcon,
+                label: '$themeLabel（点击切换）',
+              ),
             ),
-          ),
-        ],
+            PopupMenuItem(
+              value: 'settings',
+              child: _MoreMenuItem(
+                icon: Icons.settings_outlined,
+                label: '设置',
+              ),
+            ),
+            PopupMenuDivider(),
+            // 最后一项显示应用版本号（只读，不可点击）。
+            PopupMenuItem(
+              enabled: false,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '版本 $kAppVersionFull',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ];
+        },
       );
 
   /// 侧边栏入口 / 溢出菜单的统一路由。
@@ -573,14 +575,6 @@ class _HomePageState extends State<HomePage> {
     state.config.themeMode = next;
     await state.saveConfig();
     if (mounted) setState(() {});
-  }
-
-  /// 会话所属范围（项目名 / 全局会话），显示在右侧面板顶部。
-  String _scopeLabel(BuildContext context, Session session) {
-    if (session.projectId.isEmpty) return '全局会话';
-    final project = context.read<AppState>().projectById(session.projectId);
-    if (project == null) return '全局会话';
-    return project.name.isEmpty ? '(未命名项目)' : project.name;
   }
 
   /// 回到欢迎页（取消选中当前会话）。
@@ -1014,8 +1008,8 @@ class _Sidebar extends StatelessWidget {
     this.bottomInset = 0,
     this.onEditProject,
     this.onNavigate,
-    this.onToggleTheme,
     this.onGoHome,
+    this.toolbarActions = const [],
   });
 
   final List<Session> sessions;
@@ -1046,11 +1040,11 @@ class _Sidebar extends StatelessWidget {
   /// Sidebar quick entries (new / search / templates / tools / …).
   final void Function(String destination)? onNavigate;
 
-  /// Cycles the app theme (system → light → dark).
-  final VoidCallback? onToggleTheme;
-
   /// Back to the welcome page (clears the selected session).
   final VoidCallback? onGoHome;
+
+  /// 侧栏底部右侧的工具图标栏（审批 / 模板 / 更多）。
+  final List<Widget> toolbarActions;
 
   /// 侧栏快捷入口（其余页面入口在顶部工具条与「更多」菜单里）。
   static const _navEntries =
@@ -1260,15 +1254,9 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  /// 底部条：品牌 + 主题切换 + 设置。
+  /// 底部条：品牌 + 工具图标栏（审批 / 模板 / 更多）。
   Widget _bottomRow(BuildContext context, ThemeData theme) {
     final scheme = theme.colorScheme;
-    final mode = context.watch<AppState>().config.themeMode;
-    final icon = switch (mode) {
-      'light' => Icons.light_mode_outlined,
-      'dark' => Icons.dark_mode_outlined,
-      _ => Icons.brightness_auto_outlined,
-    };
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 10),
       child: Row(
@@ -1282,11 +1270,7 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          IconButton(
-            tooltip: '切换主题（跟随系统 / 亮 / 暗）',
-            icon: Icon(icon),
-            onPressed: onToggleTheme,
-          ),
+          ...toolbarActions,
         ],
       ),
     );
@@ -1617,41 +1601,6 @@ class _SessionMenu extends StatelessWidget {
             onPressed: () => Navigator.pop(context, controller.text),
             child: const Text('确定'),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 宽屏布局右侧面板的顶部工具条。
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.leading, required this.actions});
-
-  final Widget leading;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: DefaultTextStyle(
-              style: theme.textTheme.titleSmall ?? const TextStyle(),
-              overflow: TextOverflow.ellipsis,
-              child: leading,
-            ),
-          ),
-          const SizedBox(width: 8),
-          ...actions,
         ],
       ),
     );
