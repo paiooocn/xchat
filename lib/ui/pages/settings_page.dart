@@ -12,6 +12,7 @@ import '../../models/session_params.dart';
 import '../../state/app_state.dart';
 import 'compress_prompts_page.dart';
 import 'font_test_page.dart';
+import 'templates_page.dart';
 import '../../util/editor_launcher.dart';
 import '../widgets/confirm_dialog.dart';
 
@@ -152,6 +153,8 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          _section('会话模板'),
+          _defaultTemplatePicker(state, config),
           _section('默认参数'),
           TextField(
             controller: _limit,
@@ -371,6 +374,53 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+
+  /// 默认会话模板下拉：首页未指定模板时按它建会话。
+  Widget _defaultTemplatePicker(AppState state, AppConfig config) {
+    final templates = state.templates;
+    // The configured template may have been deleted — fall back to "unset".
+    final current = templates.any((t) => t.id == config.defaultTemplateId)
+        ? config.defaultTemplateId
+        : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          key: ValueKey('default_template_$current'),
+          initialValue: current,
+          decoration: const InputDecoration(
+            labelText: '默认会话模板',
+            helperText: '首页未指定会话模板时按此模板建会话；留空则需先选择模板',
+          ),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('（未指定）')),
+            for (final template in templates)
+              DropdownMenuItem(
+                value: template.id,
+                child: Text(
+                  template.name.isEmpty ? '(未命名模板)' : template.name,
+                ),
+              ),
+          ],
+          onChanged: (value) async {
+            config.defaultTemplateId = value ?? '';
+            await state.saveConfig();
+          },
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TemplatesPage()),
+            ),
+            icon: const Icon(Icons.dashboard_customize_outlined),
+            label: const Text('管理会话模板'),
+          ),
+        ),
+      ],
     );
   }
 

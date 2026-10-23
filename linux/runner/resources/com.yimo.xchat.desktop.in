@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=XChat
+Comment=LLM Agent 图形客户端（会话 / 项目 / 模板）
+Exec=@XCHAT_EXEC@
+Icon=@XCHAT_ICON@
+Terminal=false
+Categories=Development;
+StartupNotify=true
+StartupWMClass=com.yimo.xchat

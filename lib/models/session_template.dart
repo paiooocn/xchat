@@ -17,6 +17,7 @@ class SessionTemplate {
     SessionParams? params,
     List<String>? tools,
     List<String>? tags,
+    this.quickEnabled = false,
   })  : params = params ?? SessionParams(),
         tools = tools ?? <String>[],
         tags = tags ?? <String>[];
@@ -33,6 +34,9 @@ class SessionTemplate {
   List<String> tools;
   List<String> tags;
 
+  /// Whether the template is exposed as a quick session on the home page.
+  bool quickEnabled;
+
   SessionTemplate copyWith({String? id, String? name}) => SessionTemplate(
         id: id ?? newId(),
         name: name ?? this.name,
@@ -45,6 +49,7 @@ class SessionTemplate {
         params: params.copyWith(),
         tools: List<String>.of(tools),
         tags: List<String>.of(tags),
+        quickEnabled: quickEnabled,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -59,6 +64,7 @@ class SessionTemplate {
         'params': params.toJson(),
         if (tools.isNotEmpty) 'tools': tools,
         if (tags.isNotEmpty) 'tags': tags,
+        if (quickEnabled) 'quick_enabled': true,
       });
 
   factory SessionTemplate.fromJson(Object? value) {
@@ -75,6 +81,7 @@ class SessionTemplate {
       params: SessionParams.fromJson(json['params']),
       tools: asStringList(json['tools']),
       tags: asStringList(json['tags']),
+      quickEnabled: json['quick_enabled'] == true,
     );
   }
 }

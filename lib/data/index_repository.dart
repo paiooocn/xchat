@@ -38,6 +38,27 @@ class IndexRepository {
     return rebuild();
   }
 
+  /// Loads the index for a write, skipping the disk validation of [load].
+  ///
+  /// On the write path the caller has just written the session/project file,
+  /// so the disk always looks out of sync with the index and [load] would
+  /// rebuild the whole catalog — re-parsing every session file — on every
+  /// single save (tens of milliseconds, growing with the session count).
+  ///
+  /// The catalog is only a cache: entries it misses (files added by another
+  /// app instance) are merged back in by the next [load], which still
+  /// validates against the disk.
+  Future<CatalogIndex> _loadForWrite() async {
+    final cached = _cached;
+    if (cached != null) return cached;
+    final stored = await _readFile();
+    if (stored != null) {
+      _cached = stored;
+      return stored;
+    }
+    return rebuild();
+  }
+
   /// Forces a rebuild by re-parsing every session/project file.
   Future<CatalogIndex> rebuild() async {
     final sessions = <SessionIndexEntry>[];
@@ -75,7 +96,7 @@ class IndexRepository {
   }
 
   Future<void> upsertSession(Session session) async {
-    final index = await load();
+    final index = await _loadForWrite();
     _removeSession(index, session.id);
     final entry = SessionIndexEntry.fromSession(session);
     (session.isArchived ? index.archivedSessions : index.sessions).add(entry);
@@ -83,12 +104,12 @@ class IndexRepository {
   }
 
   Future<void> removeSession(String id) async {
-    final index = await load();
+    final index = await _loadForWrite();
     if (_removeSession(index, id)) await _persist(index);
   }
 
   Future<void> upsertProject(Project project) async {
-    final index = await load();
+    final index = await _loadForWrite();
     _removeProject(index, project.id);
     final entry = ProjectIndexEntry.fromProject(project);
     (project.isArchived ? index.archivedProjects : index.projects).add(entry);
@@ -96,7 +117,7 @@ class IndexRepository {
   }
 
   Future<void> removeProject(String id) async {
-    final index = await load();
+    final index = await _loadForWrite();
     if (_removeProject(index, id)) await _persist(index);
   }
 
@@ -164,9 +185,11 @@ class IndexRepository {
     final file = File(paths.indexFile);
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
+    // No `flush`: the catalog is a cache — it is validated against the disk
+    // on every load and transparently rebuilt when it is stale or truncated,
+    // so an fsync here would only slow every save down.
     await tmp.writeAsString(
       const JsonEncoder.withIndent('  ').convert(index.toJson()),
-      flush: true,
     );
     await tmp.rename(file.path);
   }

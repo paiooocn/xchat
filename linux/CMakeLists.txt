@@ -121,6 +121,29 @@ install(CODE "
 install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
 
+# Desktop integration: the .desktop entry + the app's own icon.
+#
+# The entry's id is "com.yimo.xchat", the same as APPLICATION_ID, and it carries
+# StartupWMClass=com.yimo.xchat, so GNOME/Ubuntu can match the running window
+# (WM_CLASS = com.yimo.xchat) with this entry. Without that match the dock and
+# the app grid show the generic fallback icon (a gear).
+#
+# Icon= points at an absolute path inside the app's own data dir on purpose:
+# it keeps the app from having to touch any icon theme (writing an
+# index.theme into ~/.local/share/icons/hicolor shadows the system hicolor
+# theme and breaks icon lookup for the whole desktop).
+set(XCHAT_ICON_PATH "${INSTALL_BUNDLE_DATA_DIR}/icons/com.yimo.xchat.png")
+set(XCHAT_EXEC_PATH "${CMAKE_INSTALL_PREFIX}/${BINARY_NAME}")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/runner/resources/com.yimo.xchat.desktop.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/com.yimo.xchat.desktop"
+  @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.yimo.xchat.desktop"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications" COMPONENT Runtime)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/icons/app_icon.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/icons"
+  RENAME "com.yimo.xchat.png" COMPONENT Runtime)
+
 # Install the AOT library on non-Debug builds only.
 if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"

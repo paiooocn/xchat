@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:llm_api/llm_api.dart' as llm;
+import 'package:path/path.dart' as p;
 
 import '../core/app_paths.dart';
 import '../core/ids.dart';
@@ -56,6 +57,11 @@ class AppState extends ChangeNotifier {
 
   /// Sessions whose full conversation (messages) has been loaded in memory.
   final Map<String, Session> _sessionCache = <String, Session>{};
+
+  /// Ids of sessions that exist in memory but are not on disk yet (their
+  /// write is still in flight). They stay in the session list so the UI can
+  /// open them immediately.
+  final Set<String> _pendingSessions = <String>{};
 
   /// Live session controllers, keyed by session id. A controller (and the
   /// agent turn it drives) outlives the chat panel: switching to another
@@ -115,8 +121,36 @@ class AppState extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Repairs the global provider / model selection.
+  ///
+  /// A provider may be removed, or its model list refreshed by a catalogue
+  /// sync, while the config still points at the old model. The model dropdowns
+  /// would then hold a value that matches no item and the UI throws, so the
+  /// selection is normalized here — every page sees a valid pair.
+  ///
+  /// Returns true when something was repaired (the caller persists it).
+  bool _sanitizeConfig() {
+    if (config.providers.isEmpty) return false;
+    var changed = false;
+    if (!config.providers.any((p) => p.id == config.currentProviderId)) {
+      config.currentProviderId = config.providers.first.id;
+      changed = true;
+    }
+    final provider = providerById(config.currentProviderId);
+    // A provider without a model list is fine: the model is then typed by hand.
+    if (provider.models.isEmpty) return changed;
+    if (config.currentModel.isEmpty ||
+        !provider.models.contains(config.currentModel)) {
+      config.currentModel = provider.models.first;
+      changed = true;
+    }
+    return changed;
+  }
+
   Future<void> load() async {
     config = await configRepository.load();
+    // Self-heal a stale provider/model selection and persist the repair.
+    if (_sanitizeConfig()) await configRepository.save(config);
     await refreshSessions();
     await refreshArchived();
     await refreshTemplates();
@@ -134,6 +168,14 @@ class AppState extends ChangeNotifier {
     sessions = [
       for (final meta in metas) _sessionCache[meta.id] ?? meta,
     ];
+    // A session whose write is still in flight is not on disk yet — keep it
+    // visible so the panel opened for it does not lose it.
+    for (final id in _pendingSessions) {
+      final pending = _sessionCache[id];
+      if (pending != null && !sessions.any((s) => s.id == id)) {
+        sessions = [pending, ...sessions];
+      }
+    }
     _pruneCache(metas.map((m) => m.id));
     notifyListeners();
   }
@@ -148,7 +190,11 @@ class AppState extends ChangeNotifier {
   }
 
   void _pruneCache(Iterable<String> activeIds) {
-    final keep = <String>{...activeIds, ...archivedSessions.map((s) => s.id)};
+    final keep = <String>{
+      ...activeIds,
+      ...archivedSessions.map((s) => s.id),
+      ..._pendingSessions,
+    };
     _sessionCache.removeWhere((id, _) => !keep.contains(id));
   }
 
@@ -245,6 +291,48 @@ class AppState extends ChangeNotifier {
     AgentMode? mode,
     bool? webSearchEnabled,
   }) async {
+    final session = createSessionDraft(
+      title: title,
+      providerId: providerId,
+      model: model,
+      systemPrompt: systemPrompt,
+      params: params,
+      tools: tools,
+      toolCallsLimit: toolCallsLimit,
+      thinkingReplyMode: thinkingReplyMode,
+      tags: tags,
+      projectId: projectId,
+      sandbox: sandbox,
+      extraMessages: extraMessages,
+      mode: mode,
+      webSearchEnabled: webSearchEnabled,
+    );
+    await persistSession(session);
+    return session;
+  }
+
+  /// Creates a session and registers it in the in-memory catalog *without*
+  /// touching the disk.
+  ///
+  /// The home page opens the chat panel from the returned session right away
+  /// and persists it with [persistSession] in the background, so the first
+  /// paint is not delayed by the disk write.
+  Session createSessionDraft({
+    String title = '',
+    String? providerId,
+    String? model,
+    String? systemPrompt,
+    SessionParams? params,
+    List<String>? tools,
+    int? toolCallsLimit,
+    ThinkingReplyMode? thinkingReplyMode,
+    List<String>? tags,
+    String? projectId,
+    String? sandbox,
+    List<SessionMessage>? extraMessages,
+    AgentMode? mode,
+    bool? webSearchEnabled,
+  }) {
     final resolvedProvider = providerId ?? config.currentProviderId;
     final provider = providerById(resolvedProvider);
     final resolvedProject = projectId ?? '';
@@ -280,17 +368,38 @@ class AppState extends ChangeNotifier {
         ...?extraMessages,
       ],
     );
-    await sessionRepository.write(session);
+    // The session is not on disk yet — keep it in the catalog anyway, so the
+    // UI can open it before the write completes.
+    _pendingSessions.add(session.id);
     _sessionCache[session.id] = session;
-    await refreshSessions();
+    sessions = [session, ...sessions];
+    notifyListeners();
     return session;
+  }
+
+  /// Writes a session to disk and refreshes the catalog index.
+  ///
+  /// On failure the session stays "pending": it is still usable in memory
+  /// (the agent writes it on its first turn), so it must not vanish from
+  /// the session list.
+  Future<void> persistSession(Session session) async {
+    await sessionRepository.write(session);
+    _pendingSessions.remove(session.id);
+    await refreshSessions();
   }
 
   String _defaultModel(ProviderConfig provider) =>
       provider.models.isNotEmpty ? provider.models.first : '';
 
-  Future<Session> createFromTemplate(SessionTemplate template) async {
-    return createSession(
+  /// Creates a session from a template without touching the disk — see
+  /// [createSessionDraft].
+  Session createFromTemplateDraft(
+    SessionTemplate template, {
+    String? projectId,
+    String? sandbox,
+    AgentMode? mode,
+  }) {
+    return createSessionDraft(
       // 模板名不作为会话标题；标题为空时由 LLM 自动命名。
       title: '',
       providerId: template.provider.isNotEmpty ? template.provider : null,
@@ -301,12 +410,16 @@ class AppState extends ChangeNotifier {
       toolCallsLimit: template.toolCallsLimit,
       thinkingReplyMode: template.thinkingReplyMode,
       tags: List<String>.of(template.tags),
+      projectId: projectId,
+      sandbox: sandbox,
+      mode: mode,
     );
   }
 
   Future<void> deleteSession(String id) async {
     await sessionRepository.delete(id);
     _sessionCache.remove(id);
+    _pendingSessions.remove(id);
     _controllers.remove(id)?.dispose();
     _runningSessionIds.remove(id);
     // A pending approval of the deleted session can never be answered.
@@ -491,6 +604,16 @@ class AppState extends ChangeNotifier {
 
   // -------------------------------------------------------------- templates
 
+  /// 默认会话模板（设置里指定）；未配置或模板已被删除时返回 null。
+  SessionTemplate? get defaultTemplate {
+    final id = config.defaultTemplateId;
+    if (id.isEmpty) return null;
+    for (final template in templates) {
+      if (template.id == id) return template;
+    }
+    return null;
+  }
+
   Future<void> saveTemplate(SessionTemplate template) async {
     await templateRepository.write(template);
     await refreshTemplates();
@@ -498,7 +621,22 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteTemplate(String id) async {
     await templateRepository.delete(id);
+    // 被删除的模板不能再作为默认模板。
+    if (config.defaultTemplateId == id) {
+      config.defaultTemplateId = '';
+      await configRepository.save(config);
+    }
     await refreshTemplates();
+  }
+
+  /// Enables/disables the template as a quick session on the home page.
+  Future<void> setTemplateQuickEnabled(String id, bool enabled) async {
+    final template = templates.firstWhere(
+      (t) => t.id == id,
+      orElse: () => throw StateError('模板不存在：$id'),
+    );
+    template.quickEnabled = enabled;
+    await saveTemplate(template);
   }
 
   // --------------------------------------------------------------- projects
@@ -527,6 +665,23 @@ class AppState extends ChangeNotifier {
     await projectRepository.write(project);
     await refreshProjects();
     return project;
+  }
+
+  /// Returns the project bound to [path], creating it on first use.
+  ///
+  /// The project name is the last path segment (the folder name); the project
+  /// working dir is the folder itself, so its sessions work in that folder.
+  Future<Project> ensureProjectForPath(String path) async {
+    final resolved = paths.resolveSandbox(path);
+    for (final project in [...projects, ...archivedProjects]) {
+      if (p.equals(project.sandbox, resolved)) return project;
+    }
+    final name = p.basename(resolved);
+    return createProject(
+      name: name.isEmpty ? '新项目' : name,
+      description: '工作目录：$resolved',
+      sandbox: resolved,
+    );
   }
 
   Future<void> saveProject(Project project) async {
@@ -628,6 +783,7 @@ class AppState extends ChangeNotifier {
     } else {
       config.providers.add(provider);
     }
+    _sanitizeConfig();
     await saveConfig();
   }
 
@@ -636,6 +792,7 @@ class AppState extends ChangeNotifier {
     if (config.currentProviderId == id) {
       config.currentProviderId = config.providers.isEmpty ? '' : config.providers.first.id;
     }
+    _sanitizeConfig();
     await saveConfig();
   }
 }

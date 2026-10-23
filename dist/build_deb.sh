@@ -27,8 +27,7 @@ rm -rf "$PKG"
 mkdir -p "$PKG/DEBIAN" \
          "$PKG/usr/lib/xchat" \
          "$PKG/usr/bin" \
-         "$PKG/usr/share/applications" \
-         "$PKG/usr/share/icons/hicolor/192x192/apps"
+         "$PKG/usr/share/applications"
 
 cp -r "$BUNDLE/." "$PKG/usr/lib/xchat/"
 ln -sf /usr/lib/xchat/xchat "$PKG/usr/bin/xchat"
@@ -44,18 +43,24 @@ if [ -n "$PY_SRC" ]; then
 else
   echo "!! 未找到 third_party/python/cpython-${PY_VERSION}-*，本次不带内置 Python"
 fi
-cp "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" \
-   "$PKG/usr/share/icons/hicolor/192x192/apps/xchat.png"
+# 应用自己的图标：放在应用目录内，.desktop 用绝对路径引用，
+# 不往系统图标主题目录里塞文件（也就不需要动任何 index.theme）。
+mkdir -p "$PKG/usr/lib/xchat/data/icons"
+cp "assets/icons/app_icon.png" "$PKG/usr/lib/xchat/data/icons/com.yimo.xchat.png"
 
-cat > "$PKG/usr/share/applications/xchat.desktop" <<'EOF'
+# 条目 id 与应用的 APPLICATION_ID / WM_CLASS 一致（com.yimo.xchat），
+# 否则 GNOME 匹配不到运行中的窗口，开始菜单与 Dock 会显示通用齿轮图标。
+cat > "$PKG/usr/share/applications/com.yimo.xchat.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=XChat
-Comment=Cross-platform LLM agent GUI (ReAct + XML sessions)
-Exec=xchat
-Icon=xchat
+Comment=LLM Agent 图形客户端（会话 / 项目 / 模板）
+Exec=/usr/bin/xchat
+Icon=/usr/lib/xchat/data/icons/com.yimo.xchat.png
 Terminal=false
-Categories=Utility;Development;
+Categories=Development;
+StartupNotify=true
+StartupWMClass=com.yimo.xchat
 EOF
 
 cat > "$PKG/DEBIAN/control" <<EOF

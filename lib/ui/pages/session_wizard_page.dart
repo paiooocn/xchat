@@ -30,6 +30,9 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   final _sandbox = TextEditingController();
   final _seedUser = TextEditingController();
   final _seedAssistant = TextEditingController();
+
+  /// Manual model ID field — mirrors [_model] both ways.
+  final _modelInput = TextEditingController();
   String? _projectId;
 
   // Resolved settings (from the template, or the global defaults).
@@ -57,6 +60,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     _model = state.config.currentModel.isNotEmpty
         ? state.config.currentModel
         : (provider.models.isNotEmpty ? provider.models.first : '');
+    _modelInput.text = _model;
     _limit = state.config.defaultToolCallsLimit;
     _tools = List<String>.of(state.config.defaultTools);
     _thinking = state.config.defaultParams.thinking;
@@ -76,6 +80,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
           : (state.providerById(_providerId).models.isNotEmpty
               ? state.providerById(_providerId).models.first
               : '');
+      _modelInput.text = _model;
       _limit = template.toolCallsLimit;
       _tools = List<String>.of(template.tools);
       _thinking = template.params.thinking;
@@ -91,6 +96,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     _sandbox.dispose();
     _seedUser.dispose();
     _seedAssistant.dispose();
+    _modelInput.dispose();
     super.dispose();
   }
 
@@ -131,9 +137,21 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     ];
   }
 
+  /// Sets the model (and keeps the manual input field in sync).
+  void _setModel(String value) {
+    setState(() {
+      _model = value;
+      if (_modelInput.text != value) _modelInput.text = value;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    // The provider may no longer offer the configured model (catalogue
+    // changed): keep it as an extra entry so the dropdown value always
+    // matches exactly one item.
+    final providerModels = state.providerById(_providerId).models;
     return Scaffold(
       appBar: AppBar(title: const Text('新建会话')),
       body: ListView(
@@ -218,7 +236,10 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
             childrenPadding: const EdgeInsets.only(top: 4),
             children: [
               DropdownButtonFormField<String>(
-                initialValue: _providerId,
+                initialValue:
+                    state.config.providers.any((p) => p.id == _providerId)
+                        ? _providerId
+                        : null,
                 decoration: const InputDecoration(labelText: '提供商'),
                 items: [
                   for (final provider in state.config.providers)
@@ -233,6 +254,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
                   setState(() {
                     _providerId = value;
                     _model = provider.models.isNotEmpty ? provider.models.first : '';
+                    _modelInput.text = _model;
                   });
                 },
               ),
@@ -244,17 +266,21 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
                   helperText: '可手动输入不在列表中的模型',
                 ),
                 items: [
-                  for (final model in state.providerById(_providerId).models)
+                  for (final model in providerModels)
                     DropdownMenuItem(value: model, child: Text(model)),
+                  if (_model.isNotEmpty && !providerModels.contains(_model))
+                    DropdownMenuItem(
+                      value: _model,
+                      child: Text('$_model（不在列表中）'),
+                    ),
                 ],
-                onChanged: (value) => setState(() => _model = value ?? ''),
+                onChanged: (value) => _setModel(value ?? ''),
               ),
               const SizedBox(height: 8),
               TextField(
+                controller: _modelInput,
                 decoration: const InputDecoration(labelText: '或直接填写模型 ID'),
-                onSubmitted: (value) {
-                  if (value.trim().isNotEmpty) setState(() => _model = value.trim());
-                },
+                onChanged: (value) => _setModel(value.trim()),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<ThinkingSwitch>(

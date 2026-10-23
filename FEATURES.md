@@ -303,6 +303,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | --- | --- |
 | 创建向导 | 分步：起点（空白/模板）→ 模型（provider+model+参数）→ 系统提示 → 工具与预算 → 存储与标识（sandbox/标题/标签/thinking_reply_mode）→ 生成 id 落盘进聊天 |
 | 会话模板 | 新建/编辑/复制/删除/「用此模板新建会话」；模板向导含 LLM 生成/改写系统提示词 |
+| 首页模板选择 | 欢迎页「会话模板」下拉：选中只显示模板名，**发送对话时才创建会话**；未选时用设置里的默认会话模板；两者都无则发送时提示先选模板或去配置默认模板 |
 | 克隆（3 种） | ①到首个 user 为止（含）②到首轮结束 ③全量复制；新 id、时间戳=now、tool_calls/usage 清零，保留配置 |
 | 编辑重发 | 定位最后一个 `<user>`，删除其后所有元素，替换内容，重算 tool_calls 与累计 usage，立即重发 |
 | 重新生成 | 删除最后一条 assistant（及其后 tool 结果）后重发 |
@@ -338,6 +339,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | `tool_approvals{}` | 每工具审批等级 0..3 |
 | `shell_level1_commands` / `shell_level2_commands` / `shell_denied_commands` | Shell 正则名单 |
 | `compress_prompts[]` | 压缩提示词预置 |
+| `default_template_id` | 默认会话模板（首页未指定模板时按它建会话；空 = 未配置） |
 
 ### models.dev 集成
 
@@ -365,7 +367,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 创建向导 | 分步表单（§7） |
 | 模板页 + 模板向导 | 模板 CRUD；向导分步 + LLM 生成/改写系统提示词（含场景类别） |
 | 模型服务页 | provider 列表/编辑（baseUrl/apiKey/headers/预设/思考参数/模型清单/model_specs）、测试连接、拉取模型、models.dev 同步/填充/添加向导；API Key 字段支持显示/隐藏切换与「从剪贴板粘贴」（Android 输入法禁止在密码型输入框粘贴，故提供 App 侧剪贴板按钮兜底） |
-| 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
+| 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、**默认会话模板（从会话模板中选一）**、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
 | 工具管理页 | 每工具审批等级、shell 三名单编辑（正则校验/一键默认）、shell 审批详情、工具配置 JSON 导入/导出 |
 | 手动搜索页 | §6.5 |
 | 归档页 | 已归档会话/项目列表，恢复/删除 |

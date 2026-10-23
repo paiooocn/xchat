@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.4.2+1
+version: 0.5.1+1
 license: MIT
 
 environment:
@@ -68,6 +68,8 @@ flutter:
     # Bundled page-extraction scripts (host → JS parser), loaded at startup and
     # merged with <root>/scripts/*.json (see DESIGN.md §19).
     - assets/scripts/
+    # 应用图标（侧边栏品牌标记）：桌面端用它设置窗口/任务栏图标。
+    - assets/icons/app_icon.png
 
   # Bundled open-source fonts so typography is identical on every platform
   # (Android / iOS / macOS / Windows / Linux) instead of falling back to each

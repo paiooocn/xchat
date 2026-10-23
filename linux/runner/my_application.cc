@@ -7,6 +7,43 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+#include <string.h>
+
+// 应用图标：与侧边栏左上角的品牌标记一致（assets/icons/app_icon.png）。
+//
+// 这里只做「进程内」的事：把打包进 bundle 的 PNG 设为窗口图标，标题栏 /
+// X11 窗口管理器因此显示应用自己的图标。**不要**在这里往用户图标主题
+// （~/.local/share/icons/hicolor）写文件或 index.theme —— 用户级目录优先级
+// 高于 /usr/share，一旦那里出现自己的 index.theme 就会整体顶替系统 hicolor
+// 主题，全桌面图标兜底失效，开始菜单会出现空白 / 齿轮图标，甚至条目点不开。
+// 开始菜单与 Dock 的图标由 .desktop 条目的 Icon= 决定，见
+// linux/runner/resources/com.yimo.xchat.desktop.in 与 dist/build_deb.sh。
+static gchar* find_app_icon() {
+  // 优先按可执行文件位置推断（安装后的 bundle：<prefix>/xchat +
+  // <prefix>/data/flutter_assets/...），其次按当前工作目录（flutter run）。
+  g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe != nullptr) {
+    g_autofree gchar* dir = g_path_get_dirname(exe);
+    const gchar* relative[] = {"data/flutter_assets/assets/icons/app_icon.png",
+                                "../data/flutter_assets/assets/icons/app_icon.png",
+                                nullptr};
+    for (gint i = 0; relative[i] != nullptr; i++) {
+      g_autofree gchar* candidate =
+          g_build_filename(dir, relative[i], nullptr);
+      if (g_file_test(candidate, G_FILE_TEST_EXISTS)) {
+        return g_steal_pointer(&candidate);
+      }
+    }
+  }
+
+  // 兜底：按工作目录找（bundle 根目录启动时可用）。
+  const gchar* fallback = "data/flutter_assets/assets/icons/app_icon.png";
+  if (g_file_test(fallback, G_FILE_TEST_EXISTS)) {
+    return g_strdup(fallback);
+  }
+  return nullptr;
+}
+
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
@@ -24,6 +61,16 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+
+  // 窗口图标（标题栏 / X11 窗口管理器用）：没有它会显示通用齿轮图标。
+  // 只在进程内生效，不写任何用户目录、也不动图标主题。
+  g_autofree gchar* icon_path = find_app_icon();
+  g_autoptr(GdkPixbuf) app_icon =
+      icon_path != nullptr ? gdk_pixbuf_new_from_file(icon_path, nullptr)
+                           : nullptr;
+  if (app_icon != nullptr) {
+    gtk_window_set_icon(window, app_icon);
+  }
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu

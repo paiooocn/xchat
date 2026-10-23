@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'state/app_state.dart';
 import 'ui/pages/home_page.dart';
-import 'ui/theme/app_fonts.dart';
+import 'ui/theme/app_theme.dart';
 
 class XChatApp extends StatelessWidget {
   const XChatApp({super.key});
@@ -16,25 +16,12 @@ class XChatApp extends StatelessWidget {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
-    const seed = Color(0xFF3D5AFE);
     return MaterialApp(
       title: 'XChat',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
-      theme: ThemeData(
-        fontFamily: AppFonts.sans,
-        colorScheme: ColorScheme.fromSeed(seedColor: seed),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        fontFamily: AppFonts.sans,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF171421),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       // Android 15+ draws the app edge-to-edge, so the bottom system inset
       // (virtual navigation buttons or the gesture bar) would otherwise cover
       // the app's bottom UI — most visibly the chat input bar. Reserve that

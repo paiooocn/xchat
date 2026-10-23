@@ -88,6 +88,7 @@ class AppConfig {
     List<String>? pythonExtraPaths,
     List<String>? pipIndexUrls,
     this.pythonTimeoutSeconds = 300,
+    this.defaultTemplateId = '',
   })  : providers = providers ?? defaultProviders(),
         defaultParams = defaultParams ?? SessionParams(),
         defaultTools = defaultTools ?? <String>['read_file'],
@@ -173,6 +174,9 @@ class AppConfig {
   /// pip 安装/卸载的超时秒数。
   int pythonTimeoutSeconds;
 
+  /// 默认会话模板 ID（首页未指定模板时按它建会话）；空 = 未配置。
+  String defaultTemplateId;
+
   /// Enabled engines in configured order.
   List<SearchEngineConfig> get enabledSearchEngines =>
       searchEngines.where((e) => e.enabled).toList(growable: false);
@@ -228,6 +232,7 @@ class AppConfig {
         'python_extra_paths': pythonExtraPaths,
         'pip_index_urls': pipIndexUrls,
         'python_timeout_seconds': pythonTimeoutSeconds,
+        'default_template_id': defaultTemplateId,
       };
 
   factory AppConfig.fromJson(Object? value) {
@@ -280,6 +285,7 @@ class AppConfig {
           : kDefaultPipIndexUrls,
       pythonTimeoutSeconds:
           (asInt(json['python_timeout_seconds']) ?? 300).clamp(30, 3600),
+      defaultTemplateId: asString(json['default_template_id']) ?? '',
     );
     if (config.currentProviderId.isEmpty && config.providers.isNotEmpty) {
       config.currentProviderId = config.providers.first.id;

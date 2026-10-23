@@ -17,6 +17,7 @@ class TemplatesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('会话模板')),
       floatingActionButton: FloatingActionButton.extended(
@@ -29,16 +30,65 @@ class TemplatesPage extends StatelessWidget {
         children: [
           for (final template in state.templates)
             ListTile(
+              // 已启用快捷会话的模板：整行底色 + 前置闪电徽标，状态一眼可见。
+              tileColor: template.quickEnabled
+                  ? scheme.primary.withValues(alpha: 0.10)
+                  : null,
+              shape: template.quickEnabled
+                  ? RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: scheme.primary.withValues(alpha: 0.45),
+                      ),
+                    )
+                  : null,
+              leading: template.quickEnabled
+                  ? Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: scheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.bolt,
+                        size: 20,
+                        color: scheme.onPrimary,
+                      ),
+                    )
+                  : null,
               title: Text(template.name.isEmpty ? '(未命名模板)' : template.name),
               subtitle: Text(
                 '${template.provider} · ${template.model} · '
-                'limit=${template.toolCallsLimit} · tools=${template.tools.length}',
+                'limit=${template.toolCallsLimit} · tools=${template.tools.length}'
+                '${template.quickEnabled ? ' · 快捷会话' : ''}'
+                '${template.id == state.config.defaultTemplateId ? ' · 默认模板' : ''}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  IconButton(
+                    tooltip: template.quickEnabled ? '取消快捷会话' : '启用快捷会话',
+                    iconSize: 20,
+                    visualDensity: VisualDensity.compact,
+                    style: IconButton.styleFrom(
+                      backgroundColor:
+                          template.quickEnabled ? scheme.primary : null,
+                      foregroundColor:
+                          template.quickEnabled ? scheme.onPrimary : null,
+                    ),
+                    icon: Icon(
+                      template.quickEnabled
+                          ? Icons.bolt
+                          : Icons.bolt_outlined,
+                    ),
+                    onPressed: () => state.setTemplateQuickEnabled(
+                      template.id,
+                      !template.quickEnabled,
+                    ),
+                  ),
                   IconButton(
                     tooltip: '复制',
                     icon: const Icon(Icons.copy),

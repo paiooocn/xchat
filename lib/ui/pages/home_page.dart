@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:llm_api/llm_api.dart' as llm;
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_paths.dart';
 import '../../models/project.dart';
 import '../../models/session.dart';
+import '../../models/agent_mode.dart';
+import '../../models/message_attachment.dart';
 import '../../models/session_message.dart';
+import '../../models/session_template.dart';
 import '../../session/session_controller.dart';
 import '../../session/session_ops.dart';
 import '../../state/app_state.dart';
 import '../../state/approval_center.dart';
 import '../../util/editor_launcher.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/brand_mark.dart';
 import '../widgets/input_area.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/session_info_dialog.dart';
@@ -23,6 +29,7 @@ import '../widgets/tool_call_block.dart';
 import 'pip_packages_page.dart';
 import '../widgets/usage_badge.dart';
 import '../theme/app_fonts.dart';
+import '../theme/app_theme.dart';
 import 'archive_page.dart';
 import 'compress_prompts_page.dart';
 import 'providers_page.dart';
@@ -299,94 +306,20 @@ class _HomePageState extends State<HomePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 820;
+        final scheme = Theme.of(context).colorScheme;
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('XChat'),
-            actions: [
-              _approvalBadge(),
-              IconButton(
-                tooltip: '模板',
-                icon: const Icon(Icons.dashboard_customize_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const TemplatesPage()),
+          appBar: wide
+              ? null
+              : AppBar(
+                  title: const Text('XChat'),
+                  actions: [
+                    _approvalBadge(),
+                    _templatesButton(context),
+                    _providersButton(context),
+                    _moreMenu(context),
+                  ],
                 ),
-              ),
-              IconButton(
-                tooltip: '模型服务',
-                icon: const Icon(Icons.cloud_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ProvidersPage()),
-                ),
-              ),
-              // 其余入口收进「更多」菜单，避免图标挤成一行放不下。
-              PopupMenuButton<String>(
-                tooltip: '更多',
-                icon: const Icon(Icons.more_vert),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'search':
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SearchPage()),
-                      );
-                    case 'tools':
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ToolsPage()),
-                      );
-                    case 'pip':
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const PipPackagesPage()),
-                      );
-                    case 'archive':
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ArchivePage()),
-                      );
-                    case 'settings':
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SettingsPage()),
-                      );
-                  }
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'search',
-                    child: _MoreMenuItem(
-                      icon: Icons.travel_explore,
-                      label: '手动搜索',
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'tools',
-                    child: _MoreMenuItem(
-                      icon: Icons.handyman_outlined,
-                      label: '工具管理',
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'pip',
-                    child: _MoreMenuItem(
-                      icon: Icons.inventory_2_outlined,
-                      label: 'pip 库管理',
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'archive',
-                    child: _MoreMenuItem(
-                      icon: Icons.archive_outlined,
-                      label: '归档管理',
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'settings',
-                    child: _MoreMenuItem(
-                      icon: Icons.settings_outlined,
-                      label: '设置',
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
           floatingActionButton: wide
               ? null
               : FloatingActionButton.extended(
@@ -398,7 +331,7 @@ class _HomePageState extends State<HomePage> {
               ? Row(
                   children: [
                     SizedBox(
-                      width: 340,
+                      width: AppTheme.sidebarWidth,
                       child: _Sidebar(
                         sessions: sessions,
                         projects: projects,
@@ -413,24 +346,60 @@ class _HomePageState extends State<HomePage> {
                         },
                         onRefreshSessions: _refreshSessions,
                         refreshingSessions: _refreshingSessions,
-                        showHeader: true,
                         onSelect: (id) => _openSession(context, id),
-                        onNewSession: (projectId) => _newSession(context, projectId: projectId),
+                        onNewSession: (projectId) =>
+                            _newSession(context, projectId: projectId),
                         onNewProject: () => _newProject(context),
                         onEditProject: (p) => _editProject(context, p),
+                        onNavigate: (id) => _navigate(context, id),
+                        onToggleTheme: _toggleTheme,
+                        onGoHome: _goHome,
                       ),
                     ),
-                    const VerticalDivider(width: 1),
+                    VerticalDivider(width: 1, color: scheme.outlineVariant),
                     Expanded(
-                      child: selected == null
-                          ? const _EmptyState()
-                          : SessionChatPanel(
-                              key: ValueKey(selected.id),
-                              sessionId: selected.id,
-                              onCompressCompleted: (id) async {
-                                await _openSession(context, id);
-                              },
+                      child: Column(
+                        children: [
+                          _TopBar(
+                            leading: Text(
+                              selected == null
+                                  ? 'XChat'
+                                  : _scopeLabel(context, selected),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
+                            actions: [
+                              _approvalBadge(),
+                              _templatesButton(context),
+                              _providersButton(context),
+                              _moreMenu(context),
+                            ],
+                          ),
+                          Expanded(
+                            child: selected == null
+                                ? _WelcomeView(
+                                    onSend: (text, attachments,
+                                            {SessionTemplate? template,
+                                            required AgentMode mode,
+                                            String? projectPath}) =>
+                                        _startSession(
+                                      text,
+                                      attachments,
+                                      template: template,
+                                      mode: mode,
+                                      projectPath: projectPath,
+                                    ),
+                                  )
+                                : SessionChatPanel(
+                                    key: ValueKey(selected.id),
+                                    sessionId: selected.id,
+                                    onCompressCompleted: (id) async {
+                                      await _openSession(context, id);
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 )
@@ -448,7 +417,6 @@ class _HomePageState extends State<HomePage> {
                   },
                   onRefreshSessions: _refreshSessions,
                   refreshingSessions: _refreshingSessions,
-                  showHeader: false,
                   // Room for the floating「新建会话」button (FAB + margins).
                   bottomInset: 96,
                   onSelect: (id) async {
@@ -460,13 +428,201 @@ class _HomePageState extends State<HomePage> {
                       ),
                     );
                   },
-                  onNewSession: (projectId) => _newSession(context, projectId: projectId),
+                  onNewSession: (projectId) =>
+                      _newSession(context, projectId: projectId),
                   onNewProject: () => _newProject(context),
                   onEditProject: (p) => _editProject(context, p),
+                  onNavigate: (id) => _navigate(context, id),
+                  onToggleTheme: _toggleTheme,
+                  onGoHome: _goHome,
                 ),
         );
       },
     );
+  }
+
+  /// 顶部工具条里的「模板」入口。
+  Widget _templatesButton(BuildContext context) => IconButton(
+        tooltip: '模板',
+        icon: const Icon(Icons.dashboard_customize_outlined),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const TemplatesPage()),
+        ),
+      );
+
+  /// 顶部工具条里的「模型服务」入口。
+  Widget _providersButton(BuildContext context) => IconButton(
+        tooltip: '模型服务',
+        icon: const Icon(Icons.cloud_outlined),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ProvidersPage()),
+        ),
+      );
+
+  /// 顶部工具条里的「更多」菜单。
+  Widget _moreMenu(BuildContext context) => PopupMenuButton<String>(
+        tooltip: '更多',
+        icon: const Icon(Icons.more_vert),
+        onSelected: (value) => _navigate(context, value),
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: 'search',
+            child: _MoreMenuItem(
+              icon: Icons.travel_explore,
+              label: '手动搜索',
+            ),
+          ),
+          PopupMenuItem(
+            value: 'tools',
+            child: _MoreMenuItem(
+              icon: Icons.handyman_outlined,
+              label: '工具管理',
+            ),
+          ),
+          PopupMenuItem(
+            value: 'pip',
+            child: _MoreMenuItem(
+              icon: Icons.inventory_2_outlined,
+              label: 'pip 库管理',
+            ),
+          ),
+          PopupMenuItem(
+            value: 'archive',
+            child: _MoreMenuItem(
+              icon: Icons.archive_outlined,
+              label: '归档管理',
+            ),
+          ),
+          PopupMenuItem(
+            value: 'settings',
+            child: _MoreMenuItem(
+              icon: Icons.settings_outlined,
+              label: '设置',
+            ),
+          ),
+        ],
+      );
+
+  /// 侧边栏入口 / 溢出菜单的统一路由。
+  void _navigate(BuildContext context, String destination) {
+    switch (destination) {
+      case 'new':
+        _newSession(context);
+      case 'search':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SearchPage()),
+        );
+      case 'templates':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const TemplatesPage()),
+        );
+      case 'tools':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ToolsPage()),
+        );
+      case 'pip':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PipPackagesPage()),
+        );
+      case 'providers':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ProvidersPage()),
+        );
+      case 'archive':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ArchivePage()),
+        );
+      case 'settings':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsPage()),
+        );
+    }
+  }
+
+  /// 主题在「跟随系统 → 亮 → 暗」之间轮换。
+  Future<void> _toggleTheme() async {
+    final state = context.read<AppState>();
+    final next = switch (state.config.themeMode) {
+      'system' => 'light',
+      'light' => 'dark',
+      _ => 'system',
+    };
+    state.config.themeMode = next;
+    await state.saveConfig();
+    if (mounted) setState(() {});
+  }
+
+  /// 会话所属范围（项目名 / 全局会话），显示在右侧面板顶部。
+  String _scopeLabel(BuildContext context, Session session) {
+    if (session.projectId.isEmpty) return '全局会话';
+    final project = context.read<AppState>().projectById(session.projectId);
+    if (project == null) return '全局会话';
+    return project.name.isEmpty ? '(未命名项目)' : project.name;
+  }
+
+  /// 回到欢迎页（取消选中当前会话）。
+  void _goHome() {
+    if (_selectedId == null) return;
+    setState(() => _selectedId = null);
+  }
+
+  /// 欢迎页发起的第一轮：建会话并直接发送。
+  ///
+  /// [template] 非空时按模板建会话（沿用模板的系统提示词 / 模型 / 工具），
+  /// [mode] 是欢迎页选择的执行模式。
+  /// [projectPath] 非空时在指定文件夹下建项目，并在该项目内建会话。
+  ///
+  /// 会话先在内存中建好并立即切换到聊天面板，落盘在后台完成——
+  /// 磁盘写入不应延迟界面切换。
+  Future<void> _startSession(
+    String text,
+    List<MessageAttachment> attachments, {
+    SessionTemplate? template,
+    AgentMode mode = AgentMode.auto,
+    String? projectPath,
+  }) async {
+    final state = context.read<AppState>();
+    final path = projectPath?.trim() ?? '';
+    String? projectId;
+    String? sandbox;
+    if (path.isNotEmpty) {
+      final project = await state.ensureProjectForPath(path);
+      projectId = project.id;
+      sandbox = project.sandbox;
+    }
+    final session = template != null
+        ? state.createFromTemplateDraft(
+            template,
+            projectId: projectId,
+            sandbox: sandbox,
+            mode: mode,
+          )
+        : state.createSessionDraft(
+            mode: mode,
+            projectId: projectId,
+            sandbox: sandbox,
+          );
+    if (!mounted) {
+      unawaited(state.persistSession(session));
+      return;
+    }
+    // 立即切到新会话，落盘与首轮发送在后台继续。
+    setState(() => _selectedId = session.id);
+    await state.persistSession(session);
+    if (text.trim().isEmpty && attachments.isEmpty) return;
+    final controller = state.controllerFor(session.id);
+    // 面板尚未挂载时也要能审批工具：先把全局审批队列接上（面板挂载后会
+    // 覆盖成等价的处理器）。
+    final center = state.approvalCenter;
+    controller.approvalHandler = (tool, arguments, note) => center.request(
+          sessionId: session.id,
+          sessionTitle: session.title,
+          tool: tool,
+          arguments: arguments,
+          note: note,
+        );
+    controller.onStop = () => center.dropForSession(session.id);
+    await controller.send(text, attachments: attachments);
   }
 }
 
@@ -489,21 +645,273 @@ class _MoreMenuItem extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+/// 欢迎页（尚未选中会话）：品牌水印 + 问候语 + 居中输入卡 + 快捷入口。
+class _WelcomeView extends StatefulWidget {
+  const _WelcomeView({required this.onSend});
 
+  /// Called with the first user message; the page creates the session.
+  /// [template] 非空时按模板建会话，[mode] 是用户在欢迎页选择的执行模式，
+  /// [projectPath] 非空时在指定文件夹（项目）内建会话。
+  final Future<void> Function(
+    String text,
+    List<MessageAttachment> attachments, {
+    SessionTemplate? template,
+    required AgentMode mode,
+    String? projectPath,
+  }) onSend;
+
+  @override
+  State<_WelcomeView> createState() => _WelcomeViewState();
+}
+
+class _WelcomeViewState extends State<_WelcomeView> {
+  /// True while the first session is being created — blocks a double send.
+  bool _busy = false;
+
+  /// 执行模式：建会话时生效。
+  AgentMode _mode = AgentMode.auto;
+
+  /// 指定的项目文件夹；空串 = 未指定（建全局会话）。
+  String _projectPath = '';
+
+  /// 用户在首页手动选择的会话模板；为空时用设置里的默认模板。
+  SessionTemplate? _selectedTemplate;
+
+  /// 模板选择弹窗是否打开——防止重复弹窗 / 重复发送。
+  bool _asking = false;
+
+  /// 当前生效的模板：手动选择的优先，其次是设置里的默认模板。
+  SessionTemplate? _effectiveTemplate(AppState state) {
+    final selected = _selectedTemplate;
+    // 手动选择的模板可能已被删除——此时回落到默认模板。
+    if (selected != null &&
+        state.templates.any((t) => t.id == selected.id)) {
+      return selected;
+    }
+    return state.defaultTemplate;
+  }
+
+  /// 发送第一轮对话：先确定模板，再建会话并发送。
+  ///
+  /// 返回 false 表示消息未被接受（缺少模板），输入框会保留草稿。
+  bool _send(
+    String text,
+    List<MessageAttachment> attachments, {
+    SessionTemplate? template,
+  }) {
+    if (_busy) return false;
+    final state = context.read<AppState>();
+    final effective = template ?? _effectiveTemplate(state);
+    if (effective == null) {
+      // 既没选模板，也没配置默认模板：让用户先选一个。
+      if (!_asking) unawaited(_askTemplate(text, attachments));
+      return false;
+    }
+    setState(() => _busy = true);
+    unawaited(
+      widget
+          .onSend(
+            text,
+            attachments,
+            template: effective,
+            mode: _mode,
+            projectPath: _projectPath,
+          )
+          .whenComplete(() {
+        if (mounted) setState(() => _busy = false);
+      }),
+    );
+    return true;
+  }
+
+  /// 未选模板时的提示：列出可选模板，或跳到设置里配置默认模板。
+  ///
+  /// 直接在弹窗里选模板后立即用该模板重发本次消息。
+  Future<void> _askTemplate(
+    String text,
+    List<MessageAttachment> attachments,
+  ) async {
+    final state = context.read<AppState>();
+    if (!mounted) return;
+    final pageContext = context;
+    setState(() => _asking = true);
+    final picked = await showDialog<Object>(
+      context: pageContext,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('请先选择会话模板'),
+        // 模板数量不定，内容必须可滚动，否则会溢出弹窗。
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('发送对话需要一个会话模板：请选择一个模板，或在「设置」里配置默认会话模板。'),
+              const SizedBox(height: 12),
+              if (state.templates.isEmpty)
+                const Text('当前还没有任何会话模板，请先到「模板」页创建。')
+              else
+                for (final template in state.templates)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      template.name.isEmpty ? '(未命名模板)' : template.name,
+                    ),
+                    onTap: () => Navigator.of(dialogContext).pop(template),
+                  ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(_goToSettings),
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _asking = false);
+    if (picked == _goToSettings) {
+      // 去设置里配置默认会话模板。
+      if (!pageContext.mounted) return;
+      await Navigator.of(pageContext).push(
+        MaterialPageRoute(builder: (_) => const SettingsPage()),
+      );
+      return;
+    }
+    if (picked is! SessionTemplate) return;
+    setState(() => _selectedTemplate = picked);
+    _send(text, attachments, template: picked);
+  }
+
+  /// Dialog result that asks the caller to open the settings page.
+  static const _goToSettings = '__go_to_settings__';
+
+  /// 快捷会话：模板页开启了「快捷会话」的模板。
+  List<SessionTemplate> _quickTemplates(AppState state) =>
+      state.templates.where((t) => t.quickEnabled).toList();
+
+  /// 选中模板（手动选择优先于设置里的默认模板），并刷新界面。
+  void _selectTemplate(SessionTemplate? template) {
+    setState(() => _selectedTemplate = template);
+  }
+
+  /// 按时段问候，跟参考界面一致。
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 6) return '夜深了';
+    if (hour < 11) return '早上好呀';
+    if (hour < 14) return '中午好呀';
+    if (hour < 18) return '下午好呀';
+    return '晚上好呀';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 56, color: theme.colorScheme.outline),
-          const SizedBox(height: 12),
-          Text('选择或新建一个会话开始对话', style: theme.textTheme.titleMedium),
-        ],
+    final scheme = theme.colorScheme;
+    final state = context.watch<AppState>();
+    final quickTemplates = _quickTemplates(state);
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 12),
+              Center(
+                child: BrandMark.outline(
+                  size: 168,
+                  color: scheme.outlineVariant.withValues(alpha: 0.55),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '$_greeting，接下来交给我吧',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '描述你的需求，XChat 会调用工具完成剩下的事',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 26),
+              InputArea(
+                onSend: (text, attachments) => _send(text, attachments),
+                onStop: () {},
+                running: _busy,
+                mode: _mode,
+                onModeChanged: (value) => setState(() => _mode = value),
+                hint: '描述你的任务，例如「帮我修复这个报错」',
+                afterMode: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _TemplatePicker(
+                      selected: _selectedTemplate,
+                      defaultTemplate: state.defaultTemplate,
+                      onChanged: _selectTemplate,
+                    ),
+                    const SizedBox(width: 6),
+                    _ProjectFolderPicker(
+                      path: _projectPath,
+                      onChanged: (path) => setState(() => _projectPath = path),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (quickTemplates.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final template in quickTemplates)
+                      ActionChip(
+                        avatar: Icon(
+                          Icons.bolt,
+                          size: 16,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        label: Text(
+                          template.name.isEmpty ? '(未命名模板)' : template.name,
+                        ),
+                        // 快捷会话只是「选中模板」：真正的会话在发送消息时创建。
+                        onPressed: () => _selectTemplate(template),
+                        backgroundColor:
+                            _selectedTemplate?.id == template.id
+                                ? scheme.primary.withValues(alpha: 0.12)
+                                : scheme.surfaceContainerLowest,
+                        side: BorderSide(
+                          color: _selectedTemplate?.id == template.id
+                              ? scheme.primary
+                              : scheme.outlineVariant,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(AppTheme.radiusMedium),
+                        ),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -561,6 +969,10 @@ class _MobileChatPageState extends State<_MobileChatPage> {
 /// Left sidebar: global (standalone) sessions on top, then each project with
 /// its own sessions nested underneath — so project sessions never mix into the
 /// global list and are visually tied to their project.
+/// Left sidebar: brand + navigation on top, then global (standalone) sessions
+/// and each project with its own sessions nested underneath — so project
+/// sessions never mix into the global list and are visually tied to their
+/// project.
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.sessions,
@@ -578,7 +990,9 @@ class _Sidebar extends StatelessWidget {
     required this.refreshingSessions,
     this.bottomInset = 0,
     this.onEditProject,
-    this.showHeader = false,
+    this.onNavigate,
+    this.onToggleTheme,
+    this.onGoHome,
   });
 
   final List<Session> sessions;
@@ -605,7 +1019,26 @@ class _Sidebar extends StatelessWidget {
   /// 「新建会话」button never covers the last rows.
   final double bottomInset;
   final void Function(Project project)? onEditProject;
-  final bool showHeader;
+
+  /// Sidebar quick entries (new / search / templates / tools / …).
+  final void Function(String destination)? onNavigate;
+
+  /// Cycles the app theme (system → light → dark).
+  final VoidCallback? onToggleTheme;
+
+  /// Back to the welcome page (clears the selected session).
+  final VoidCallback? onGoHome;
+
+  /// 侧栏快捷入口（其余页面入口在顶部工具条与「更多」菜单里）。
+  static const _navEntries =
+      <({IconData icon, String label, String? shortcut, String id})>[
+    (
+      icon: Icons.add_comment_outlined,
+      label: '新建会话',
+      shortcut: 'Ctrl+N',
+      id: 'new'
+    ),
+  ];
 
   bool _matchesFilter(Session session) =>
       tagFilter.isEmpty || session.tags.any(tagFilter.contains);
@@ -613,6 +1046,7 @@ class _Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final visible = sessions.where(_matchesFilter).toList();
     final global = visible.where((s) => s.projectId.isEmpty).toList();
     final allTags = <String>{
@@ -620,140 +1054,286 @@ class _Sidebar extends StatelessWidget {
     }.toList()
       ..sort();
 
-    return Column(
-      children: [
-        if (showHeader)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-            child: Row(
+    // 用 Material 而不是 ColoredBox：ListTile / ExpansionTile 的选中底色与
+    // 水波纹会画在最近的 Material 祖先上，中间夹一层 ColoredBox 会让它们
+    // 被遮住（Flutter 会断言告警）。
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: Column(
+        children: [
+          _brandRow(context, theme),
+          _navList(context, theme),
+          Divider(height: 1, color: scheme.outlineVariant),
+          Expanded(
+            child: ListView(
+              // Keep the trailing rows clear of the floating「新建会话」button.
+              padding: EdgeInsets.only(bottom: bottomInset),
               children: [
-                Text('会话', style: theme.textTheme.titleMedium),
-                IconButton(
-                  tooltip: '刷新会话列表',
-                  icon: refreshingSessions
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh),
-                  onPressed: refreshingSessions ? null : onRefreshSessions,
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '新建项目',
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  onPressed: onNewProject,
-                ),
-                IconButton(
-                  tooltip: '新建会话',
-                  icon: const Icon(Icons.add),
-                  onPressed: () => onNewSession(null),
-                ),
-              ],
-            ),
-          ),
-        Expanded(
-          child: ListView(
-            // Keep the trailing rows clear of the floating「新建会话」button.
-            padding: EdgeInsets.only(bottom: bottomInset),
-            children: [
-              // ---- 标签筛选 ------------------------------------------
-              if (allTags.isNotEmpty)
+                // ---- 会话标题栏 ----------------------------------------
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 2,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 10, 2),
+                  child: Row(
                     children: [
-                      Text('#', style: theme.textTheme.labelSmall),
-                      for (final tag in allTags)
-                        FilterChip(
-                          label: Text(tag, style: theme.textTheme.labelSmall),
-                          selected: tagFilter.contains(tag),
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          onSelected: (_) => onTagToggle(tag),
+                      Text(
+                        '会话',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: '刷新会话列表',
+                        iconSize: 18,
+                        visualDensity: VisualDensity.compact,
+                        icon: refreshingSessions
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh),
+                        onPressed: refreshingSessions ? null : onRefreshSessions,
+                      ),
                     ],
                   ),
                 ),
-              // ---- 全局会话 ------------------------------------------
-              ExpansionTile(
-                initiallyExpanded: globalSessionsExpanded,
-                onExpansionChanged: onGlobalExpandedChanged,
-                tilePadding: const EdgeInsets.symmetric(horizontal: 8),
-                leading: const Icon(Icons.public_outlined, size: 20),
-                title: const Text('全局会话'),
-                children: [
-                  for (final session in global)
-                    _SessionTile(
-                      session: session,
-                      selected: session.id == selectedId,
-                      running: runningIds.contains(session.id),
-                      indent: 12,
-                      leading: const Icon(Icons.chat_bubble_outline, size: 20),
-                      onTap: () => onSelect(session.id),
+                // ---- 标签筛选 ------------------------------------------
+                if (allTags.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text('#', style: theme.textTheme.labelSmall),
+                        for (final tag in allTags)
+                          FilterChip(
+                            label: Text(tag, style: theme.textTheme.labelSmall),
+                            selected: tagFilter.contains(tag),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onSelected: (_) => onTagToggle(tag),
+                          ),
+                      ],
                     ),
-                  if (global.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
-                      child: Text('暂无全局会话', style: TextStyle(color: Colors.grey)),
-                    ),
-                ],
-              ),
-              const Divider(height: 1),
-              // ---- 项目 ----------------------------------------------
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-                child: Row(
+                  ),
+                // ---- 全局会话 ------------------------------------------
+                ExpansionTile(
+                  initiallyExpanded: globalSessionsExpanded,
+                  onExpansionChanged: onGlobalExpandedChanged,
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                  childrenPadding: const EdgeInsets.only(left: 4),
+                  leading: const Icon(Icons.public_outlined, size: 20),
+                  title: const Text('全局会话'),
                   children: [
-                    Text('项目', style: theme.textTheme.labelLarge),
-                    const Spacer(),
-                    IconButton(
-                      tooltip: '新建项目',
-                      iconSize: 18,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.create_new_folder_outlined),
-                      onPressed: onNewProject,
-                    ),
+                    for (final session in global)
+                      _SessionTile(
+                        session: session,
+                        selected: session.id == selectedId,
+                        running: runningIds.contains(session.id),
+                        indent: 12,
+                        leading: const Icon(Icons.chat_bubble_outline, size: 20),
+                        onTap: () => onSelect(session.id),
+                      ),
+                    if (global.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
+                        child: Text(
+                          '暂无全局会话',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
                   ],
                 ),
-              ),
-              for (final project in projects)
-                _ProjectGroup(
-                  project: project,
-                  sessions: visible.where((s) => s.projectId == project.id).toList(),
-                  selectedId: selectedId,
-                  runningIds: runningIds,
-                  onSelect: onSelect,
-                  onNewSession: () => onNewSession(project.id),
-                  onEdit: () => onEditProject?.call(project),
-                  onArchive: () =>
-                      context.read<AppState>().setProjectArchived(project.id, true),
-                  onDelete: () async {
-                    final ok = await confirmDelete(
-                      context,
-                      '项目「${project.name.isEmpty ? project.id : project.name}」',
-                    );
-                    if (ok && context.mounted) {
-                      await context.read<AppState>().deleteProject(project.id);
-                    }
-                  },
+                Divider(height: 1, color: scheme.outlineVariant),
+                // ---- 项目 ----------------------------------------------
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+                  child: Row(
+                    children: [
+                      Text(
+                        '项目',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: '新建项目',
+                        iconSize: 18,
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.create_new_folder_outlined),
+                        onPressed: onNewProject,
+                      ),
+                    ],
+                  ),
                 ),
-              if (projects.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
-                ),
-            ],
+                for (final project in projects)
+                  _ProjectGroup(
+                    project: project,
+                    sessions:
+                        visible.where((s) => s.projectId == project.id).toList(),
+                    selectedId: selectedId,
+                    runningIds: runningIds,
+                    onSelect: onSelect,
+                    onNewSession: () => onNewSession(project.id),
+                    onEdit: () => onEditProject?.call(project),
+                    onArchive: () =>
+                        context.read<AppState>().setProjectArchived(project.id, true),
+                    onDelete: () async {
+                      final ok = await confirmDelete(
+                        context,
+                        '项目「${project.name.isEmpty ? project.id : project.name}」',
+                      );
+                      if (ok && context.mounted) {
+                        await context
+                            .read<AppState>()
+                            .deleteProject(project.id);
+                      }
+                    },
+                  ),
+                if (projects.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
+                  ),
+              ],
+            ),
           ),
-        ),
-      ],
+          Divider(height: 1, color: scheme.outlineVariant),
+          _bottomRow(context, theme),
+        ],
+      ),
     );
   }
 
+  /// 品牌行：徽标 + 应用名 + 新建会话。
+  Widget _brandRow(BuildContext context, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+      child: Row(
+        children: [
+          const BrandMark.solid(size: 26),
+          const SizedBox(width: 10),
+          Text(
+            'XChat',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: '回到首页',
+            icon: const Icon(Icons.home_outlined),
+            onPressed: onGoHome,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 快捷入口列表（新建会话；其余入口在顶部工具条与「更多」菜单里）。
+  Widget _navList(BuildContext context, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Column(
+        children: [
+          for (final entry in _navEntries)
+            _NavRow(
+              icon: entry.icon,
+              label: entry.label,
+              shortcut: entry.shortcut,
+              onTap: () => onNavigate?.call(entry.id),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 底部条：品牌 + 主题切换 + 设置。
+  Widget _bottomRow(BuildContext context, ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final mode = context.watch<AppState>().config.themeMode;
+    final icon = switch (mode) {
+      'light' => Icons.light_mode_outlined,
+      'dark' => Icons.dark_mode_outlined,
+      _ => Icons.brightness_auto_outlined,
+    };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 10),
+      child: Row(
+        children: [
+          const BrandMark.solid(size: 20),
+          const SizedBox(width: 8),
+          Text(
+            'XChat',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: '切换主题（跟随系统 / 亮 / 暗）',
+            icon: Icon(icon),
+            onPressed: onToggleTheme,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 侧边栏里的一行快捷入口：图标 + 名称（+ 快捷键提示）。
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.shortcut,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final String? shortcut;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          hoverColor: scheme.onSurface.withValues(alpha: 0.05),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 10),
+                Text(label, style: theme.textTheme.bodyMedium),
+                const Spacer(),
+                if (shortcut != null)
+                  Text(
+                    shortcut!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// A project row that expands to reveal its own sessions.
@@ -1066,6 +1646,320 @@ class _SessionMenu extends StatelessWidget {
   }
 }
 
+/// 宽屏布局右侧面板的顶部工具条。
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.leading, required this.actions});
+
+  final Widget leading;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: DefaultTextStyle(
+              style: theme.textTheme.titleSmall ?? const TextStyle(),
+              overflow: TextOverflow.ellipsis,
+              child: leading,
+            ),
+          ),
+          const SizedBox(width: 8),
+          ...actions,
+        ],
+      ),
+    );
+  }
+}
+
+/// 常用模板下拉：列出用户的会话模板，选中即按模板建会话。
+class _TemplatePicker extends StatelessWidget {
+  const _TemplatePicker({
+    required this.selected,
+    required this.defaultTemplate,
+    required this.onChanged,
+  });
+
+  /// 用户手动选择的模板；为空时用 [defaultTemplate]。
+  final SessionTemplate? selected;
+
+  /// 设置里配置的默认模板（未配置时为空）。
+  final SessionTemplate? defaultTemplate;
+
+  /// Called with the newly selected template, or null to fall back to the
+  /// default template.
+  final void Function(SessionTemplate? template) onChanged;
+
+  /// The template that will actually be used for the next session.
+  SessionTemplate? _effective(List<SessionTemplate> templates) {
+    final selected = this.selected;
+    // 手动选择的模板可能已被删除——此时回落到默认模板。
+    if (selected != null && templates.any((t) => t.id == selected.id)) {
+      return selected;
+    }
+    return defaultTemplate;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final templates = context.watch<AppState>().templates;
+    final effective = _effective(templates);
+    if (templates.isEmpty) {
+      return const ToolbarPill(
+        icon: Icons.dashboard_customize_outlined,
+        label: '暂无模板',
+      );
+    }
+    return PopupMenuButton<String>(
+      tooltip: '会话模板',
+      onSelected: (id) {
+        if (id == _clearValue) {
+          onChanged(null);
+          return;
+        }
+        final template = templates.firstWhere(
+          (t) => t.id == id,
+          orElse: () => templates.first,
+        );
+        onChanged(template);
+      },
+      itemBuilder: (context) => [
+        // 回到「使用默认模板」。
+        if (selected != null)
+          const PopupMenuItem(
+            value: _clearValue,
+            child: Row(
+              children: [
+                Icon(Icons.settings_suggest_outlined, size: 18),
+                SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    '使用默认模板',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        for (final template in templates)
+          PopupMenuItem(
+            value: template.id,
+            child: Row(
+              children: [
+                const Icon(Icons.dashboard_customize_outlined, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    template.name.isEmpty ? '(未命名模板)' : template.name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (template.id == defaultTemplate?.id)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Text(
+                      '默认',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+      child: ToolbarPill(
+        icon: Icons.dashboard_customize_outlined,
+        label: effective == null
+            ? '会话模板'
+            : (effective.name.isEmpty ? '(未命名模板)' : effective.name),
+        trailing: true,
+        active: effective != null,
+      ),
+    );
+  }
+
+  /// Menu value that clears the manual selection.
+  static const _clearValue = '__clear__';
+}
+
+/// 项目文件夹选择器：未指定（建全局会话）或具体路径（用最后一级目录名建项目）。
+///
+/// 选中的路径只在建会话时落库：项目不存在时按目录名新建项目，会话建在项目内。
+class _ProjectFolderPicker extends StatelessWidget {
+  const _ProjectFolderPicker({required this.path, required this.onChanged});
+
+  /// Current folder path; empty = 未指定.
+  final String path;
+
+  /// Called with the new path (empty = 未指定).
+  final ValueChanged<String> onChanged;
+
+  static const _none = '__none__';
+  static const _current = '__current__';
+  static const _pick = '__pick__';
+  static const _input = '__input__';
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final label = path.isEmpty ? '项目文件夹' : p.basename(path);
+    return PopupMenuButton<String>(
+      tooltip: '指定项目文件夹',
+      onSelected: (value) => _handle(context, value, state),
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: _none,
+          child: Row(
+            children: [
+              Icon(Icons.public_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('未指定（全局会话）'),
+            ],
+          ),
+        ),
+        if (path.isNotEmpty)
+          PopupMenuItem(
+            value: _current,
+            child: Row(
+              children: [
+                const Icon(Icons.folder, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(p.basename(path), overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        for (final project in state.projects)
+          PopupMenuItem(
+            value: 'p:${project.id}',
+            child: Row(
+              children: [
+                const Icon(Icons.folder_outlined, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    '${project.name.isEmpty ? '(未命名项目)' : project.name}'
+                    ' · ${project.sandbox}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (state.projects.isNotEmpty) const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _pick,
+          child: Row(
+            children: [
+              Icon(Icons.drive_folder_upload_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('选择文件夹…'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: _input,
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('输入路径…'),
+            ],
+          ),
+        ),
+      ],
+      child: ToolbarPill(
+        icon: Icons.folder_outlined,
+        label: label,
+        trailing: true,
+        active: path.isNotEmpty,
+      ),
+    );
+  }
+
+  /// Applies the menu choice: an existing project's folder, a freshly picked
+  /// folder, a typed path, or 未指定.
+  Future<void> _handle(
+    BuildContext context,
+    String value,
+    AppState state,
+  ) async {
+    if (value == _none) {
+      onChanged('');
+      return;
+    }
+    if (value == _current) return;
+    if (value.startsWith('p:')) {
+      final id = value.substring(2);
+      final project = state.projectById(id);
+      if (project != null) onChanged(project.sandbox);
+      return;
+    }
+    if (value == _pick) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      try {
+        final picked = await FilePicker.getDirectoryPath(
+          dialogTitle: '选择项目文件夹',
+        );
+        if (picked != null && picked.trim().isNotEmpty) onChanged(picked.trim());
+      } catch (error) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('选择文件夹失败：$error'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    if (value == _input) {
+      final input = await _askPath(context);
+      if (input != null && input.trim().isNotEmpty) onChanged(input.trim());
+    }
+  }
+
+  /// 手动输入文件夹路径（跨平台可用，作为系统选择器的补充）。
+  Future<String?> _askPath(BuildContext context) async {
+    final controller = TextEditingController(text: path);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('输入项目文件夹路径'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '例如 /storage/emulated/0/Documents/demo',
+          ),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+}
+
 /// Chat panel for one session: header, message list, live stream, input.
 ///
 /// The panel is addressed by [sessionId] and always mirrors the live instance
@@ -1332,9 +2226,12 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           const Divider(height: 1),
         ],
         Expanded(
-          child: ListView.builder(
-            controller: _scroll,
-            padding: const EdgeInsets.all(16),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900),
+              child: ListView.builder(
+                controller: _scroll,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             itemCount: messages.length + (controller.isRunning ? 1 : 0),
             itemBuilder: (context, index) {
               if (index >= messages.length) {
@@ -1359,7 +2256,9 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
                   },
                 ),
               );
-            },
+                },
+              ),
+            ),
           ),
         ),
         if (controller.error != null || controller.notice != null)
@@ -1367,19 +2266,27 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
             text: controller.error ?? controller.notice!,
             isError: controller.error != null,
           ),
-        InputArea(
-          running: controller.isRunning,
-          onSend: (text, attachments) => controller.send(text, attachments: attachments),
-          onStop: controller.stop,
-          mode: session.mode,
-          onModeChanged: (value) => controller.setMode(value),
-          maxAttachmentBytes: context.watch<AppState>().config.maxAttachmentBytes,
-          webSearchAvailable: session.tools.contains('web_search'),
-          webSearchEnabled: session.webSearchEnabled,
-          onWebSearchChanged: (value) => controller.setWebSearch(value),
-          onCompress: _compressSession,
-          onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
-          onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: InputArea(
+            running: controller.isRunning,
+            onSend: (text, attachments) {
+              controller.send(text, attachments: attachments);
+              return true;
+            },
+            onStop: controller.stop,
+            mode: session.mode,
+            onModeChanged: (value) => controller.setMode(value),
+            maxAttachmentBytes:
+                context.watch<AppState>().config.maxAttachmentBytes,
+            webSearchAvailable: session.tools.contains('web_search'),
+            webSearchEnabled: session.webSearchEnabled,
+            onWebSearchChanged: (value) => controller.setWebSearch(value),
+            onCompress: _compressSession,
+            onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
+            onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
+            trailing: _ModelSelector(controller: controller),
+          ),
         ),
       ],
     );
@@ -1503,8 +2410,6 @@ class _Header extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
-              _ModelSelector(controller: controller),
             ],
           ),
           const SizedBox(height: 4),
@@ -1545,8 +2450,21 @@ class _ModelSelector extends StatelessWidget {
       if (session.model.isNotEmpty) session.model,
     }.toList();
     final label = session.model.isNotEmpty ? session.model : provider.name;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final full = '${provider.name} · $label';
     if (models.isEmpty) {
-      return Text('${provider.name} · $label', style: Theme.of(context).textTheme.bodySmall);
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: Text(
+          full,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      );
     }
     return PopupMenuButton<String>(
       tooltip: '切换模型（限同一提供商）',
@@ -1559,14 +2477,34 @@ class _ModelSelector extends StatelessWidget {
             child: Text(model),
           ),
       ],
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.memory, size: 16),
-          const SizedBox(width: 4),
-          Text('${provider.name} · $label', style: Theme.of(context).textTheme.bodySmall),
-          const Icon(Icons.arrow_drop_down, size: 18),
-        ],
+      child: Tooltip(
+        message: full,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.memory, size: 15, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  full,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Icon(Icons.arrow_drop_down, size: 16, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }

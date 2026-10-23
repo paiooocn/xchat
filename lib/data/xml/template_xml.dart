@@ -31,6 +31,7 @@ class TemplateXml {
     out.leafText('tool_calls_limit', template.toolCallsLimit.toString());
     out.leaf('system_prompt', template.systemPrompt);
     out.leaf('tags', template.tags.join(','));
+    out.leafText('quick_enabled', template.quickEnabled ? 'true' : 'false');
     out.open('params');
     for (final key in _paramsKeys) {
       out.leafText(key, template.params.encode(key));
@@ -81,6 +82,7 @@ class TemplateXml {
               .map((e) => e.innerText.trim())
               .where((name) => name.isNotEmpty)
               .toList(),
+      quickEnabled: (readText(root, 'quick_enabled') ?? '').toLowerCase() == 'true',
     );
   }
 }

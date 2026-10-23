@@ -249,6 +249,32 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
   late String _preset;
   late String _reasoningSource;
   late String _reasoningStyle;
+
+  /// Allowed values of the three fixed dropdowns below.
+  static const _presetValues = <String>[
+    'custom',
+    'openai',
+    'deepseek',
+    'moonshot',
+    'zhipu',
+    'qwen',
+    'mimo',
+    'minimax',
+    'openrouter',
+  ];
+  static const _reasoningSourceValues = <String>[
+    'auto',
+    'field',
+    'inline',
+    'none',
+  ];
+  static const _reasoningStyleValues = <String>[
+    'none',
+    'reasoning_effort',
+    'enable_thinking',
+    'thinking_budget',
+    'reasoning_max_tokens',
+  ];
   bool _useMaxCompletionTokens = false;
   Map<String, ModelSpec> _specs = <String, ModelSpec>{};
 
@@ -454,16 +480,14 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
             key: ValueKey('preset-$_preset'),
             initialValue: _preset,
             decoration: const InputDecoration(labelText: '预设（决定思考读取/回发）'),
-            items: const [
-              DropdownMenuItem(value: 'custom', child: Text('custom')),
-              DropdownMenuItem(value: 'openai', child: Text('openai')),
-              DropdownMenuItem(value: 'deepseek', child: Text('deepseek')),
-              DropdownMenuItem(value: 'moonshot', child: Text('moonshot')),
-              DropdownMenuItem(value: 'zhipu', child: Text('zhipu')),
-              DropdownMenuItem(value: 'qwen', child: Text('qwen')),
-              DropdownMenuItem(value: 'mimo', child: Text('mimo')),
-              DropdownMenuItem(value: 'minimax', child: Text('minimax')),
-              DropdownMenuItem(value: 'openrouter', child: Text('openrouter')),
+            items: [
+              for (final value in _presetValues)
+                DropdownMenuItem(value: value, child: Text(value)),
+              if (!_presetValues.contains(_preset))
+                DropdownMenuItem(
+                  value: _preset,
+                  child: Text('$_preset（自定义）'),
+                ),
             ],
             onChanged: (value) => setState(() => _preset = value ?? 'custom'),
           ),
@@ -472,11 +496,14 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
             key: ValueKey('source-$_reasoningSource'),
             initialValue: _reasoningSource,
             decoration: const InputDecoration(labelText: '思考读取来源'),
-            items: const [
-              DropdownMenuItem(value: 'auto', child: Text('auto')),
-              DropdownMenuItem(value: 'field', child: Text('field (reasoning_content)')),
-              DropdownMenuItem(value: 'inline', child: Text('inline (think tag)')),
-              DropdownMenuItem(value: 'none', child: Text('none')),
+            items: [
+              for (final value in _reasoningSourceValues)
+                DropdownMenuItem(value: value, child: Text(value)),
+              if (!_reasoningSourceValues.contains(_reasoningSource))
+                DropdownMenuItem(
+                  value: _reasoningSource,
+                  child: Text('$_reasoningSource（自定义）'),
+                ),
             ],
             onChanged: (value) => setState(() => _reasoningSource = value ?? 'auto'),
           ),
@@ -485,12 +512,14 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
             key: ValueKey('style-$_reasoningStyle'),
             initialValue: _reasoningStyle,
             decoration: const InputDecoration(labelText: '思考请求方式'),
-            items: const [
-              DropdownMenuItem(value: 'none', child: Text('none')),
-              DropdownMenuItem(value: 'reasoning_effort', child: Text('reasoning_effort')),
-              DropdownMenuItem(value: 'enable_thinking', child: Text('enable_thinking')),
-              DropdownMenuItem(value: 'thinking_budget', child: Text('thinking_budget')),
-              DropdownMenuItem(value: 'reasoning_max_tokens', child: Text('reasoning_max_tokens')),
+            items: [
+              for (final value in _reasoningStyleValues)
+                DropdownMenuItem(value: value, child: Text(value)),
+              if (!_reasoningStyleValues.contains(_reasoningStyle))
+                DropdownMenuItem(
+                  value: _reasoningStyle,
+                  child: Text('$_reasoningStyle（自定义）'),
+                ),
             ],
             onChanged: (value) => setState(() => _reasoningStyle = value ?? 'none'),
           ),
