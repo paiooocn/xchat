@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_paths.dart';
+import '../../core/app_version.dart';
 import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../models/agent_mode.dart';
@@ -465,7 +466,7 @@ class _HomePageState extends State<HomePage> {
         tooltip: '更多',
         icon: const Icon(Icons.more_vert),
         onSelected: (value) => _navigate(context, value),
-        itemBuilder: (context) => const [
+        itemBuilder: (context) => [
           PopupMenuItem(
             value: 'search',
             child: _MoreMenuItem(
@@ -499,6 +500,27 @@ class _HomePageState extends State<HomePage> {
             child: _MoreMenuItem(
               icon: Icons.settings_outlined,
               label: '设置',
+            ),
+          ),
+          PopupMenuDivider(),
+          // 最后一项显示应用版本号（只读，不可点击）。
+          PopupMenuItem(
+            enabled: false,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '版本 $kAppVersionFull',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
             ),
           ),
         ],
