@@ -1,5 +1,6 @@
 import '../core/json_utils.dart';
 import 'session_message.dart';
+import 'session_params.dart';
 
 /// Per-model parameters (context window, output cap, capabilities). Filled
 /// from models.dev and used to size the context bar per selected model.
@@ -70,12 +71,15 @@ class ProviderConfig {
     this.useMaxCompletionTokens = false,
     this.contextWindow,
     this.defaultThinkingReplyMode = ThinkingReplyMode.auto,
-    List<String>? models,
+    this.syncReasoningEffort = false,
     Map<String, ModelSpec>? modelSpecs,
+    Map<String, List<String>>? reasoningEfforts,
+    List<String>? models,
   })  : name = name ?? id,
         headers = headers ?? <String, String>{},
         models = models ?? <String>[],
-        modelSpecs = modelSpecs ?? <String, ModelSpec>{};
+        modelSpecs = modelSpecs ?? <String, ModelSpec>{},
+        reasoningEfforts = reasoningEfforts ?? <String, List<String>>{};
 
   /// Stable identifier referenced by sessions (`provider` field).
   String id;
@@ -108,6 +112,42 @@ class ProviderConfig {
   /// Per-model parameters keyed by model id (see [ModelSpec]).
   Map<String, ModelSpec> modelSpecs;
 
+  /// 「同步思考强度」：开启后每模型的 `reasoning_effort` 候选值取自
+  /// models.dev（见 [reasoningEfforts]）；关闭时用会话模板里
+  /// `reasoning_effort` 的全部候选值。
+  bool syncReasoningEffort;
+
+  /// 已同步的每模型思考强度候选值（模型 id → 值列表）。
+  ///
+  /// 只在 [syncReasoningEffort] 开启时写入 / 生效；关闭或重新同步时会被清空，
+  /// 避免留下过期的选项。
+  Map<String, List<String>> reasoningEfforts;
+
+  /// 已同步的 [model] 思考强度候选值（空 = 未同步）。
+  ///
+  /// 先按模型 ID 精确匹配，再忽略大小写；目录里没有这个 ID 时用该服务已同步
+  /// 值的并集——同一服务的档位通常一致，比回落到含无效档位的通用列表好。
+  List<String> effortOptionsFor(String model) {
+    if (!syncReasoningEffort || reasoningEfforts.isEmpty) {
+      return const <String>[];
+    }
+    final key = model.trim();
+    final direct = reasoningEfforts[key] ?? _ciLookup(key);
+    if (direct != null && direct.isNotEmpty) return direct;
+    return <String>{
+      for (final values in reasoningEfforts.values) ...values,
+    }.toList(growable: false);
+  }
+
+  List<String>? _ciLookup(String model) {
+    if (model.isEmpty) return null;
+    final lower = model.toLowerCase();
+    for (final entry in reasoningEfforts.entries) {
+      if (entry.key.toLowerCase() == lower) return entry.value;
+    }
+    return null;
+  }
+
   /// Parameters of [model], or `null` when unknown.
   ModelSpec? specFor(String model) => modelSpecs[model];
 
@@ -126,8 +166,13 @@ class ProviderConfig {
         useMaxCompletionTokens: useMaxCompletionTokens,
         contextWindow: contextWindow,
         defaultThinkingReplyMode: defaultThinkingReplyMode,
+        syncReasoningEffort: syncReasoningEffort,
         models: List<String>.of(models),
         modelSpecs: Map<String, ModelSpec>.of(modelSpecs),
+        reasoningEfforts: <String, List<String>>{
+          for (final entry in reasoningEfforts.entries)
+            entry.key: List<String>.of(entry.value),
+        },
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -142,9 +187,12 @@ class ProviderConfig {
         'use_max_completion_tokens': useMaxCompletionTokens,
         'context_window': contextWindow,
         'thinking_reply_mode': defaultThinkingReplyMode.wire,
+        if (syncReasoningEffort) 'sync_reasoning_effort': true,
         if (models.isNotEmpty) 'models': models,
         if (modelSpecs.isNotEmpty)
           'model_specs': [for (final spec in modelSpecs.values) spec.toJson()],
+        if (reasoningEfforts.isNotEmpty && syncReasoningEffort)
+          'reasoning_efforts': reasoningEfforts,
       });
 
   factory ProviderConfig.fromJson(Object? value) {
@@ -164,10 +212,29 @@ class ProviderConfig {
       defaultThinkingReplyMode:
           ThinkingReplyMode.parse(asString(json['thinking_reply_mode'])),
       models: asStringList(json['models']),
+      syncReasoningEffort: asBool(json['sync_reasoning_effort']),
       modelSpecs: <String, ModelSpec>{
         for (final spec in asList(json['model_specs']).map(ModelSpec.fromJson))
           if (spec.id.isNotEmpty) spec.id: spec,
       },
+      reasoningEfforts: <String, List<String>>{
+        for (final entry in asMap(json['reasoning_efforts']).entries)
+          if (asStringList(entry.value).isNotEmpty)
+            entry.key: asStringList(entry.value),
+      },
     );
   }
+}
+
+/// `reasoning_effort` 的候选档位（空串 = 不传入，由调用方决定是否显示）：
+///
+/// - 服务开启了「同步思考强度」且有该模型的同步值时，用 models.dev 同步好的
+///   档位（deepseek 这类服务只接受 low/high/max，才不会给出无效档位）；
+/// - 否则回落到会话模板 `reasoning_effort` 的完整候选列表。
+List<String> reasoningEffortOptionsFor(ProviderConfig? provider, String model) {
+  final synced = provider?.effortOptionsFor(model) ?? const <String>[];
+  if (synced.isNotEmpty) return synced;
+  return kReasoningEffortOptions
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../agent/tools/builtin_tools.dart';
 import '../../core/ids.dart';
+import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
@@ -223,6 +224,20 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
     }.toList();
   }
 
+  /// 思考强度候选值：服务开了「同步思考强度」就用同步档位，否则用模板完整
+  /// 候选列表；已保存但不在候选里的值也保留一项，避免下拉框找不到当前值。
+  List<String> _effortOptions(AppState state) {
+    final values = reasoningEffortOptionsFor(
+      state.config.providerById(_providerId),
+      _model.text.trim(),
+    );
+    return <String>[
+      '',
+      ...values,
+      if (_effort.isNotEmpty && !values.contains(_effort)) _effort,
+    ];
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -319,10 +334,10 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             key: ValueKey('template_effort_$_effort'),
-            initialValue: _effort,
-            decoration: const InputDecoration(labelText: 'reasoning_effort'),
+            initialValue: _effortOptions(state).contains(_effort) ? _effort : null,
+            decoration: const InputDecoration(labelText: '思考强度'),
             items: [
-              for (final value in kReasoningEffortOptions)
+              for (final value in _effortOptions(state))
                 DropdownMenuItem(
                   value: value,
                   child: Text(value.isEmpty ? '（不传入）' : value),

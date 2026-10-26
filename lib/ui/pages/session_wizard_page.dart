@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/ids.dart';
+import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
@@ -134,6 +135,20 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
       SessionMessage(role: MessageRole.user, id: newShortId(), content: user),
       if (assistant.isNotEmpty)
         SessionMessage(role: MessageRole.assistant, id: newShortId(), content: assistant),
+    ];
+  }
+
+  /// 思考强度候选值：服务开了「同步思考强度」就用同步档位，否则用完整候选
+  /// 列表；已选的值不在候选里时保留一项，避免下拉框找不到当前值。
+  List<String> _effortOptions(AppState state) {
+    final values = reasoningEffortOptionsFor(
+      state.config.providerById(_providerId),
+      _model.trim(),
+    );
+    return <String>[
+      '',
+      ...values,
+      if (_effort.isNotEmpty && !values.contains(_effort)) _effort,
     ];
   }
 
@@ -297,10 +312,11 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 key: ValueKey('wizard_effort_$_effort'),
-                initialValue: _effort,
-                decoration: const InputDecoration(labelText: '思考强度（reasoning_effort）'),
+                initialValue:
+                    _effortOptions(state).contains(_effort) ? _effort : null,
+                decoration: const InputDecoration(labelText: '思考强度'),
                 items: [
-                  for (final value in kReasoningEffortOptions)
+                  for (final value in _effortOptions(state))
                     DropdownMenuItem(
                       value: value,
                       child: Text(value.isEmpty ? '（不传入）' : value),

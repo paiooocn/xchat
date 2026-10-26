@@ -13,6 +13,7 @@ import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../models/agent_mode.dart';
 import '../../models/message_attachment.dart';
+import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
@@ -957,7 +958,7 @@ class _MobileChatPageState extends State<_MobileChatPage> {
         title: Text(session?.title.isNotEmpty == true ? session!.title : '会话'),
         actions: [
           IconButton(
-            tooltip: '显示/隐藏会话信息',
+            tooltip: '会话信息 / 模型 / 思考设置',
             icon: Icon(_showInfo ? Icons.info : Icons.info_outline),
             onPressed: () => setState(() => _showInfo = !_showInfo),
           ),
@@ -969,6 +970,7 @@ class _MobileChatPageState extends State<_MobileChatPage> {
               key: ValueKey(session.id),
               sessionId: session.id,
               showHeader: _showInfo,
+              mobileLayout: true,
               onCompressCompleted: (id) {
                 final state = context.read<AppState>();
                 final created = state.sessionById(id);
@@ -1897,6 +1899,7 @@ class SessionChatPanel extends StatefulWidget {
     required this.sessionId,
     this.onCompressCompleted,
     this.showHeader = true,
+    this.mobileLayout = false,
   });
 
   final String sessionId;
@@ -1907,6 +1910,10 @@ class SessionChatPanel extends StatefulWidget {
   /// Whether to show the session info / model selector header. Mobile hides it
   /// by default to reclaim vertical space and toggles it from the app bar.
   final bool showHeader;
+
+  /// 移动端布局：模型选择 / 思考开关 / 思考强度从输入栏移到顶部「i」面板里，
+  /// 输入栏右侧只保留发送键——窄屏下原本这两组控件会把发送键挤出可视区。
+  final bool mobileLayout;
 
   @override
   State<SessionChatPanel> createState() => _SessionChatPanelState();
@@ -2148,7 +2155,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     return Column(
       children: [
         if (widget.showHeader) ...[
-          _Header(controller: controller),
+          _Header(controller: controller, showControls: widget.mobileLayout),
           const Divider(height: 1),
         ],
         Expanded(
@@ -2211,14 +2218,16 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
             onCompress: _compressSession,
             onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
             onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ModelSelector(controller: controller),
-                const SizedBox(width: 6),
-                _ReasoningControls(controller: controller),
-              ],
-            ),
+            trailing: widget.mobileLayout
+                ? null
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ModelSelector(controller: controller),
+                      const SizedBox(width: 6),
+                      _ReasoningControls(controller: controller),
+                    ],
+                  ),
           ),
         ),
       ],
@@ -2315,9 +2324,12 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.controller});
+  const _Header({required this.controller, this.showControls = false});
 
   final SessionController controller;
+
+  /// 移动端布局：模型选择与思考开关并入本面板（输入栏没有横向空间）。
+  final bool showControls;
 
   @override
   Widget build(BuildContext context) {
@@ -2328,6 +2340,7 @@ class _Header extends StatelessWidget {
     final ratio = (contextWindow != null && contextWindow > 0 && contextTokens != null)
         ? (contextTokens / contextWindow).clamp(0.0, 1.0)
         : null;
+    final showControls = this.showControls;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
@@ -2361,6 +2374,19 @@ class _Header extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(value: ratio, minHeight: 4),
+            ),
+          ],
+          // 移动端：模型选择 / 思考开关 / 思考强度放在这里，输入栏只留发送。
+          if (showControls) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _ModelSelector(controller: controller),
+                _ReasoningControls(controller: controller),
+              ],
             ),
           ],
         ],
@@ -2446,7 +2472,8 @@ class _ModelSelector extends StatelessWidget {
 /// 思考开关 + 思考强度：与模型选择并排，改动后写回会话文件
 /// （`meta/params/thinking` 与 `meta/params/reasoning_effort`）。
 ///
-/// 两个控件都做成紧凑的图标按钮——输入区工具栏已经很挤，长文案会溢出。
+/// 两个控件都做成紧凑的图标按钮：桌面端它们位于输入区工具栏右侧，移动端则
+/// 移到顶部「i」信息面板里（窄屏工具栏放不下，会把发送键挤出可视区）。
 class _ReasoningControls extends StatelessWidget {
   const _ReasoningControls({required this.controller});
 
@@ -2454,10 +2481,13 @@ class _ReasoningControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 服务配置（「同步思考强度」的档位）存在 AppState 里：订阅一下，同步完就
+    // 立刻换菜单，而不是等父级因为别的原因重建。
+    context.watch<AppState>();
     final session = controller.session;
     if (session == null) return const SizedBox.shrink();
     final params = session.params;
-    final efforts = _effortOptions(context, session);
+    final efforts = _effortOptions(session);
     final effort = params.reasoningEffort ?? '';
     final scheme = Theme.of(context).colorScheme;
     return Row(
@@ -2519,25 +2549,10 @@ class _ReasoningControls extends StatelessWidget {
         ThinkingSwitch.auto => Icons.auto_awesome,
       };
 
-  /// The effort values the current model accepts: the models.dev catalog wins
-  /// (per-model `reasoning_options`), otherwise the generic list.
-  List<String> _effortOptions(BuildContext context, Session session) {
-    final catalog = context.read<AppState>().modelsDev;
-    if (catalog != null) {
-      final source = catalog.matchFor(controller.activeProvider);
-      final model = source?.models[session.model];
-      if (model != null) {
-        final values = <String>[
-          for (final option in model.reasoningOptions)
-            if (option.effort) ...option.effortValues,
-        ];
-        if (values.isNotEmpty) return values;
-      }
-    }
-    return kReasoningEffortOptions
-        .where((value) => value.isNotEmpty)
-        .toList(growable: false);
-  }
+  /// 思考强度选项：服务开启「同步思考强度」且有同步值时用同步档位，否则用
+  /// 会话模板 `reasoning_effort` 的全部候选值（见 [reasoningEffortOptionsFor]）。
+  List<String> _effortOptions(Session session) =>
+      reasoningEffortOptionsFor(controller.activeProvider, session.model);
 }
 
 /// 思考控件用的紧凑图标按钮（32×32）。

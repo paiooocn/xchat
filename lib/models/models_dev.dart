@@ -146,6 +146,15 @@ class ModelsDevModel {
   /// Newly appended models must also support tool calls (agent sessions).
   bool get agentUsable => usable && toolCall;
 
+  /// models.dev 上该模型声明的 `reasoning_effort` 候选值（空 = 未声明）。
+  ///
+  /// deepseek 这类只接受部分档位的服务（low/high/max）靠它给准选项，不再用
+  /// 通用列表。
+  List<String> get effortValues => <String>[
+        for (final option in reasoningOptions)
+          if (option.effort) ...option.effortValues,
+      ];
+
   /// `ReasoningRequestStyle` hint: `thinking_budget` > `reasoning_effort` >
   /// `enable_thinking`; `null` when the model has no controllable reasoning.
   String? get derivedReasoningStyle {
@@ -214,6 +223,12 @@ class ModelsDevProvider {
     final npm = this.npm.toLowerCase();
     return npm.contains('openai-compatible') || npm.contains('openrouter');
   }
+
+  /// 每模型 `reasoning_effort` 候选值（未声明的模型不出现）。
+  Map<String, List<String>> get effortValuesByModel => <String, List<String>>{
+        for (final model in models.values)
+          if (model.effortValues.isNotEmpty) model.id: model.effortValues,
+      };
 
   /// Where thinking text shows up, aggregated over the models:
   /// `field` when every thinking model uses a named field, `inline` when any
@@ -369,7 +384,8 @@ class ModelsDevSyncResult {
 /// Guarded (only when the field is empty/untouched, or when [full]): name,
 /// base URL. Reasoning parameters are only derived when [full], or for
 /// `custom` providers whose style is still `none` — curated preset tuning and
-/// user edits always win.
+/// user edits always win. Per-model reasoning effort options are refreshed
+/// whenever the provider opts into 「同步思考强度」([ProviderConfig.syncReasoningEffort]).
 ModelsDevApplyResult applyModelsDev(
   ProviderConfig target,
   ModelsDevProvider source, {
@@ -462,6 +478,21 @@ ModelsDevApplyResult applyModelsDev(
       target.reasoningStyle == 'none') {
     target.reasoningStyle = style;
     notes.add('思考参数 → $style');
+  }
+
+  // 每模型思考强度候选值：只在服务开启「同步思考强度」时写入（目录里所有模型都
+  // 存一份，会话用的模型 ID 不在服务的模型列表里也能取到档位）；关闭时清空，
+  // 免得残留的旧值继续当作选项（此时由会话模板的完整列表兜底）。
+  if (target.syncReasoningEffort) {
+    final efforts = source.effortValuesByModel;
+    target.reasoningEfforts = <String, List<String>>{
+      for (final entry in efforts.entries) entry.key: entry.value,
+    };
+    if (target.reasoningEfforts.isNotEmpty) {
+      notes.add('思考强度 ${target.reasoningEfforts.length} 个模型');
+    }
+  } else if (target.reasoningEfforts.isNotEmpty) {
+    target.reasoningEfforts.clear();
   }
 
   return ModelsDevApplyResult(

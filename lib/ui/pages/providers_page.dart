@@ -276,6 +276,9 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     'reasoning_max_tokens',
   ];
   bool _useMaxCompletionTokens = false;
+  /// 同步思考强度：开启后每模型的 `reasoning_effort` 候选值来自 models.dev。
+  bool _syncReasoningEffort = false;
+  Map<String, List<String>> _reasoningEfforts = <String, List<String>>{};
   Map<String, ModelSpec> _specs = <String, ModelSpec>{};
 
   /// Whether the API Key is masked. Toggling it off makes the field a plain
@@ -297,6 +300,11 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     _reasoningSource = provider.reasoningSource;
     _reasoningStyle = provider.reasoningStyle;
     _useMaxCompletionTokens = provider.useMaxCompletionTokens;
+    _syncReasoningEffort = provider.syncReasoningEffort;
+    _reasoningEfforts = <String, List<String>>{
+      for (final entry in provider.reasoningEfforts.entries)
+        entry.key: List<String>.of(entry.value),
+    };
     _specs = Map<String, ModelSpec>.of(provider.modelSpecs);
   }
 
@@ -331,10 +339,18 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
       ..reasoningStyle = _reasoningStyle
       ..useMaxCompletionTokens = _useMaxCompletionTokens
       ..contextWindow = int.tryParse(_contextWindow.text.trim())
+      ..syncReasoningEffort = _syncReasoningEffort
       ..models = models
       ..modelSpecs = <String, ModelSpec>{
         for (final id in models) if (_specs[id] != null) id: _specs[id]!,
-      };
+      }
+      ..reasoningEfforts = _syncReasoningEffort
+          ? <String, List<String>>{
+              for (final entry in _reasoningEfforts.entries)
+                if (entry.value.isNotEmpty)
+                  entry.key: List<String>.of(entry.value),
+            }
+          : <String, List<String>>{};
   }
 
   Future<void> _save() async {
@@ -367,6 +383,10 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
         _reasoningSource = filled.reasoningSource;
         _reasoningStyle = filled.reasoningStyle;
         _specs = Map<String, ModelSpec>.of(filled.modelSpecs);
+        _reasoningEfforts = <String, List<String>>{
+          for (final entry in filled.reasoningEfforts.entries)
+            entry.key: List<String>.of(entry.value),
+        };
       });
       messenger.clearSnackBars();
       messenger.showSnackBar(SnackBar(
@@ -375,6 +395,47 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
       messenger.clearSnackBars();
       messenger.showSnackBar(SnackBar(content: Text('models.dev 读取失败：$error')));
     }
+  }
+
+  /// 打开「同步思考强度」时立刻从 models.dev 目录（缓存 / 网络 / 内置）拉一次
+  /// 每模型候选值，让用户当场看到会用作选项的档位。
+  Future<void> _setSyncReasoningEffort(bool value) async {
+    setState(() => _syncReasoningEffort = value);
+    if (!value) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final state = context.read<AppState>();
+    try {
+      final catalog = await state.loadModelsDev();
+      if (!mounted) return;
+      final draft = _applyTo(widget.provider.copyWith());
+      final source = catalog.matchFor(draft);
+      if (source == null) {
+        messenger.showSnackBar(const SnackBar(
+            content: Text('未在 models.dev 匹配到该服务；保存后可执行「一键更新」再同步')));
+        return;
+      }
+      setState(() {
+        applyModelsDev(draft, source);
+        _reasoningEfforts = <String, List<String>>{
+          for (final entry in draft.reasoningEfforts.entries)
+            entry.key: List<String>.of(entry.value),
+        };
+      });
+      messenger.showSnackBar(SnackBar(
+        content: Text(_reasoningEfforts.isEmpty
+            ? 'models.dev 未提供该服务的思考强度档位'
+            : '已同步 ${_reasoningEfforts.length} 个模型的思考强度（${_effortsSummary()}）'),
+      ));
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('models.dev 读取失败：$error')));
+    }
+  }
+
+  /// 同步结果的一行摘要（最多列 3 个模型）。
+  String _effortsSummary() {
+    final entries = _reasoningEfforts.entries.take(3);
+    final more = _reasoningEfforts.length > 3 ? ' 等' : '';
+    return entries.map((e) => '${e.key}：${e.value.join('/')}').join('，') + more;
   }
 
   /// Pastes the clipboard content into the API Key field.
@@ -528,6 +589,18 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
             value: _useMaxCompletionTokens,
             title: const Text('使用 max_completion_tokens'),
             onChanged: (value) => setState(() => _useMaxCompletionTokens = value),
+          ),
+          SwitchListTile(
+            value: _syncReasoningEffort,
+            title: const Text('同步思考强度（models.dev）'),
+            subtitle: Text(
+              !_syncReasoningEffort
+                  ? '关闭：思考强度选项用会话模板 reasoning_effort 的全部候选值'
+                  : _reasoningEfforts.isEmpty
+                      ? '开启但尚未同步到档位，保存后执行「一键更新」或重新打开本开关'
+                      : '开启：已同步 ${_reasoningEfforts.length} 个模型（${_effortsSummary()}）',
+            ),
+            onChanged: _setSyncReasoningEffort,
           ),
           const SizedBox(height: 8),
           TextField(

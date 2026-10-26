@@ -351,27 +351,38 @@ class _InputAreaState extends State<InputArea> {
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
             child: Row(
               children: [
-                IconButton(
-                  onPressed: widget.running ? null : _pickImages,
-                  tooltip: '添加图片',
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                ),
-                _ModePill(
-                  mode: widget.mode,
-                  onChanged: widget.onModeChanged,
-                ),
-                if (widget.afterMode != null) ...[
-                  const SizedBox(width: 6),
-                  widget.afterMode!,
-                ],
-                if (widget.webSearchAvailable) ...[
-                  const SizedBox(width: 6),
-                  _WebSearchPill(
-                    enabled: widget.webSearchEnabled,
-                    onChanged: widget.onWebSearchChanged,
+                // 左半区可横向滚动：窄屏（移动端）上执行模式 / 模板 / 联网再多，
+                // 也只会滚动这一组，右侧的发送键永远留在可视区内，不会被挤出
+                // （之前模型选择与思考开关就在右侧，把发送键顶掉了）。
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          onPressed: widget.running ? null : _pickImages,
+                          tooltip: '添加图片',
+                          icon: const Icon(Icons.add_photo_alternate_outlined),
+                        ),
+                        _ModePill(
+                          mode: widget.mode,
+                          onChanged: widget.onModeChanged,
+                        ),
+                        if (widget.afterMode != null) ...[
+                          const SizedBox(width: 6),
+                          widget.afterMode!,
+                        ],
+                        if (widget.webSearchAvailable) ...[
+                          const SizedBox(width: 6),
+                          _WebSearchPill(
+                            enabled: widget.webSearchEnabled,
+                            onChanged: widget.onWebSearchChanged,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ],
-                const Spacer(),
+                ),
                 if (widget.onScrollToRecent != null)
                   IconButton(
                     onPressed: widget.onScrollToRecent,

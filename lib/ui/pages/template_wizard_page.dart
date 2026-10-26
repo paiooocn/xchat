@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../agent/tools/builtin_tools.dart';
 import '../../core/ids.dart';
 import '../../llm/prompt_assistant.dart';
+import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
@@ -85,6 +86,20 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
       ...provider.models,
       if (_model.text.trim().isNotEmpty) _model.text.trim(),
     }.toList();
+  }
+
+  /// 思考强度候选值：服务开了「同步思考强度」就用同步档位，否则用模板完整
+  /// 候选列表；已选的值不在候选里时保留一项，避免下拉框找不到当前值。
+  List<String> _effortOptions(AppState state) {
+    final values = reasoningEffortOptionsFor(
+      state.config.providerById(_providerId),
+      _model.text.trim(),
+    );
+    return <String>[
+      '',
+      ...values,
+      if (_effort.isNotEmpty && !values.contains(_effort)) _effort,
+    ];
   }
 
   /// The model used for prompt generation/polish: the app-feature model
@@ -427,10 +442,10 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           key: ValueKey('wizard_effort_$_effort'),
-          initialValue: _effort,
-          decoration: const InputDecoration(labelText: '思考强度（reasoning_effort）'),
+          initialValue: _effortOptions(state).contains(_effort) ? _effort : null,
+          decoration: const InputDecoration(labelText: '思考强度'),
           items: [
-            for (final value in kReasoningEffortOptions)
+            for (final value in _effortOptions(state))
               DropdownMenuItem(
                 value: value,
                 child: Text(value.isEmpty ? '（不传入）' : value),
