@@ -64,6 +64,9 @@ Widget markdownView(String data, {Color? codeBackground}) {
           ],
         ),
         generator: MarkdownGenerator(
+          // Keeps the line breaks when the user copies a selection (see
+          // [_selectableBlock]).
+          richTextBuilder: _selectableBlock,
           generators: [
             // Replace the built-in `pre` node: markdown_widget's CodeBlockNode
             // dereferences `attributes['class']!` for every fence without a
@@ -86,6 +89,34 @@ Widget markdownView(String data, {Color? codeBackground}) {
       );
     },
   );
+}
+
+/// Builds the widget for a single rendered text run.
+///
+/// `SelectionArea` concatenates the plain text of neighbouring paragraphs with
+/// no separator, so copying a multi-paragraph message used to paste everything
+/// onto one line. An invisible, zero-height paragraph holding a newline is put
+/// right after the text: the newline joins the clipboard content, while its
+/// height leaves the layout untouched.
+Widget _selectableBlock(InlineSpan span) {
+  final text = Text.rich(span);
+  // Container blocks (lists, tables, code fences, rules) are widget spans whose
+  // text lives in nested paragraphs; a break here would only append an empty
+  // line after the block.
+  if (span is WidgetSpan) return text;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [text, const _LineBreak()],
+  );
+}
+
+/// A zero-height paragraph containing a single newline. See [_selectableBlock].
+class _LineBreak extends StatelessWidget {
+  const _LineBreak();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(height: 0, child: Text('\n'));
 }
 
 /// Like [BlockquoteNode], but forces italic text for `>` block quotes.
@@ -130,23 +161,25 @@ class _SafeCodeBlockNode extends ElementNode {
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final line in lines)
-              ProxyRichText(
-                TextSpan(
-                  children: highLightSpans(
-                    line,
-                    language: language,
-                    theme: preConfig.theme,
-                    textStyle: style,
-                    styleNotMatched: preConfig.styleNotMatched,
-                  ),
+        // The fence is one text run joined by real newlines rather than one
+        // widget per line: a copy/selection carries the line breaks along,
+        // which separate widgets would lose.
+        child: ProxyRichText(
+          TextSpan(
+            children: [
+              for (var i = 0; i < lines.length; i++) ...[
+                if (i > 0) TextSpan(text: '\n', style: style),
+                ...highLightSpans(
+                  lines[i],
+                  language: language,
+                  theme: preConfig.theme,
+                  textStyle: style,
+                  styleNotMatched: preConfig.styleNotMatched,
                 ),
-                richTextBuilder: visitor.richTextBuilder,
-              ),
-          ],
+              ],
+            ],
+          ),
+          richTextBuilder: visitor.richTextBuilder,
         ),
       ),
     );
