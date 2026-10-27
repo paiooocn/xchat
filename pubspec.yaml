@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.5.6+1
+version: 0.5.7+1
 license: MIT
 
 environment:
@@ -52,6 +52,10 @@ dependencies:
   # Markdown rendering
   markdown_widget: ^2.3.2+6
   highlight: ^0.7.0
+  # Direct use of the parser (math syntaxes); version pinned by markdown_widget.
+  markdown: ^7.3.1
+  # KaTeX-compatible TeX layout engine for $…$ / $$…$$ formulas.
+  flutter_math_fork: ^0.7.4
 
 dev_dependencies:
   flutter_test:

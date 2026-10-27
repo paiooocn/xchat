@@ -39,6 +39,7 @@ XChat 是一个 **Flutter 原生 GUI**（非 WebView）的 LLM Agent 客户端�
 | UUID       | `uuid` (`^4.5`)                                            | 会话 id                                                                            |
 | 路径       | `path_provider` + `path`                                   | `Documents/XChat`                                                                  |
 | Markdown   | `markdown_widget` + `highlight`                            | 代码高亮、表格、列表                                                               |
+| 数学公式   | `flutter_math_fork`（KaTeX 排版引擎）+ 自定义 markdown 语法 | `$…$`/`$$…$$`/`\(…\)` 渲染，离线无网络依赖                                           |
 | 配置持久化 | `config.json`（+ 可选 `flutter_secure_storage` 存 apiKey） | 见 §4                                                                              |
 | 外部编辑器 | `process_run` / `Process.start`                            | 桌面端「编辑工具打开会话」                                                         |
 | 国际化     | `intl` + 内置 zh/en 文案（可选）                           |                                                                                    |

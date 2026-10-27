@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 
 import '../theme/app_fonts.dart';
+import 'math_support.dart';
 
 // Code palette shared by inline `code` spans and fenced code blocks so they
 // stay visually consistent in both brightness modes.
@@ -48,26 +49,24 @@ Widget markdownView(String data, {Color? codeBackground}) {
             // unreadable on the dark surface (and vanishes under the selection
             // highlight), so use the light-on-dark palette in dark mode.
             dark ? BlockquoteConfig.darkConfig : const BlockquoteConfig(),
-            // Tables: markdown_widget sizes columns intrinsically, so a wide
-            // table would stick out past the bubble and its right side could
-            // never be seen. Hand the table the full available width and let it
-            // scroll horizontally instead.
-            TableConfig(
-              wrapper: (child) => SizedBox(
-                width: double.infinity,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: child,
-                ),
-              ),
-            ),
+            // Tables: markdown_widget defaults to `IntrinsicColumnWidth`, which
+            // forces `RenderTable` through a dry-layout pass. flutter_math_fork
+            // builds accents/roots/`\left…\right` with `LayoutBuilder`, and
+            // those do not support dry layout — a single `\hat`/`\sqrt` in a
+            // cell would then throw during layout. Proportional columns size the
+            // table to the bubble without any intrinsic measurement.
+            const TableConfig(defaultColumnWidth: FlexColumnWidth()),
           ],
         ),
         generator: MarkdownGenerator(
           // Keeps the line breaks when the user copies a selection (see
           // [_selectableBlock]).
           richTextBuilder: _selectableBlock,
+          // `$…$` / `$$…$$` / `\(…\)` formulas, rendered as real math.
+          inlineSyntaxList: mathInlineSyntaxes,
+          blockSyntaxList: mathBlockSyntaxes,
           generators: [
+            ...mathSpanGenerators,
             // Replace the built-in `pre` node: markdown_widget's CodeBlockNode
             // dereferences `attributes['class']!` for every fence without a
             // language, logging "get language error:Null check operator used on a
