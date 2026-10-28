@@ -1,0 +1,356 @@
+# .memory/ANNOTATIONS.yaml — 手写判断层
+#
+# 与 MAP.yaml 的分工：
+#   MAP.yaml       = 机器扫描出的事实：文件、顶层符号、模块依赖、测试清单（生成，勿手改）
+#   本文件         = 人的判断：模块职责、改动风险、功能→文件映射、设计文档引用
+#
+# 三条规矩：
+#   1. 一个事实只存一处 —— 代码在哪在 MAP.yaml，为什么这么做在 DESIGN.md，坑在 GOTCHAS.md
+#   2. 不复制 DESIGN.md 的段落，只写章节号引用
+#   3. 引用不用行号，只用 路径 + 符号名
+#
+# 维护时机：
+#   - 新增/删除/移动文件，或模块职责变化 → 改本文件 + 跑生成器刷新 MAP.yaml
+#   - 某功能的文件集合变化 → 改 features[].files（这是本文件最有价值的部分）
+
+meta:
+  updated_at: "2026-10-28"
+  git_sha: "e7712e6"
+  app_version: "0.5.7"
+
+risk_levels:
+  high: "破坏持久化格式、协议兼容或安全边界 —— 动手前必读 GOTCHAS.md 对应条目 + DESIGN.md 章节"
+  mid: "跨模块或跨平台 —— 动手前读 ARCHITECTURE.md 的跨层契约"
+  low: "局部改动，影响面小"
+
+modules:
+  app:
+    role: "进程入口与 MaterialApp 外壳（Provider 注入、主题、边到边安全区处理）"
+    risk: low
+    note: "runApp 之前不能抛异常，否则 App 启动即崩；AppPaths 内部已做降级处理"
+    design: "DESIGN.md §12"
+
+  core:
+    role: "基础设施层：数据目录解析、版本号、ID、JSON 容错、Python 运行时定位与注入、窗口尺寸、pip 包存储、提示词组装"
+    risk: mid
+    note: "Python 注入只前置 PATH 不覆盖；Windows 需补 python3.exe 别名；app_paths 解析失败必须降级而不是抛"
+    design: "docs/PYTHON_RUNTIME_PLAN.md"
+
+  models:
+    role: "纯数据模型（不依赖 Flutter）：会话、消息、配置、provider、模板、项目、token 用量"
+    risk: mid
+    note: "新增字段必须同步 lib/data/xml 的编解码，否则旧会话读不出来"
+    design: "DESIGN.md §5"
+
+  data:
+    role: "仓库层：会话/模板/配置/项目/索引/models.dev 的读写与原子落盘"
+    risk: high
+    note: "index.json 只是缓存，必须能与磁盘自愈；写路径不能每次全量重建目录"
+    design: "DESIGN.md §4"
+
+  data.xml:
+    role: "会话/模板/项目的 XML 编解码（手写 CDATA writer，不用通用 pretty printer）"
+    risk: high
+    note: "通用 formatter 会往 CDATA 注入空白破坏往返；CDATA 里的 ]]> 必须拆分"
+    design: "DESIGN.md §6"
+
+  llm:
+    role: "provider 工厂、思考内容回发适配、会话压缩/命名、提示词助手"
+    risk: high
+    note: "思考回发同时支持 reasoning_content 与 <think> 两种模式；出站前必须修复 tool 调用协议"
+    design: "DESIGN.md §7"
+
+  agent:
+    role: "ReAct 引擎：模型→工具→模型，带工具次数预算与自动续判"
+    risk: high
+    note: "预算用尽后追加一条 user 消息让模型自判是否继续；图片附件在引擎侧二次校验，不信任工具返回值"
+    design: "DESIGN.md §9"
+
+  agent.tools:
+    role: "内置工具实现（文件/搜索/shell/图片）、沙箱路径守卫、WebView 页面提取"
+    risk: high
+    note: "路径守卫是安全边界；shell 命令分级由 shell_policy 决定，改动会影响审批流程"
+    design: "DESIGN.md §10"
+
+  session:
+    role: "会话运行时控制器与纯会话操作（编辑重发、克隆、归档）"
+    risk: mid
+    note: "controller 生命周期长于聊天面板，切换会话不能中断正在跑的 turn"
+    design: "DESIGN.md §11"
+
+  state:
+    role: "全局 AppState（会话列表/模板/项目/配置）与跨会话工具审批队列"
+    risk: mid
+    note: "列表只存元数据，消息按需加载进 _sessionCache，重新列举不会丢掉已打开会话的消息"
+    design: "FEATURES.md §7"
+
+  ui.pages:
+    role: "全部页面：首页聊天、会话/模板向导、provider、设置、工具、搜索、归档、pip 包、XML 编辑器"
+    risk: mid
+    note: "home_page.dart 近 3000 行，改动前先 grep 定位，别整页重写"
+    design: "FEATURES.md §9.1"
+
+  ui.widgets:
+    role: "复用组件：消息气泡、输入区、Markdown/公式渲染、思考块、工具调用块、usage 徽标"
+    risk: low
+    note: "复制粘贴换行修复、KaTeX 归一化都在这一层"
+    design: "FEATURES.md §9.2"
+
+  ui.theme:
+    role: "主题与字体配置（Noto Sans SC / JetBrains Mono 打包在 assets/fonts）"
+    risk: low
+    note: "改字重需要重新打包字体资产，不只是改 pubspec"
+    design: null
+
+  util:
+    role: "外部编辑器/工作目录/URL 启动（桌面端能力）"
+    risk: low
+    note: "移动端不具备该能力，注意平台分支"
+    design: "FEATURES.md §10"
+
+  pkg.llm_api:
+    role: "vendor 的 provider 无关 LLM 客户端（流式、工具调用、思考路由、错误分层）"
+    risk: high
+    note: "独立 package，有自己的 pubspec；改它要同时确认 lib/ 侧适配，尤其思考回发与 tool 协议"
+    design: "FEATURES.md §3.1"
+
+features:
+  - id: session_storage
+    title: "会话 XML 持久化（核心契约）"
+    files:
+      - "lib/data/xml/session_xml.dart"
+      - "lib/data/xml/xml_writer.dart"
+      - "lib/data/xml/cdata.dart"
+      - "lib/data/session_repository.dart"
+      - "lib/models/session.dart"
+      - "lib/models/session_message.dart"
+    design: "DESIGN.md §6"
+    contracts:
+      - "根元素 chat，sandbox 属性记录工作目录，文件名为会话 UUID"
+      - "正文一律 CDATA，任何缩进/格式化不得注入空白"
+      - "新增字段要同时改写与读，且必须能读旧文件"
+
+  - id: catalog_index
+    title: "目录索引 index.json（列表加速）"
+    files:
+      - "lib/data/index_repository.dart"
+      - "lib/models/catalog_index.dart"
+    design: "FEATURES.md §1.5"
+    contracts:
+      - "索引是缓存，磁盘为准，加载时校验并透明重建"
+
+  - id: thinking_echo
+    title: "思考模式显示与回发"
+    files:
+      - "lib/llm/outbound_adapter.dart"
+      - "lib/models/session_params.dart"
+      - "lib/models/session_message.dart"
+      - "lib/ui/widgets/thinking_block.dart"
+      - "packages/llm_api/lib/src/thinking/reasoning_router.dart"
+      - "packages/llm_api/lib/src/thinking/think_tag_parser.dart"
+    design: "DESIGN.md §7"
+    contracts:
+      - "reasoning_content 与 <think> 两种思考内容都要回发给模型"
+      - "回发策略：会话显式模式 > provider 默认 > 由预设推导"
+
+  - id: tool_protocol
+    title: "工具调用协议修复（出站兜底）"
+    files:
+      - "lib/llm/outbound_adapter.dart"
+      - "packages/llm_api/lib/src/core/tool.dart"
+    design: "FEATURES.md §3.2"
+    contracts:
+      - "assistant 的 tool_calls 必须后接恰好一条对应 tool 消息；缺失补错误占位，孤儿 tool 消息丢弃"
+
+  - id: token_usage
+    title: "Token 用量统计与落盘"
+    files:
+      - "lib/models/token_usage.dart"
+      - "packages/llm_api/lib/src/core/usage.dart"
+      - "lib/ui/widgets/usage_badge.dart"
+    design: "DESIGN.md §8"
+    contracts:
+      - "单次用量写进 assistant 消息；累计用量写进 system 消息的 input/output/cache 与 context"
+
+  - id: react_budget
+    title: "ReAct 主循环、工具次数预算与自动续判"
+    files:
+      - "lib/agent/agent_engine.dart"
+      - "lib/agent/agent_events.dart"
+      - "lib/models/app_config.dart"
+    design: "DESIGN.md §9.2"
+    contracts:
+      - "预算用尽后追加一条 user 消息，由模型自判是否继续，continueMode/continuePrompt 可配"
+
+  - id: tool_approval
+    title: "工具审批（全局队列）"
+    files:
+      - "lib/state/approval_center.dart"
+      - "lib/models/agent_mode.dart"
+      - "lib/agent/agent_engine.dart"
+    design: "FEATURES.md §4.3"
+    contracts:
+      - "审批队列跨会话共享；turn 被停止时待审批必须立即中止，否则会钉住 agent"
+
+  - id: sandbox_guard
+    title: "沙箱路径守卫"
+    files:
+      - "lib/agent/tools/path_guard.dart"
+      - "lib/agent/tools/file_ops.dart"
+    design: "DESIGN.md §10.2"
+    contracts:
+      - "resolve 拦 ../ 越界；resolveReal 额外跟随符号链接防软链逃逸"
+
+  - id: shell_tool
+    title: "shell 工具：命令分级与可配置启动器"
+    files:
+      - "lib/models/shell_policy.dart"
+      - "lib/models/shell_exec.dart"
+      - "lib/agent/tools/builtin_tools.dart"
+    design: "FEATURES.md §5.3"
+    contracts:
+      - "命令字符串映射到审批级别；启动器可配可执行文件与 {command} 模板"
+
+  - id: file_tools
+    title: "文件工具：read/write/glob/grep/mv"
+    files:
+      - "lib/agent/tools/file_ops.dart"
+    design: "FEATURES.md §5.1"
+    contracts:
+      - "read_file 支持读图；glob 过滤按 glob 语法转正则"
+
+  - id: image_attach
+    title: "多模态图片附件"
+    files:
+      - "lib/agent/tools/image_attach.dart"
+      - "lib/models/message_attachment.dart"
+      - "lib/agent/agent_engine.dart"
+    design: "DESIGN.md §10.1.1"
+    contracts:
+      - "图片复制进会话 sandbox 的 attachments/ 目录，保证会话自包含"
+      - "base64 内联传输有大小上限，超限直接丢弃而不是截断"
+
+  - id: web_search
+    title: "隐藏 WebView 搜索与页面提取"
+    files:
+      - "lib/agent/tools/webview_tools.dart"
+      - "lib/agent/tools/webview_extractor.dart"
+      - "lib/agent/tools/browser_session.dart"
+      - "lib/agent/tools/search_filter.dart"
+      - "lib/models/search_engine_config.dart"
+    design: "DESIGN.md §19"
+    contracts:
+      - "Linux 构建需 libwebkit2gtk-4.1-dev"
+      - "相关度过滤对中文按 bigram 切词，规则改动会影响搜索质量回归"
+
+  - id: script_registry
+    title: "页面提取脚本注册表"
+    files:
+      - "lib/agent/tools/script_registry.dart"
+      - "lib/models/extract_script.dart"
+      - "assets/scripts/"
+    design: "DESIGN.md §19.3"
+    contracts:
+      - "内置 assets/scripts 与 <root>/scripts/*.json 合并，磁盘优先"
+
+  - id: python_runtime
+    title: "内置 Python 运行时与 pip 包管理"
+    files:
+      - "lib/core/python_runtime.dart"
+      - "lib/core/python_packages.dart"
+      - "lib/ui/pages/pip_packages_page.dart"
+      - "tool/fetch_python.sh"
+    design: "docs/PYTHON_RUNTIME_PLAN.md"
+    contracts:
+      - "解释器优先级：内置 → 系统 PATH → 用户自定义"
+      - "PATH 只前置不覆盖；PYTHONPATH 透传；PIP_INDEX_URL 走镜像链"
+
+  - id: providers
+    title: "Provider 配置、连通性测试与代理"
+    files:
+      - "lib/ui/pages/providers_page.dart"
+      - "lib/llm/llm_factory.dart"
+      - "lib/models/provider_config.dart"
+      - "lib/models/proxy_config.dart"
+    design: "DESIGN.md §13"
+    contracts: []
+
+  - id: models_dev
+    title: "models.dev 模型目录同步"
+    files:
+      - "lib/data/models_dev_repository.dart"
+      - "lib/models/models_dev.dart"
+      - "assets/models_dev/models_dev.json"
+    design: "DESIGN.md §17"
+    contracts:
+      - "内置快照是离线兜底，一键同步覆盖本地缓存"
+
+  - id: session_templates
+    title: "会话模板与创建向导"
+    files:
+      - "lib/ui/pages/session_wizard_page.dart"
+      - "lib/ui/pages/template_wizard_page.dart"
+      - "lib/ui/pages/templates_page.dart"
+      - "lib/data/template_repository.dart"
+      - "lib/data/xml/template_xml.dart"
+      - "lib/models/session_template.dart"
+    design: "DESIGN.md §11.1"
+    contracts: []
+
+  - id: session_ops
+    title: "会话操作：编辑重发、克隆、归档、多会话并行"
+    files:
+      - "lib/session/session_ops.dart"
+      - "lib/session/session_controller.dart"
+      - "lib/ui/pages/archive_page.dart"
+    design: "DESIGN.md §11.4"
+    contracts:
+      - "克隆只复制到第一个 user 元素为止"
+      - "切换会话不 dispose controller，多会话可并行"
+
+  - id: markdown_math
+    title: "Markdown 与 KaTeX 公式渲染"
+    files:
+      - "lib/ui/widgets/markdown_view.dart"
+      - "lib/ui/widgets/math_support.dart"
+      - "lib/ui/widgets/message_bubble.dart"
+    design: "FEATURES.md §9.2"
+    contracts:
+      - "选中复制后粘贴必须保留换行"
+
+  - id: app_config
+    title: "全局配置 config.json"
+    files:
+      - "lib/models/app_config.dart"
+      - "lib/data/config_repository.dart"
+      - "lib/ui/pages/settings_page.dart"
+    design: "FEATURES.md §8"
+    contracts:
+      - "AppConfig 是配置 schema，改字段要考虑老配置文件的默认值"
+
+  - id: projects
+    title: "项目（projects）与工作目录"
+    files:
+      - "lib/models/project.dart"
+      - "lib/data/project_repository.dart"
+      - "lib/data/xml/project_xml.dart"
+    design: "FEATURES.md §1.3"
+    contracts: []
+
+  - id: external_editor
+    title: "外部编辑器 / 工作目录 / URL 打开"
+    files:
+      - "lib/util/editor_launcher.dart"
+      - "lib/ui/pages/xml_editor_page.dart"
+    design: "DESIGN.md §11.3"
+    contracts: []
+
+  - id: desktop_window
+    title: "桌面窗口尺寸与平台差异"
+    files:
+      - "lib/core/window_prefs.dart"
+      - "lib/app.dart"
+      - "android/app/build.gradle.kts"
+    design: "FEATURES.md §10"
+    contracts:
+      - "窗口尺寸在首帧后幂等重放 resize；Android 15 边到边用 padding.bottom 而非 viewPadding.bottom"

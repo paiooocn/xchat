@@ -1,0 +1,534 @@
+# .memory/MAP.yaml — 由 tool/gen_memory_index.dart 生成，请勿手改。
+#
+# 这里只有机器可推导的事实：文件、顶层符号、模块依赖。
+# 人的判断（职责、风险、注意事项、功能→文件映射）在 ANNOTATIONS.yaml。
+#
+# 生成方式: dart run tool/gen_memory_index.dart
+meta:
+  generated_at: "2026-10-28 13:04"
+  git_sha: "7084a34"
+  generator: "tool/gen_memory_index.dart"
+  module_count: 15
+  file_count: 112
+  line_count: 27013
+
+modules:
+  - id: "agent"
+    path: "lib/agent"
+    lines: 549
+    deps: ["core", "data", "llm", "models", "pkg.llm_api"]
+    files:
+      - path: "lib/agent/agent_engine.dart"
+        lines: 447
+        symbols: ["AgentEngine"]
+      - path: "lib/agent/agent_events.dart"
+        lines: 102
+        symbols: ["AgentEvent", "AgentRoundStarted", "AgentReasoningDelta", "AgentContentDelta", "AgentToolCallStarted", "AgentToolCallArgumentsDelta", "AgentToolResult", "AgentAssistantCompleted", "AgentContinueDecision", "AgentUsageUpdated", "AgentError", "AgentFinished", "AgentStopped"]
+  - id: "agent.tools"
+    path: "lib/agent/tools"
+    lines: 3025
+    deps: ["core", "models", "pkg.llm_api"]
+    files:
+      - path: "lib/agent/tools/browser_session.dart"
+        lines: 264
+        symbols: ["BrowserPage", "BrowserSession"]
+      - path: "lib/agent/tools/builtin_tools.dart"
+        lines: 862
+        symbols: ["BuiltinTools", "WebSearchOutcome"]
+      - path: "lib/agent/tools/file_ops.dart"
+        lines: 266
+        symbols: ["globToRegExp"]
+      - path: "lib/agent/tools/image_attach.dart"
+        lines: 125
+        symbols: ["toolImagePath", "ImageAttachResult", "ToolImageAttachment"]
+      - path: "lib/agent/tools/path_guard.dart"
+        lines: 53
+        symbols: ["SandboxViolation", "PathGuard"]
+      - path: "lib/agent/tools/script_registry.dart"
+        lines: 146
+        symbols: ["ScriptRegistry"]
+      - path: "lib/agent/tools/search_filter.dart"
+        lines: 202
+        doc: "Result filtering shared by the web-search engines."
+        symbols: ["SearchFilter"]
+      - path: "lib/agent/tools/webview_extractor.dart"
+        lines: 807
+        symbols: ["WebViewBlockedException", "PagedExtraction", "WebViewExtractor"]
+      - path: "lib/agent/tools/webview_tools.dart"
+        lines: 300
+        symbols: ["WebViewTools", "htmlProbeScript", "textProbeScript"]
+  - id: "app"
+    path: "lib"
+    lines: 130
+    deps: []
+    files:
+      - path: "lib/app.dart"
+        lines: 51
+        symbols: ["XChatApp"]
+      - path: "lib/main.dart"
+        lines: 79
+  - id: "core"
+    path: "lib/core"
+    lines: 1066
+    deps: ["models"]
+    files:
+      - path: "lib/core/app_paths.dart"
+        lines: 359
+        symbols: ["AppPaths"]
+      - path: "lib/core/app_version.dart"
+        lines: 14
+        doc: "应用版本号的唯一来源（single source of truth）。"
+      - path: "lib/core/ids.dart"
+        lines: 15
+        symbols: ["newShortId"]
+      - path: "lib/core/json_utils.dart"
+        lines: 62
+        doc: "Small, defensive helpers for reading untyped JSON payloads."
+        symbols: ["asMap", "asList", "asString", "asInt", "asDouble", "asBool", "pruneNulls"]
+      - path: "lib/core/prompt_utils.dart"
+        lines: 24
+        doc: "Prompt assembly helpers shared by the session-creation flow."
+        symbols: ["injectWorkspaceRoot"]
+      - path: "lib/core/python_packages.dart"
+        lines: 262
+        symbols: ["PythonPackage", "PythonPackageStore"]
+      - path: "lib/core/python_runtime.dart"
+        lines: 296
+        symbols: ["PythonOrigin", "pipIndexName", "PythonRuntime", "PythonRuntimeLocator"]
+      - path: "lib/core/window_prefs.dart"
+        lines: 34
+        symbols: ["applyWindowSize"]
+  - id: "data"
+    path: "lib/data"
+    lines: 532
+    deps: ["core", "data.xml", "models"]
+    files:
+      - path: "lib/data/config_repository.dart"
+        lines: 38
+        symbols: ["ConfigRepository"]
+      - path: "lib/data/index_repository.dart"
+        lines: 196
+        symbols: ["IndexRepository"]
+      - path: "lib/data/models_dev_repository.dart"
+        lines: 96
+        symbols: ["loadBundledModelsDev", "ModelsDevRepository"]
+      - path: "lib/data/project_repository.dart"
+        lines: 57
+        symbols: ["ProjectRepository"]
+      - path: "lib/data/session_repository.dart"
+        lines: 93
+        symbols: ["SessionRepository"]
+      - path: "lib/data/template_repository.dart"
+        lines: 52
+        symbols: ["TemplateRepository"]
+  - id: "data.xml"
+    path: "lib/data/xml"
+    lines: 588
+    deps: ["core", "models"]
+    files:
+      - path: "lib/data/xml/cdata.dart"
+        lines: 28
+        symbols: ["readText", "readTextTrim"]
+      - path: "lib/data/xml/project_xml.dart"
+        lines: 86
+        symbols: ["ProjectXml"]
+      - path: "lib/data/xml/session_xml.dart"
+        lines: 316
+        symbols: ["SessionXml"]
+      - path: "lib/data/xml/template_xml.dart"
+        lines: 88
+        symbols: ["TemplateXml"]
+      - path: "lib/data/xml/xml_writer.dart"
+        lines: 70
+        doc: "Minimal, predictable XML writer: every element's text is emitted as CDATA"
+        symbols: ["XmlOut"]
+  - id: "llm"
+    path: "lib/llm"
+    lines: 529
+    deps: ["models", "pkg.llm_api"]
+    files:
+      - path: "lib/llm/llm_factory.dart"
+        lines: 58
+        symbols: ["createProvider", "fetchModels", "testProvider"]
+      - path: "lib/llm/outbound_adapter.dart"
+        lines: 179
+        symbols: ["resolveEchoMode"]
+      - path: "lib/llm/prompt_assistant.dart"
+        lines: 122
+      - path: "lib/llm/session_compressor.dart"
+        lines: 93
+        symbols: ["buildTranscript"]
+      - path: "lib/llm/session_namer.dart"
+        lines: 77
+  - id: "models"
+    path: "lib/models"
+    lines: 3437
+    deps: ["core"]
+    files:
+      - path: "lib/models/agent_mode.dart"
+        lines: 49
+        doc: "Session execution mode controlling when tool calls require approval."
+        symbols: ["AgentMode", "requiresApproval"]
+      - path: "lib/models/app_config.dart"
+        lines: 528
+        symbols: ["ContinueMode", "AppConfig"]
+      - path: "lib/models/catalog_index.dart"
+        lines: 274
+        symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
+      - path: "lib/models/extract_script.dart"
+        lines: 266
+        symbols: ["UrlMatcher", "ExtractScript"]
+      - path: "lib/models/message_attachment.dart"
+        lines: 121
+        symbols: ["MessageAttachment"]
+      - path: "lib/models/models_dev.dart"
+        lines: 518
+        symbols: ["ReasoningOption", "ModelsDevModel", "ModelsDevProvider", "ModelsDevSource", "ModelsDevCatalog", "modelsDevPresetFor", "compareModelsDevNewestFirst", "ModelsDevApplyResult", "ModelsDevSyncResult"]
+      - path: "lib/models/project.dart"
+        lines: 64
+        symbols: ["Project"]
+      - path: "lib/models/provider_config.dart"
+        lines: 240
+        symbols: ["ModelSpec", "ProviderConfig", "reasoningEffortOptionsFor"]
+      - path: "lib/models/proxy_config.dart"
+        lines: 121
+        symbols: ["ProxyConfig", "proxyHostPort", "buildProxiedHttpClient"]
+      - path: "lib/models/search_engine_config.dart"
+        lines: 187
+        symbols: ["SearchEngineConfig"]
+      - path: "lib/models/session.dart"
+        lines: 295
+        symbols: ["Session"]
+      - path: "lib/models/session_message.dart"
+        lines: 174
+        symbols: ["ThinkingReplyMode", "MessageRole", "ToolCallData", "SessionMessage"]
+      - path: "lib/models/session_params.dart"
+        lines: 129
+        symbols: ["ThinkingSwitch", "SessionParams"]
+      - path: "lib/models/session_template.dart"
+        lines: 87
+        symbols: ["SessionTemplate"]
+      - path: "lib/models/shell_exec.dart"
+        lines: 239
+        doc: "Configurable shell launcher for the agent's `shell` tool."
+        symbols: ["ShellFamily", "shellFamilyFor", "commandSyntaxNotes", "decodeShellOutput", "ShellExecPreset", "ShellExecConfig", "ResolvedShellExec"]
+      - path: "lib/models/shell_policy.dart"
+        lines: 66
+        doc: "Shell command policy: maps a command string to an approval level, or marks"
+        symbols: ["ShellMatch", "ShellClassification"]
+      - path: "lib/models/token_usage.dart"
+        lines: 79
+        symbols: ["TokenUsage"]
+  - id: "pkg.llm_api"
+    path: "packages/llm_api/lib"
+    lines: 5464
+    deps: []
+    files:
+      - path: "packages/llm_api/lib/llm_api.dart"
+        lines: 68
+        doc: "Provider-agnostic Dart client for LLM chat APIs."
+      - path: "packages/llm_api/lib/llm_api_testing.dart"
+        lines: 10
+        doc: "Test helpers: scriptable transports that let you exercise the whole stack"
+      - path: "packages/llm_api/lib/src/agent/chat_session.dart"
+        lines: 306
+        doc: "Multi-turn conversation with an automatic tool-calling loop."
+        symbols: ["ChatSession"]
+      - path: "packages/llm_api/lib/src/agent/tool_registry.dart"
+        lines: 203
+        doc: "Tool abstraction and dispatch."
+        symbols: ["LlmTool", "FunctionTool", "ToolRegistry"]
+      - path: "packages/llm_api/lib/src/core/aggregator.dart"
+        lines: 178
+        doc: "Rebuilds a complete [ChatResponse] from a [ChatEvent] stream."
+        symbols: ["ChatStreamAggregator", "ChatResponseSplitter"]
+      - path: "packages/llm_api/lib/src/core/chat_events.dart"
+        lines: 159
+        doc: "Streaming event union emitted by every provider."
+        symbols: ["FinishReason", "ChatEvent", "ReasoningDelta", "ReasoningSignatureDelta", "ContentDelta", "ToolCallStarted", "ToolCallArgumentsDelta", "UsageEvent", "ToolResultEvent", "AssistantMessageCompleted", "Finished"]
+      - path: "packages/llm_api/lib/src/core/chat_message.dart"
+        lines: 208
+        doc: "The single message type used everywhere in this package."
+        symbols: ["ChatRole", "ChatMessage"]
+      - path: "packages/llm_api/lib/src/core/chat_request.dart"
+        lines: 175
+        doc: "The request object handed to providers."
+        symbols: ["ReasoningEffort", "ReasoningConfig", "ChatRequest"]
+      - path: "packages/llm_api/lib/src/core/chat_response.dart"
+        lines: 67
+        doc: "The aggregated result of a streamed (or non-streamed) completion."
+        symbols: ["ChatResponse"]
+      - path: "packages/llm_api/lib/src/core/content_part.dart"
+        lines: 77
+        doc: "Multimodal message parts."
+        symbols: ["ContentPart", "TextPart", "ImagePart", "partsFromJson"]
+      - path: "packages/llm_api/lib/src/core/errors.dart"
+        lines: 261
+        doc: "Error hierarchy for `llm_api`."
+        symbols: ["LlmApiException", "AuthenticationException", "ModelNotFoundException", "RateLimitException", "ContextLengthException", "TransportException", "ProtocolException", "RequestCancelledException"]
+      - path: "packages/llm_api/lib/src/core/json_utils.dart"
+        lines: 85
+        doc: "Small, defensive helpers for reading untyped JSON payloads."
+        symbols: ["asMap", "asList", "asString", "asInt", "asDouble", "asBool", "deepMerge", "pruneNulls"]
+      - path: "packages/llm_api/lib/src/core/schema.dart"
+        lines: 88
+        doc: "Tiny JSON-Schema builders, so tools read like code instead of maps."
+      - path: "packages/llm_api/lib/src/core/tool.dart"
+        lines: 291
+        doc: "Tool (function calling) definitions, invocations and results."
+        symbols: ["ToolDefinition", "ToolCall", "ToolCallFormatException", "ToolResult", "ToolChoice", "AutoToolChoice", "NoToolChoice", "RequiredToolChoice", "NamedToolChoice"]
+      - path: "packages/llm_api/lib/src/core/uri_utils.dart"
+        lines: 23
+        doc: "URI helpers."
+        symbols: ["joinUri"]
+      - path: "packages/llm_api/lib/src/core/usage.dart"
+        lines: 104
+        doc: "Token accounting, normalised across providers."
+        symbols: ["TokenUsage"]
+      - path: "packages/llm_api/lib/src/providers/anthropic.dart"
+        lines: 462
+        doc: "Provider for Anthropic's `/v1/messages` API."
+        symbols: ["AnthropicConfig", "AnthropicProvider", "AnthropicContext"]
+      - path: "packages/llm_api/lib/src/providers/gemini.dart"
+        lines: 472
+        doc: "Provider for Google's Gemini `generateContent` API."
+        symbols: ["GeminiConfig", "GeminiProvider"]
+      - path: "packages/llm_api/lib/src/providers/openai_compatible.dart"
+        lines: 516
+        doc: "Provider for the OpenAI `/chat/completions` wire format."
+        symbols: ["OpenAiReasoningRequestStyle", "OpenAiCompatibleConfig", "OpenAiCompatibleProvider", "OpenAiReasoningContext"]
+      - path: "packages/llm_api/lib/src/providers/presets.dart"
+        lines: 313
+        doc: "Ready-made providers for popular endpoints."
+        symbols: ["LlmPresets"]
+      - path: "packages/llm_api/lib/src/providers/provider.dart"
+        lines: 381
+        doc: "The provider contract plus the shared HTTP/retry plumbing."
+        symbols: ["ProviderCapabilities", "ModelInfo", "LlmProvider", "HttpLlmProvider", "ReasoningContext"]
+      - path: "packages/llm_api/lib/src/stream/sse.dart"
+        lines: 115
+        doc: "Server-Sent Events decoder."
+        symbols: ["SseEvent"]
+      - path: "packages/llm_api/lib/src/testing/mock_transport.dart"
+        lines: 167
+        doc: "Test doubles for the transport layer."
+        symbols: ["RawSse", "MockHttpTransport", "ScriptedTransport"]
+      - path: "packages/llm_api/lib/src/thinking/reasoning_router.dart"
+        lines: 94
+        doc: "Bridges provider-specific reasoning channels onto [ChatEvent]s."
+        symbols: ["ReasoningSource", "ReasoningRouter"]
+      - path: "packages/llm_api/lib/src/thinking/think_tag_parser.dart"
+        lines: 301
+        doc: "Streaming splitter for models that inline their thinking in the text"
+        symbols: ["ThinkSegmentType", "ThinkSegment", "ThinkParseResult", "ThinkTagParser"]
+      - path: "packages/llm_api/lib/src/transport/cancel_token.dart"
+        lines: 51
+        doc: "Cooperative cancellation shared by every provider call."
+        symbols: ["CancelToken"]
+      - path: "packages/llm_api/lib/src/transport/io_transport.dart"
+        lines: 155
+        doc: "`dart:io` implementation of [HttpTransport] with connection pooling,"
+        symbols: ["IoHttpTransport"]
+      - path: "packages/llm_api/lib/src/transport/transport.dart"
+        lines: 134
+        doc: "HTTP abstraction so the library is not tied to `dart:io`."
+        symbols: ["TransportRequest", "TransportResponse", "HttpTransport"]
+  - id: "session"
+    path: "lib/session"
+    lines: 352
+    deps: ["agent", "data", "models"]
+    files:
+      - path: "lib/session/session_controller.dart"
+        lines: 287
+        symbols: ["SessionController"]
+      - path: "lib/session/session_ops.dart"
+        lines: 65
+        symbols: ["SessionOps"]
+  - id: "state"
+    path: "lib/state"
+    lines: 904
+    deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
+    files:
+      - path: "lib/state/app_state.dart"
+        lines: 801
+        symbols: ["AppState"]
+      - path: "lib/state/approval_center.dart"
+        lines: 103
+        symbols: ["ApprovalRequest", "ApprovalCenter"]
+  - id: "ui.pages"
+    path: "lib/ui/pages"
+    lines: 8044
+    deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
+    files:
+      - path: "lib/ui/pages/archive_page.dart"
+        lines: 154
+        symbols: ["ArchivePage"]
+      - path: "lib/ui/pages/compress_prompts_page.dart"
+        lines: 179
+        symbols: ["showCompressDialog", "CompressPromptsPage"]
+      - path: "lib/ui/pages/font_test_page.dart"
+        lines: 218
+        symbols: ["showFontTestDialog", "FontTestPanel"]
+      - path: "lib/ui/pages/home_page.dart"
+        lines: 2940
+        symbols: ["HomePage", "SessionChatPanel"]
+      - path: "lib/ui/pages/pip_packages_page.dart"
+        lines: 389
+        symbols: ["PipPackagesPage"]
+      - path: "lib/ui/pages/providers_page.dart"
+        lines: 926
+        symbols: ["ProvidersPage"]
+      - path: "lib/ui/pages/search_page.dart"
+        lines: 394
+        symbols: ["SearchPage"]
+      - path: "lib/ui/pages/session_wizard_page.dart"
+        lines: 389
+        symbols: ["SessionWizardPage"]
+      - path: "lib/ui/pages/settings_page.dart"
+        lines: 597
+        symbols: ["SettingsPage", "PathsSection"]
+      - path: "lib/ui/pages/template_wizard_page.dart"
+        lines: 565
+        symbols: ["TemplateWizardPage"]
+      - path: "lib/ui/pages/templates_page.dart"
+        lines: 382
+        symbols: ["TemplatesPage"]
+      - path: "lib/ui/pages/tools_page.dart"
+        lines: 804
+        symbols: ["ToolsPage"]
+      - path: "lib/ui/pages/xml_editor_page.dart"
+        lines: 107
+        symbols: ["XmlEditorPage"]
+  - id: "ui.theme"
+    path: "lib/ui/theme"
+    lines: 223
+    deps: []
+    files:
+      - path: "lib/ui/theme/app_fonts.dart"
+        lines: 18
+        doc: "Central font configuration."
+        symbols: ["AppFonts"]
+      - path: "lib/ui/theme/app_theme.dart"
+        lines: 205
+        symbols: ["AppTheme"]
+  - id: "ui.widgets"
+    path: "lib/ui/widgets"
+    lines: 2063
+    deps: ["models", "ui.theme"]
+    files:
+      - path: "lib/ui/widgets/brand_mark.dart"
+        lines: 100
+        symbols: ["BrandMark"]
+      - path: "lib/ui/widgets/confirm_dialog.dart"
+        lines: 29
+        symbols: ["confirmDelete"]
+      - path: "lib/ui/widgets/input_area.dart"
+        lines: 582
+        symbols: ["InputArea", "ToolbarPill"]
+      - path: "lib/ui/widgets/markdown_view.dart"
+        lines: 230
+        symbols: ["markdownView"]
+      - path: "lib/ui/widgets/math_support.dart"
+        lines: 321
+        doc: "Math (KaTeX/TeX) support for the markdown renderer."
+        symbols: ["normalizeTex"]
+      - path: "lib/ui/widgets/message_bubble.dart"
+        lines: 230
+        symbols: ["MessageBubble"]
+      - path: "lib/ui/widgets/session_info_dialog.dart"
+        lines: 264
+        symbols: ["SessionInfoDialog"]
+      - path: "lib/ui/widgets/thinking_block.dart"
+        lines: 74
+        symbols: ["ThinkingBlock"]
+      - path: "lib/ui/widgets/tool_call_block.dart"
+        lines: 165
+        symbols: ["ToolCallBlock", "ToolResultBlock"]
+      - path: "lib/ui/widgets/usage_badge.dart"
+        lines: 68
+        symbols: ["formatTokensCompact", "formatTokensFull", "UsageBadge"]
+  - id: "util"
+    path: "lib/util"
+    lines: 107
+    deps: []
+    files:
+      - path: "lib/util/editor_launcher.dart"
+        lines: 107
+        symbols: ["EditorLaunchResult", "openInEditor", "openDirectory", "openUrl"]
+
+tests:
+  - path: "test/agent_image_attach_test.dart"
+    lines: 220
+    cases: 11
+  - path: "test/app_version_test.dart"
+    lines: 29
+    cases: 1
+  - path: "test/brand_icon_test.dart"
+    lines: 46
+    cases: 1
+  - path: "test/compress_test.dart"
+    lines: 113
+    cases: 7
+  - path: "test/extract_script_test.dart"
+    lines: 221
+    cases: 21
+  - path: "test/file_ops_test.dart"
+    lines: 157
+    cases: 15
+  - path: "test/home_flow_test.dart"
+    lines: 112
+    cases: 2
+  - path: "test/home_template_dialog_test.dart"
+    lines: 97
+    cases: 2
+  - path: "test/index_repository_test.dart"
+    lines: 68
+    cases: 3
+  - path: "test/markdown_copy_test.dart"
+    lines: 148
+    cases: 2
+  - path: "test/math_render_test.dart"
+    lines: 143
+    cases: 6
+  - path: "test/message_attachment_test.dart"
+    lines: 94
+    cases: 5
+  - path: "test/model_selection_test.dart"
+    lines: 71
+    cases: 2
+  - path: "test/models_dev_test.dart"
+    lines: 210
+    cases: 10
+  - path: "test/prompt_utils_test.dart"
+    lines: 56
+    cases: 7
+  - path: "test/python_runtime_test.dart"
+    lines: 203
+    cases: 15
+  - path: "test/sandbox_resolution_test.dart"
+    lines: 185
+    cases: 14
+  - path: "test/search_engine_config_test.dart"
+    lines: 81
+    cases: 6
+  - path: "test/search_filter_test.dart"
+    lines: 219
+    cases: 28
+  - path: "test/session_ops_test.dart"
+    lines: 93
+    cases: 7
+  - path: "test/session_thinking_test.dart"
+    lines: 78
+    cases: 3
+  - path: "test/session_xml_test.dart"
+    lines: 95
+    cases: 2
+  - path: "test/shell_exec_test.dart"
+    lines: 202
+    cases: 22
+  - path: "test/shell_policy_test.dart"
+    lines: 53
+    cases: 6
+  - path: "test/template_default_test.dart"
+    lines: 138
+    cases: 5

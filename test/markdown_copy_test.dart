@@ -74,4 +74,74 @@ void main() {
     expect(copied, contains('item one\nitem two'));
     expect(copied, contains('var a = 1;\nvar b = 2;'));
   });
+
+  testWidgets('text after a code fence stays selectable', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 400,
+              child: markdownView(
+                'before the fence\n\n'
+                '```dart\n'
+                'var a = 1;\n'
+                'var b = 2;\n'
+                '```\n\n'
+                'after the fence',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Drag-select everything the way a user would.
+    final region = find.byType(SelectionArea);
+    final gesture = await tester.startGesture(
+      tester.getTopLeft(region) + const Offset(4, 2),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    await gesture.moveTo(tester.getTopLeft(region) + const Offset(60, 5));
+    await tester.pump();
+    await gesture.moveTo(
+      tester.getBottomRight(region) + const Offset(60, 40),
+      timeStamp: const Duration(milliseconds: 200),
+    );
+    await tester.pump();
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final area = tester.state<SelectionAreaState>(region);
+    area.selectableRegion.contextMenuButtonItems
+        .firstWhere((item) => item.type == ContextMenuButtonType.copy)
+        .onPressed!();
+    await tester.pump();
+
+    // The fence is a widget span, so `SelectionArea` cannot link a selection
+    // across it by itself. What must not happen is the paragraph *after* the
+    // fence dropping out of the selection entirely.
+    expect(copied, isNotNull);
+    expect(copied, contains('before the fence'));
+    expect(copied, contains('after the fence'));
+    // The fence's own lines keep their line breaks.
+    expect(copied, contains('var a = 1;\nvar b = 2;'));
+  });
 }

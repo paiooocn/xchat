@@ -163,7 +163,15 @@ class _SafeCodeBlockNode extends ElementNode {
         // The fence is one text run joined by real newlines rather than one
         // widget per line: a copy/selection carries the line breaks along,
         // which separate widgets would lose.
-        child: ProxyRichText(
+        //
+        // It deliberately does NOT go through `visitor.richTextBuilder`: that
+        // builder appends a hidden zero-height "\n" paragraph, and inside this
+        // widget span it would sit in the placeholder subtree, where its
+        // degenerate bounding box breaks the order `SelectionArea` uses to
+        // link selectables — every paragraph after the fence would stop being
+        // selectable. The newline that separates the fence from the next block
+        // already comes from the break this block gets at the top level.
+        child: Text.rich(
           TextSpan(
             children: [
               for (var i = 0; i < lines.length; i++) ...[
@@ -178,7 +186,6 @@ class _SafeCodeBlockNode extends ElementNode {
               ],
             ],
           ),
-          richTextBuilder: visitor.richTextBuilder,
         ),
       ),
     );
