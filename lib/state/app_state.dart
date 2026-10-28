@@ -7,6 +7,7 @@ import '../core/ids.dart';
 import '../core/prompt_utils.dart';
 import '../data/config_repository.dart';
 import '../data/index_repository.dart';
+import '../data/memory_repository.dart';
 import '../data/models_dev_repository.dart';
 import '../data/project_repository.dart';
 import '../data/session_repository.dart';
@@ -15,6 +16,7 @@ import '../llm/session_compressor.dart';
 import '../llm/session_namer.dart';
 import '../models/agent_mode.dart';
 import '../models/app_config.dart';
+import '../models/memory_status.dart';
 import '../models/models_dev.dart';
 import '../models/project.dart';
 import '../models/provider_config.dart';
@@ -39,7 +41,9 @@ class AppState extends ChangeNotifier {
     required this.templateRepository,
     required this.projectRepository,
     IndexRepository? indexRepository,
-  }) : indexRepository = indexRepository ?? IndexRepository(paths);
+    MemoryRepository? memoryRepository,
+  }) : indexRepository = indexRepository ?? IndexRepository(paths),
+       memoryRepository = memoryRepository ?? const MemoryRepository();
 
   final AppPaths paths;
   final ConfigRepository configRepository;
@@ -47,6 +51,9 @@ class AppState extends ChangeNotifier {
   final TemplateRepository templateRepository;
   final ProjectRepository projectRepository;
   final IndexRepository indexRepository;
+
+  /// Reads/initialises the `.memory/` index inside a project sandbox.
+  final MemoryRepository memoryRepository;
 
   AppConfig config = AppConfig();
   List<Session> sessions = <Session>[];
@@ -159,6 +166,8 @@ class AppState extends ChangeNotifier {
     await refreshTemplates();
     await refreshProjects();
     await refreshArchivedProjects();
+    // A project whose `.memory/` was removed by hand gets it back on start.
+    await healProjectMemory();
   }
 
   Future<void> saveConfig() async {
@@ -293,6 +302,7 @@ class AppState extends ChangeNotifier {
     List<SessionMessage>? extraMessages,
     AgentMode? mode,
     bool? webSearchEnabled,
+    bool? useMemoryProtocol,
   }) async {
     final session = createSessionDraft(
       title: title,
@@ -309,6 +319,7 @@ class AppState extends ChangeNotifier {
       extraMessages: extraMessages,
       mode: mode,
       webSearchEnabled: webSearchEnabled,
+      useMemoryProtocol: useMemoryProtocol,
     );
     await persistSession(session);
     return session;
@@ -335,6 +346,7 @@ class AppState extends ChangeNotifier {
     List<SessionMessage>? extraMessages,
     AgentMode? mode,
     bool? webSearchEnabled,
+    bool? useMemoryProtocol,
   }) {
     final resolvedProvider = providerId ?? config.currentProviderId;
     final provider = providerById(resolvedProvider);
@@ -344,6 +356,14 @@ class AppState extends ChangeNotifier {
     final resolvedSandbox = (sandbox != null && sandbox.trim().isNotEmpty)
         ? paths.resolveSandbox(sandbox)
         : (project != null ? project.sandbox : paths.sessionSandboxDir(id));
+    // The memory protocol is injected here — the single place where a session
+    // prompt is assembled — so every creation path (wizard page, welcome page,
+    // template draft) gets it, no matter which UI produced the session.
+    final withMemory = useMemoryProtocol ?? _memoryEnabledFor(project);
+    final basePrompt = injectWorkspaceRoot(systemPrompt ?? '', resolvedSandbox);
+    final prompt = withMemory
+        ? injectMemoryProtocol(basePrompt, projectName: project?.name ?? '')
+        : basePrompt;
     final session = Session(
       id: id,
       sandbox: resolvedSandbox,
@@ -364,9 +384,11 @@ class AppState extends ChangeNotifier {
         // The workspace-root line (`工作空间根目录: <绝对路径>`) is written to the
         // top of the system prompt automatically; users never type it (nor the
         // old `工作空间根目录: {sandbox}` placeholder) themselves.
+        // The memory protocol (project `.memory/` index) is appended as a
+        // separate section when the project carries one.
         SessionMessage(
           role: MessageRole.system,
-          content: injectWorkspaceRoot(systemPrompt ?? '', resolvedSandbox),
+          content: prompt,
         ),
         ...?extraMessages,
       ],
@@ -393,6 +415,75 @@ class AppState extends ChangeNotifier {
 
   String _defaultModel(ProviderConfig provider) =>
       provider.models.isNotEmpty ? provider.models.first : '';
+
+  /// Whether a session in [project] should get the memory protocol.
+  ///
+  /// An explicit flag always wins (the user turned the memory index off → it
+  /// stays off). A project that predates the flag (`memoryEnabled == null`)
+  /// counts as enabled only when its `.memory/` directory already exists —
+  /// that is how old projects keep their behaviour until the user opts in.
+  bool _memoryEnabledFor(Project? project) {
+    if (project == null) return false;
+    final flag = project.memoryEnabled;
+    if (flag != null) return flag;
+    return memoryRepository.exists(project.sandbox);
+  }
+
+  /// Whether [project] currently counts as "memory enabled" — the value the
+  /// project panel and the session wizard show.
+  bool isMemoryEnabled(Project project) => _memoryEnabledFor(project);
+
+  /// Projects (active + archived) that have no `.memory/` index on disk.
+  List<Project> projectsWithoutMemory() => <Project>[
+        for (final project in <Project>[...projects, ...archivedProjects])
+          if (!memoryRepository.exists(project.sandbox)) project,
+      ];
+
+  /// Creates the `.memory/` index of every project that should have one but
+  /// lost it (deleted by hand, restored from an old backup, ...).
+  ///
+  /// Returns the number of projects that were re-created.
+  Future<int> healProjectMemory() async {
+    var healed = 0;
+    for (final project in <Project>[...projects, ...archivedProjects]) {
+      if (!_memoryEnabledFor(project)) continue;
+      if (memoryRepository.exists(project.sandbox)) continue;
+      if (await memoryRepository.ensureSkeleton(project.sandbox,
+          projectName: project.name)) {
+        healed++;
+      }
+    }
+    return healed;
+  }
+
+  /// Creates the `.memory/` index for every project that lacks one and turns
+  /// the memory index on explicitly.
+  ///
+  /// Existing files are never overwritten — only missing ones are written.
+  /// Returns the number of projects that were touched.
+  Future<int> backfillProjectMemory({bool includeArchived = true}) async {
+    final all = <Project>[
+      ...projects,
+      if (includeArchived) ...archivedProjects,
+    ];
+    var touched = 0;
+    for (final project in all) {
+      final ready = memoryRepository.exists(project.sandbox) &&
+          project.memoryEnabled == true;
+      if (ready) continue;
+      final ok = await memoryRepository.ensureSkeleton(project.sandbox,
+          projectName: project.name);
+      if (!ok) continue;
+      project.memoryEnabled = true;
+      await projectRepository.write(project);
+      touched++;
+    }
+    if (touched > 0) {
+      await refreshProjects();
+      await refreshArchivedProjects();
+    }
+    return touched;
+  }
 
   /// Creates a session from a template without touching the disk — see
   /// [createSessionDraft].
@@ -651,6 +742,7 @@ class AppState extends ChangeNotifier {
     String? providerId,
     String? model,
     String systemPrompt = '',
+    bool memoryEnabled = true,
   }) async {
     final id = newId();
     final now = DateTime.now();
@@ -666,11 +758,28 @@ class AppState extends ChangeNotifier {
       provider: providerId ?? '',
       model: model ?? '',
       systemPrompt: systemPrompt.trim(),
+      memoryEnabled: memoryEnabled,
     );
     await projectRepository.write(project);
+    // A project with a memory index starts with the skeleton in place; the
+    // agent fills it in from there.
+    if (memoryEnabled) {
+      await memoryRepository.ensureSkeleton(project.sandbox, projectName: project.name);
+    }
     await refreshProjects();
     return project;
   }
+
+  /// Creates (or fills in) the `.memory/` index of [project].
+  ///
+  /// Non-destructive: existing files are kept, only missing ones are written.
+  /// Returns false when the sandbox is not writable.
+  Future<bool> ensureProjectMemory(Project project) =>
+      memoryRepository.ensureSkeleton(project.sandbox, projectName: project.name);
+
+  /// The current state of a project's `.memory/` index.
+  Future<MemoryStatus> projectMemoryStatus(Project project) =>
+      memoryRepository.status(project.sandbox);
 
   /// Returns the project bound to [path], creating it on first use.
   ///

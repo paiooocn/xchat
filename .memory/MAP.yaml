@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-10-28 14:13"
-  git_sha: "74d2833"
+  generated_at: "2026-10-28 15:45"
+  git_sha: "9ff395b"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 112
-  line_count: 27307
+  file_count: 116
+  line_count: 28169
 
 modules:
   - id: "agent"
@@ -69,7 +69,7 @@ modules:
         lines: 79
   - id: "core"
     path: "lib/core"
-    lines: 1084
+    lines: 1410
     deps: ["models"]
     files:
       - path: "lib/core/app_paths.dart"
@@ -85,10 +85,14 @@ modules:
         lines: 62
         doc: "Small, defensive helpers for reading untyped JSON payloads."
         symbols: ["asMap", "asList", "asString", "asInt", "asDouble", "asBool", "pruneNulls"]
+      - path: "lib/core/memory_protocol.dart"
+        lines: 290
+        doc: "The project memory index (`.memory/`) — protocol text and skeleton."
+        symbols: ["memoryProtocolBlock", "memoryPointerLine", "memorySkeletonTemplates"]
       - path: "lib/core/prompt_utils.dart"
-        lines: 42
+        lines: 78
         doc: "Prompt assembly helpers shared by the session-creation flow."
-        symbols: ["injectWorkspaceRoot", "composePromptSections"]
+        symbols: ["injectWorkspaceRoot", "composePromptSections", "injectMemoryProtocol"]
       - path: "lib/core/python_packages.dart"
         lines: 262
         symbols: ["PythonPackage", "PythonPackageStore"]
@@ -100,7 +104,7 @@ modules:
         symbols: ["applyWindowSize"]
   - id: "data"
     path: "lib/data"
-    lines: 532
+    lines: 606
     deps: ["core", "data.xml", "models"]
     files:
       - path: "lib/data/config_repository.dart"
@@ -109,6 +113,9 @@ modules:
       - path: "lib/data/index_repository.dart"
         lines: 196
         symbols: ["IndexRepository"]
+      - path: "lib/data/memory_repository.dart"
+        lines: 74
+        symbols: ["MemoryRepository"]
       - path: "lib/data/models_dev_repository.dart"
         lines: 96
         symbols: ["loadBundledModelsDev", "ModelsDevRepository"]
@@ -123,14 +130,14 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 591
+    lines: 599
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
         lines: 28
         symbols: ["readText", "readTextTrim"]
       - path: "lib/data/xml/project_xml.dart"
-        lines: 89
+        lines: 97
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
         lines: 316
@@ -162,7 +169,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 3468
+    lines: 3541
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -173,11 +180,14 @@ modules:
         lines: 528
         symbols: ["ContinueMode", "AppConfig"]
       - path: "lib/models/catalog_index.dart"
-        lines: 286
+        lines: 302
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
       - path: "lib/models/extract_script.dart"
         lines: 266
         symbols: ["UrlMatcher", "ExtractScript"]
+      - path: "lib/models/memory_status.dart"
+        lines: 37
+        symbols: ["MemoryStatus"]
       - path: "lib/models/message_attachment.dart"
         lines: 121
         symbols: ["MessageAttachment"]
@@ -185,7 +195,7 @@ modules:
         lines: 518
         symbols: ["ReasoningOption", "ModelsDevModel", "ModelsDevProvider", "ModelsDevSource", "ModelsDevCatalog", "modelsDevPresetFor", "compareModelsDevNewestFirst", "ModelsDevApplyResult", "ModelsDevSyncResult"]
       - path: "lib/models/project.dart"
-        lines: 72
+        lines: 92
         symbols: ["Project"]
       - path: "lib/models/provider_config.dart"
         lines: 251
@@ -346,18 +356,18 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 906
+    lines: 1015
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 803
+        lines: 912
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8265
+    lines: 8322
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -370,7 +380,7 @@ modules:
         lines: 218
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 2961
+        lines: 2912
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
@@ -382,10 +392,10 @@ modules:
         lines: 394
         symbols: ["SearchPage"]
       - path: "lib/ui/pages/session_wizard_page.dart"
-        lines: 550
+        lines: 627
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
-        lines: 597
+        lines: 626
         symbols: ["SettingsPage", "PathsSection"]
       - path: "lib/ui/pages/template_wizard_page.dart"
         lines: 565
@@ -413,8 +423,8 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 2063
-    deps: ["models", "ui.theme"]
+    lines: 2278
+    deps: ["core", "models", "state", "ui.theme"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
         lines: 100
@@ -435,6 +445,9 @@ modules:
       - path: "lib/ui/widgets/message_bubble.dart"
         lines: 230
         symbols: ["MessageBubble"]
+      - path: "lib/ui/widgets/project_dialog.dart"
+        lines: 215
+        symbols: ["ProjectDialogResult", "ProjectDialog"]
       - path: "lib/ui/widgets/session_info_dialog.dart"
         lines: 264
         symbols: ["SessionInfoDialog"]
@@ -490,6 +503,12 @@ tests:
   - path: "test/math_render_test.dart"
     lines: 143
     cases: 6
+  - path: "test/memory_protocol_test.dart"
+    lines: 128
+    cases: 16
+  - path: "test/memory_repository_test.dart"
+    lines: 94
+    cases: 9
   - path: "test/message_attachment_test.dart"
     lines: 94
     cases: 5
@@ -499,6 +518,15 @@ tests:
   - path: "test/models_dev_test.dart"
     lines: 210
     cases: 10
+  - path: "test/project_dialog_test.dart"
+    lines: 123
+    cases: 2
+  - path: "test/project_memory_flow_test.dart"
+    lines: 189
+    cases: 13
+  - path: "test/project_memory_test.dart"
+    lines: 85
+    cases: 7
   - path: "test/project_prompt_test.dart"
     lines: 103
     cases: 8
@@ -527,7 +555,7 @@ tests:
     lines: 78
     cases: 3
   - path: "test/session_wizard_prompt_test.dart"
-    lines: 149
+    lines: 156
     cases: 4
   - path: "test/session_xml_test.dart"
     lines: 95

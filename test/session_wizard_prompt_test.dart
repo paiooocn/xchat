@@ -64,6 +64,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
   }
 
+  /// The 「启用项目提示词」switch (the wizard has a second switch for the
+  /// project memory protocol, so the tile is located by its title).
+  Finder projectPromptSwitch() => find.ancestor(
+        of: find.text('启用项目提示词'),
+        matching: find.byType(SwitchListTile),
+      );
+
   testWidgets('会话提示词与新增提示词按 --- 分隔写入系统提示词',
       (tester) async {
     late AppState state;
@@ -97,7 +104,7 @@ void main() {
     await pumpWizard(tester, state);
 
     expect(find.text('启用项目提示词'), findsOneWidget);
-    final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    final tile = tester.widget<SwitchListTile>(projectPromptSwitch());
     expect(tile.value, isFalse);
     expect(tile.onChanged, isNull);
   });
@@ -113,7 +120,7 @@ void main() {
     });
     await pumpWizard(tester, state, projectId: projectId);
 
-    final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    final tile = tester.widget<SwitchListTile>(projectPromptSwitch());
     expect(tile.value, isTrue);
     expect(tile.onChanged, isNotNull);
     // 项目提示词原文可见，便于确认要并入的内容。
@@ -135,7 +142,7 @@ void main() {
       find.widgetWithText(TextField, '会话提示词'),
       '会话段',
     );
-    await tester.tap(find.byType(SwitchListTile));
+    await tester.tap(projectPromptSwitch());
     await tester.pump();
 
     await tapCreate(tester);

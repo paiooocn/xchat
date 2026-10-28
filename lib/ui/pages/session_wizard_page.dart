@@ -43,6 +43,11 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   /// 是否把所选项目的「项目提示词」并入会话系统提示词。
   bool _useProjectPrompt = false;
 
+  /// 是否把项目记忆协议（`.memory/` 索引）注入会话系统提示词。
+  ///
+  /// 跟随所选项目：项目启用了记忆索引时默认开启，用户可再关掉。
+  bool _useMemoryProtocol = false;
+
   /// Manual model ID field — mirrors [_model] both ways.
   final _modelInput = TextEditingController();
   String? _projectId;
@@ -68,6 +73,16 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
         ? null
         : context.read<AppState>().projectById(_projectId!);
     _useProjectPrompt = initial?.systemPrompt.trim().isNotEmpty ?? false;
+    _useMemoryProtocol = _memoryAvailable(initial);
+  }
+
+  /// Whether the project carries a memory index (`.memory/`).
+  ///
+  /// The project's explicit switch decides; a project that predates the
+  /// switch counts as enabled when its `.memory/` directory already exists.
+  bool _memoryAvailable(Project? project) {
+    if (project == null) return false;
+    return context.read<AppState>().isMemoryEnabled(project);
   }
 
   /// The project currently selected in the project dropdown (null = none).
@@ -151,6 +166,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
       projectId: _projectId,
       sandbox: _sandbox.text.trim(),
       extraMessages: extras.isEmpty ? null : extras,
+      useMemoryProtocol: _useMemoryProtocol,
     );
     // 标题留空时，会在第一轮对话结束后由会话模型自动命名。
     if (mounted) Navigator.of(context).pop(session);
@@ -255,9 +271,12 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
                   _sandbox.text = project.sandbox;
                   // 选了带提示词的项目就默认启用，用户可再关掉。
                   _useProjectPrompt = project.systemPrompt.trim().isNotEmpty;
+                  // 记忆协议跟随项目的记忆开关。
+                  _useMemoryProtocol = _memoryAvailable(project);
                 }
               } else {
                 _useProjectPrompt = false;
+                _useMemoryProtocol = false;
               }
             }),
           ),
@@ -299,6 +318,12 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
                 labelText: '新增提示词（可选）',
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          _MemoryPromptSection(
+            project: _project,
+            enabled: _useMemoryProtocol,
+            onChanged: (value) => setState(() => _useMemoryProtocol = value),
           ),
           const SizedBox(height: 12),
           ExpansionTile(
@@ -544,6 +569,58 @@ class _ProjectPromptSection extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// The 「④ 项目记忆协议」 switch: it injects the project memory protocol
+/// (`.memory/` index) into the session's system prompt, so the agent reads
+/// and maintains the index across sessions.
+///
+/// Disabled when no project is selected or the project has no memory index.
+class _MemoryPromptSection extends StatelessWidget {
+  const _MemoryPromptSection({
+    required this.project,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  /// The selected project (null = the session belongs to no project).
+  final Project? project;
+
+  /// Whether the memory protocol is currently injected.
+  final bool enabled;
+
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final available = project != null;
+    final subtitle = project == null
+        ? '未选择项目；记忆索引属于项目，会话需先加入项目'
+        : '会话开始时注入记忆协议，agent 会读写 ${project!.sandbox}/.memory'
+            '（README / STATE / ARCHITECTURE / GOTCHAS / MAP / PROMPT）';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '④ 项目记忆协议',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(subtitle, style: theme.textTheme.bodySmall),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: enabled && available,
+          onChanged: available ? onChanged : null,
+          title: const Text('启用项目记忆协议'),
+        ),
       ],
     );
   }

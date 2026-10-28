@@ -16,6 +16,7 @@ class Project {
     this.model = '',
     this.archivedAt,
     this.systemPrompt = '',
+    this.memoryEnabled,
   });
 
   String id;
@@ -39,6 +40,21 @@ class Project {
   /// edited in the project edit panel.
   String systemPrompt;
 
+  /// Whether the project carries a `.memory/` memory index.
+  ///
+  /// When enabled, sessions created inside the project get the memory
+  /// protocol injected into their system prompt and the agent is expected to
+  /// read/update `<sandbox>/.memory/` (see `core/memory_protocol.dart`).
+  ///
+  /// Tri-state on purpose:
+  ///   - `null`  — the project predates the flag (never set). It counts as
+  ///     enabled **only** when its `.memory/` directory already exists, so an
+  ///     old project keeps its behaviour until the user opts in.
+  ///   - `true`  — the user enabled the memory index.
+  ///   - `false` — the user explicitly turned it off; always respected, even
+  ///     if a `.memory/` directory is still around.
+  bool? memoryEnabled;
+
   bool get isArchived => archivedAt != null;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -51,6 +67,7 @@ class Project {
         'provider': provider,
         'model': model,
         'system_prompt': systemPrompt,
+        if (memoryEnabled != null) 'memory_enabled': memoryEnabled,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
       };
 
@@ -66,6 +83,9 @@ class Project {
       provider: asString(json['provider']) ?? '',
       model: asString(json['model']) ?? '',
       systemPrompt: asString(json['system_prompt']) ?? '',
+      memoryEnabled: json.containsKey('memory_enabled')
+          ? asBool(json['memory_enabled'], fallback: false)
+          : null,
       archivedAt: DateTime.tryParse(asString(json['archived_at']) ?? ''),
     );
   }

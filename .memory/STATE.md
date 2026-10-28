@@ -7,10 +7,126 @@
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.5.10 (build 1) |
-| 最近提交 | 本次：release: v0.5.10 模型服务页「max_completion_tokens」改为可输入数值（上一提交 `74d2833` v0.5.9） |
+| 应用版本 | 0.6.0 (build 1) |
+| 最近提交 | 本次：release: v0.6.0 项目记忆索引（.memory/）机制（上一提交 `9ff395b` v0.5.10） |
 | 工作区 | 干净（本次改动已提交） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart` |
+
+## 2026-10-30 · release: v0.6.0 — 项目记忆索引（.memory/）机制
+
+**做了什么**
+
+- 给「应用内创建的项目」加了记忆索引机制，结构与本仓库的 `.memory/` 同构：
+  项目工作目录下维护 `.memory/`，含 `README.md` / `STATE.md` / `ARCHITECTURE.md` /
+  `GOTCHAS.md` / `MAP.yaml` / `PROMPT.md` 六个文件。
+- 骨架模板放在 `lib/core/memory_protocol.dart` 的 `memorySkeletonTemplates`，
+  **语言无关**（应用内项目可能是任意语言，故没有生成器；事实层 `MAP.yaml`
+  由 agent 用 glob/grep 自行维护）。
+- 注入块 `memoryProtocolBlock` 自包含（约 200–400 tokens）：读哪些文件、
+  收尾更新什么、三条红线（索引是路由不是内容 / 不写行号 / 事实只存一处）。
+  `PROMPT.md` 骨架里引用同一份文本，协议正文只在 `.memory/README.md` §2/§4。
+- 落盘位置：`<项目 sandbox>/.memory/`（随项目走，可提交到版本库，agent 的
+  `read/write/glob/grep` 工具天然可达）。**不放在 App 数据根**——项目可指向
+  外部文件夹，记忆必须跟着项目走。
+- 开关与生命周期：
+  - `Project.memoryEnabled`（项目 XML `<memory_enabled>`）是**三态**：
+    `null` = 从未设置（老项目）→ 只有 `.memory/` 目录已存在才按「已启用」自愈，
+    老项目行为不变；显式 `true`/`false` 遵从用户意图（**显式关掉的项目即使
+    目录还在也不注入协议**——否则「关掉开关」会被自愈规则推翻）。
+  - 建项目时自动生成骨架；`MemoryRepository.ensureSkeleton` **只补缺失文件**，
+    绝不覆盖 agent 已写的内容。
+  - 项目编辑对话框有「启用项目记忆（.memory/ 索引）」开关 + 状态行 +
+    「初始化 / 补齐」按钮。
+  - 新建会话页新增「④ 项目记忆协议」开关，默认跟随项目。
+- **注入点唯一**：`AppState.createSessionDraft` 拼装系统提示词时追加
+  （欢迎页「发送即建会话」、模板会话、向导页三条路径都经过它），并支持
+  `useMemoryProtocol` 显式覆盖。
+- 目录索引 `CatalogIndex.version` 升到 **3**：老 index.json 缺
+  `memory_enabled`，不重建会静默关掉所有项目的记忆。
+- **没有 `.memory/` 的项目如何补齐**（三条路径）：
+  1. 单个：项目新建/编辑对话框的「初始化 / 补齐」按钮；或打开开关后确定
+     （保存时自动补齐）。
+  2. 全部：设置页「项目记忆索引」区 →「一键补齐全部项目」——遍历活动+归档
+     项目，缺目录的补骨架并**显式启用**（`AppState.backfillProjectMemory`）。
+  3. 自动：App 启动加载项目后 `AppState.healProjectMemory()`——对「已启用但
+     目录被误删/从旧备份恢复」的项目重建骨架。
+  三条路径都**只补缺失文件**，绝不覆盖 agent 已写的内容。
+
+**改了什么文件**
+
+- 新增 `lib/core/memory_protocol.dart`（协议块/marker/指针/骨架模板）、
+  `lib/data/memory_repository.dart`、
+  `lib/models/memory_status.dart`
+- `lib/core/prompt_utils.dart`（`injectMemoryProtocol`：幂等 + 顶部指针）
+- `lib/models/project.dart`、`lib/models/catalog_index.dart`、
+  `lib/data/xml/project_xml.dart`（`memory_enabled`）
+- `lib/state/app_state.dart`（`memoryRepository`、`createProject(memoryEnabled:)`、
+  `ensureProjectMemory`、`projectMemoryStatus`、注入点）
+- `lib/ui/pages/home_page.dart`（项目对话框的开关/状态行/初始化按钮）
+- `lib/ui/pages/session_wizard_page.dart`（④ 记忆协议开关）
+- `lib/ui/pages/settings_page.dart`（「项目记忆索引」运维区 + 一键批量补齐）
+- `lib/ui/widgets/project_dialog.dart`（**新增**：项目对话框独立成 widget，
+  自持控制器，修掉「used after being disposed」）
+- 测试：`test/memory_protocol_test.dart`、`test/memory_repository_test.dart`、
+  `test/project_memory_test.dart`、`test/project_memory_flow_test.dart`、
+  `test/project_dialog_test.dart`（新增）；
+  `test/session_wizard_prompt_test.dart`（向导多了一个开关，定位方式改为按标题找）
+- 文档：`FEATURES.md`（§1.2/§1.3/§7/§9.1）、本文件、`.memory/ANNOTATIONS.yaml`
+
+**怎么验证**
+
+- `flutter analyze lib test` → No issues found
+- `flutter test` → 268 passed（新增 47 条：模板内容 / 注入块 / 骨架非破坏 /
+  XML 与索引往返 / 三态语义 / 显式关掉优先 / 目录已存在自愈 / 批量补齐 /
+  启动自愈 / 会话级开关）
+- `dart run tool/gen_memory_index.dart --check` → OK
+
+**下一步**
+
+- 用户侧验证：新建项目 → 确认工作目录出现 `.memory/`（6 个文件）→ 在该项目
+  里新建会话 → 发一句话让 agent 读 `.memory/README.md` → 收尾后看
+  `.memory/STATE.md` 是否被更新。
+
+**协议说明强化（同日追加）**
+
+- 问题：`.memory/` 的职责要不要在系统提示词里明确说明？——**要**，且已在说明。
+  系统提示词是 agent 唯一可靠接收「行为规则」的通道；文件里的协议只有
+  「agent 已经知道该读」时才有用（鸡生蛋）。
+- 复查发现并修掉 3 个问题：
+  1. **压缩会话重复注入**：`compressSession` 把已含协议块的 `source.systemPrompt`
+     传回 `createSession` → 又追加一次，协议块出现两遍。修法：协议块以固定
+     marker `【记忆索引 · .memory/】` 开头，注入前先查 marker → **幂等**
+     （「一次注入 = 一个 marker」，指针行不许重复 marker）。
+  2. **位置**：协议块原来只在末尾。改为「工作空间根目录」行之后插一行指针
+     （先读 STATE.md，收尾更新 STATE.md），完整职责仍放末尾（长提示词下也
+     看得见；收尾义务靠近对话，recency 效应）。
+  3. **工具前提**：协议写明需 read_file/write_file（建议 glob/grep）；未启用时
+     让 agent 直接提示用户去会话工具里开启，不要假装更新过索引。
+- 顺手优化：开场只读 `STATE.md`，需要路由表/协议全文时再读 `README.md`
+  （每个会话省一次工具调用）；骨架 README 的启动协议同步改成同一顺序。
+
+**修复（同日追加）**
+
+- 用户报：旧项目点「初始化 .memory」后报错
+  `A TextEditingController was used after being disposed` + 两条框架断言。
+- 根因：`_showProjectDialog` 在 `showDialog` 返回后**立刻** `dispose()` 了四个
+  TextEditingController，而对话框的退出动画还在挂载着这些 TextField → 重建时
+  访问已释放的 controller。
+- 修法（标准写法）：把对话框抽成独立 widget
+  `lib/ui/widgets/project_dialog.dart`（`ProjectDialog` + `ProjectDialogResult`），
+  控制器由它自己持有、在自己的 `dispose()` 里释放——即路由真正移除后才释放。
+  顺带把 `home_page.dart`（3000+ 行）里的一段挪走。
+- 回归测试 `test/project_dialog_test.dart`：注入旧写法（pop 后立刻 dispose）
+  会复现同一条报错，修好后通过。
+
+**遗留问题**
+
+- 记忆更新是**软约束**：agent 可能不写回 `.memory/`；二期可做「turn 结束检查
+  STATE.md 是否被更新」的提醒。
+- 补齐是**一次性**动作：项目被整体拷贝/迁移时 `.memory/` 跟着目录走；若有人
+  只拷了源码没拷 `.memory/`，该目录会被当作「从未设置过」的项目（不注入）。
+- 项目改名/换工作目录后 `.memory/` 不迁移（它属于目录，不属于项目记录）。
+- `MAP.yaml` 没有生成器，靠 agent 手维护，准确性取决于 agent。
 
 ## 2026-10-29 · 提供商页「max_completion_tokens」改为可输入数值
 

@@ -31,9 +31,9 @@ modules:
     design: "DESIGN.md §12"
 
   core:
-    role: "基础设施层：数据目录解析、版本号、ID、JSON 容错、Python 运行时定位与注入、窗口尺寸、pip 包存储、提示词组装"
+    role: "基础设施层：数据目录解析、版本号、ID、JSON 容错、Python 运行时定位与注入、窗口尺寸、pip 包存储、提示词组装、项目记忆协议文本与骨架模板"
     risk: mid
-    note: "Python 注入只前置 PATH 不覆盖；Windows 需补 python3.exe 别名；app_paths 解析失败必须降级而不是抛"
+    note: "Python 注入只前置 PATH 不覆盖；Windows 需补 python3.exe 别名；app_paths 解析失败必须降级而不是抛；memory_protocol.dart 的注入块是协议正文的唯一副本（PROMPT.md 骨架里引用它）"
     design: "docs/PYTHON_RUNTIME_PLAN.md"
 
   models:
@@ -43,9 +43,9 @@ modules:
     design: "DESIGN.md §5"
 
   data:
-    role: "仓库层：会话/模板/配置/项目/索引/models.dev 的读写与原子落盘"
+    role: "仓库层：会话/模板/配置/项目/索引/models.dev/项目记忆索引的读写与原子落盘"
     risk: high
-    note: "index.json 只是缓存，必须能与磁盘自愈；写路径不能每次全量重建目录"
+    note: "index.json 只是缓存，必须能与磁盘自愈；写路径不能每次全量重建目录；MemoryRepository.ensureSkeleton 只补缺失文件，绝不覆盖 agent 已写的内容"
     design: "DESIGN.md §4"
 
   data.xml:
@@ -91,9 +91,9 @@ modules:
     design: "FEATURES.md §9.1"
 
   ui.widgets:
-    role: "复用组件：消息气泡、输入区、Markdown/公式渲染、思考块、工具调用块、usage 徽标"
+    role: "复用组件：消息气泡、输入区、Markdown/公式渲染、思考块、工具调用块、usage 徽标、项目新建/编辑对话框"
     risk: low
-    note: "复制粘贴换行修复、KaTeX 归一化都在这一层"
+    note: "复制粘贴换行修复、KaTeX 归一化都在这一层；对话框类 widget 必须自己持有并在 dispose 里释放 TextEditingController —— 在 showDialog 返回后立刻释放会让仍在动画中的对话框抛 'used after being disposed'"
     design: "FEATURES.md §9.2"
 
   ui.theme:
@@ -341,6 +341,31 @@ features:
     design: "FEATURES.md §1.3"
     contracts:
       - "Project.systemPrompt 是项目级提示词，在项目编辑面板里写，新建会话页按开关并入"
+      - "Project.memoryEnabled 是三态：null=从未设置（老项目，只有 .memory/ 目录存在才按已启用自愈）/ true / false（显式关掉，目录还在也不注入）"
+
+  - id: project_memory
+    title: "项目记忆索引（.memory/）"
+    files:
+      - "lib/core/memory_protocol.dart"
+      - "lib/core/prompt_utils.dart"
+      - "lib/data/memory_repository.dart"
+      - "lib/models/memory_status.dart"
+      - "lib/state/app_state.dart"
+      - "lib/ui/pages/home_page.dart"
+      - "lib/ui/pages/session_wizard_page.dart"
+      - "lib/ui/pages/settings_page.dart"
+      - "lib/ui/widgets/project_dialog.dart"
+    design: "FEATURES.md §7"
+    contracts:
+      - "索引位于项目工作目录内的 .memory/，随项目走；六个文件 README/STATE/ARCHITECTURE/GOTCHAS/MAP/PROMPT"
+      - "骨架写入非破坏：只补缺失文件，不覆盖 agent 已写的内容"
+      - "注入点唯一：AppState.createSessionDraft 拼装系统提示词（欢迎页/模板/向导三条路径都经过它）"
+      - "注入块自包含（约 200–400 tokens），协议正文在 .memory/README.md §2/§4，只存一份"
+      - "注入幂等：协议块以 marker【记忆索引 · .memory/】开头，已有则不追加（压缩会话会重建提示词）"
+      - "位置：工作空间根目录行之后一行指针，完整职责在提示词末尾（长提示词下也看得见；收尾义务靠近对话）"
+      - "目录索引版本升到 3：老 index.json 缺 memory_enabled 会被重建，否则会静默关掉所有项目的记忆"
+      - "补齐入口有三处：项目对话框的单项目补齐、设置页的一键批量补齐、启动时 healProjectMemory 重建被误删的索引"
+      - "记忆协议只在 AppState.createSessionDraft 注入一次；向导页只提供开关"
 
   - id: session_prompts
     title: "会话系统提示词的三段式组装"
@@ -352,6 +377,7 @@ features:
     contracts:
       - "顺序固定：会话提示词 / 项目提示词 / 新增提示词，空段丢弃，段间用 \\n---\\n"
       - "工作空间根目录行由 injectWorkspaceRoot 写在最上面"
+      - "项目记忆协议在 AppState 层作为独立段追加（向导页的三段式不包含它）"
 
   - id: external_editor
     title: "外部编辑器 / 工作目录 / URL 打开"

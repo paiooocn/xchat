@@ -149,6 +149,7 @@ class ProjectIndexEntry {
     this.model = '',
     this.archivedAt,
     this.systemPrompt = '',
+    this.memoryEnabled,
   });
 
   String id;
@@ -165,6 +166,11 @@ class ProjectIndexEntry {
   /// offer it without re-reading every project file).
   String systemPrompt;
 
+  /// Whether the project carries a `.memory/` memory index.
+  ///
+  /// `null` = the project predates the flag (never set) — see `Project`.
+  bool? memoryEnabled;
+
   bool get archived => archivedAt != null;
 
   factory ProjectIndexEntry.fromProject(Project project) => ProjectIndexEntry(
@@ -178,6 +184,7 @@ class ProjectIndexEntry {
         model: project.model,
         archivedAt: project.archivedAt,
         systemPrompt: project.systemPrompt,
+        memoryEnabled: project.memoryEnabled,
       );
 
   factory ProjectIndexEntry.fromJson(Object? value) {
@@ -193,6 +200,9 @@ class ProjectIndexEntry {
       model: asString(json['model']) ?? '',
       archivedAt: DateTime.tryParse(asString(json['archived_at']) ?? ''),
       systemPrompt: asString(json['system_prompt']) ?? '',
+      memoryEnabled: json.containsKey('memory_enabled')
+          ? asBool(json['memory_enabled'], fallback: false)
+          : null,
     );
   }
 
@@ -206,6 +216,7 @@ class ProjectIndexEntry {
         'provider': provider,
         'model': model,
         'system_prompt': systemPrompt,
+        if (memoryEnabled != null) 'memory_enabled': memoryEnabled,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
       };
 
@@ -220,6 +231,7 @@ class ProjectIndexEntry {
         model: model,
         archivedAt: archivedAt,
         systemPrompt: systemPrompt,
+        memoryEnabled: memoryEnabled,
       );
 }
 
@@ -239,7 +251,11 @@ class CatalogIndex {
   /// Bumped to 2 when project entries gained `system_prompt`: older index
   /// files lack the field, so they are discarded and rebuilt from the project
   /// XML files instead of silently losing every project prompt.
-  static const int version = 2;
+  ///
+  /// Bumped to 3 when project entries gained `memory_enabled` — same reason:
+  /// an index without the field would silently disable every project's memory
+  /// index.
+  static const int version = 3;
 
   List<SessionIndexEntry> sessions;
   List<ProjectIndexEntry> projects;

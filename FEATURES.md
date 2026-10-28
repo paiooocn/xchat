@@ -30,6 +30,7 @@ Documents/XChat/                  # 数据根（AppPaths）
   sessions/                       # 默认沙箱：<uuid>.xml
   projects/<id>.xml               # 项目定义
   projects/<id>/                  # 项目默认工作目录（项目内会话的沙箱）
+  projects/<id>/.memory/          # 项目记忆索引（README/STATE/ARCHITECTURE/GOTCHAS/MAP/PROMPT）
   templates/                      # 会话模板 <id>.xml
   scripts/                        # 页面解析脚本 <id>.json
   attachments/                    # （会话级：<sandbox>/attachments/）
@@ -79,7 +80,10 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 - 模板：与会话同构但无 messages（或含预置 system/few-shot），含名称、说明、provider/model、
   params、tools、tool_calls_limit、system prompt、thinking_reply_mode、标签。
-- 项目：`id / name / description / sandbox / created_at / updated_at / provider / model / system_prompt / archived_at`。
+- 项目：`id / name / description / sandbox / created_at / updated_at / provider / model / system_prompt / memory_enabled / archived_at`。
+  `memory_enabled` 是**三态**：缺省（老项目，从未设置）= `null` → 只有 `.memory/` 目录已存在
+  才按「已启用」自愈，老项目行为不变；显式 `true`/`false` 遵从用户意图（显式关掉的项目即使
+  目录还在也不注入协议）。
 
 ### 1.4 Token usage 口径
 
@@ -304,6 +308,9 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 创建向导 | 分步：起点（空白/模板）→ 模型（provider+model+参数）→ 系统提示 → 工具与预算 → 存储与标识（sandbox/标题/标签/thinking_reply_mode）→ 生成 id 落盘进聊天 |
 | 提示词三段式 | 系统提示词由三段组成：**会话提示词**（模板带入或手写）/ **项目提示词**（所选项目自带，开关「启用项目提示词」并入）/ **新增提示词**（本次会话临时追加）；非空段之间用 `\n---\n` 分隔，顺序固定 |
 | 项目提示词 | 项目编辑面板（新建/编辑项目对话框）可写「项目提示词」，随项目 XML 落盘；新建会话页按开关并入该提示词 |
+| 项目记忆索引 | 项目工作目录下维护 `.memory/`（README / STATE / ARCHITECTURE / GOTCHAS / MAP / PROMPT 六个文件）；建项目时自动生成骨架（不覆盖已有文件）；项目内新建会话时把**记忆协议**作为独立段注入系统提示词（开关「启用项目记忆协议」）；agent 按协议读 `.memory/` 接力上次进度并在收尾时更新 STATE.md |
+| 记忆协议注入 | 协议块以固定 marker（`【记忆索引 · .memory/】`）开头，**注入幂等**：提示词里已有协议块就不再追加（压缩会话会带着已注入的提示词重建，不会重复）；「工作空间根目录」行之后插一行指针（先读 STATE.md，收尾更新 STATE.md），完整职责放在提示词末尾；协议写明工具前提（需 read_file/write_file，未启用就提示用户开） |
+| 记忆索引补齐 | ①**单个**：项目新建/编辑对话框的「初始化 / 补齐」按钮（或打开开关后确定）；②**全部**：设置页「项目记忆索引」区 →「一键补齐全部项目」（缺失的补齐并显式启用，不覆盖已有文件）；③**自动**：App 启动时对「已启用但目录被删」的项目重建骨架 |
 | 会话模板 | 新建/编辑/复制/删除/「用此模板新建会话」；模板向导含 LLM 生成/改写系统提示词 |
 | 首页模板选择 | 欢迎页「会话模板」下拉：选中只显示模板名，**发送对话时才创建会话**；未选时用设置里的默认会话模板；两者都无则发送时提示先选模板或去配置默认模板 |
 | 克隆（3 种） | ①到首个 user 为止（含）②到首轮结束 ③全量复制；新 id、时间戳=now、tool_calls/usage 清零，保留配置 |
@@ -364,12 +371,13 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 | 页面 | 功能点 |
 | --- | --- |
-| 首页 HomePage | 自适应布局：宽屏左会话列表+右聊天；窄屏列表↔聊天路由。边栏：搜索、项目分组（行尾「+」新建、更多操作菜单）、会话项（进行中显旋转圈）、右键/长按菜单（查看会话信息/重命名/克隆/编辑重发/导出/编辑器打开/打开工作目录/归档/删除）；AppBar：手动搜索、归档、设置、模板、工具管理、模型服务等入口 |
+| 首页 HomePage | 自适应布局：宽屏左会话列表+右聊天；窄屏列表↔聊天路由。边栏：搜索、项目分组（行尾「+」新建、更多操作菜单）、会话项（进行中显旋转圈）、右键/长按菜单（查看会话信息/重命名/克隆/编辑重发/导出/编辑器打开/打开工作目录/归档/删除）；AppBar：手动搜索、归档、设置、模板、工具管理、模型服务等入口；**项目新建/编辑对话框内含「启用项目记忆（.memory/ 索引）」开关 + 记忆索引状态行 +「初始化 / 补齐」按钮** |
+| 项目对话框 | `lib/ui/widgets/project_dialog.dart`（独立 widget，自持 TextEditingController）：名称/说明/工作目录/项目提示词 +「启用项目记忆（.memory/ 索引）」开关 + 记忆索引状态行 +「初始化 / 补齐」按钮 |
 | 聊天面板 | 头部（模型选择器/执行模式/用量/上下文条）、消息流（用户右/助手左）、实时流区域、状态栏、压缩进度弹窗、审批弹窗/列表 |
 | 创建向导 | 分步表单（§7） |
 | 模板页 + 模板向导 | 模板 CRUD；向导分步 + LLM 生成/改写系统提示词（含场景类别） |
 | 模型服务页 | provider 列表/编辑（baseUrl/apiKey/headers/预设/思考参数/模型清单/model_specs）、**最大输出 tokens（数值输入，作为请求体的输出上限；留空=不限制）**、**输出上限参数名（`max_tokens` / `max_completion_tokens`，前者通用、后者为 OpenAI o 系列 / gpt-5 必填）**、测试连接、拉取模型、models.dev 同步/填充/添加向导；API Key 字段支持显示/隐藏切换与「从剪贴板粘贴」（Android 输入法禁止在密码型输入框粘贴，故提供 App 侧剪贴板按钮兜底） |
-| 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、**默认会话模板（从会话模板中选一）**、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
+| 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、**项目记忆索引（缺少 .memory/ 的项目计数 +「一键补齐全部项目」）**、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、**默认会话模板（从会话模板中选一）**、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
 | 工具管理页 | 每工具审批等级、shell 三名单编辑（正则校验/一键默认）、shell 审批详情、工具配置 JSON 导入/导出 |
 | 手动搜索页 | §6.5 |
 | 归档页 | 已归档会话/项目列表，恢复/删除 |

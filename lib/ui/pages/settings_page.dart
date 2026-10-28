@@ -142,6 +142,35 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          _section('项目记忆索引'),
+          Text(
+            '项目的记忆索引在工作目录下的 .memory/（README / STATE / ARCHITECTURE / '
+            'GOTCHAS / MAP / PROMPT）。没有 .memory/ 的项目可以在这里一次性补齐，'
+            '补齐后该项目的新会话会自动注入记忆协议；已有的文件不会被覆盖。',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '共 ${state.projects.length + state.archivedProjects.length} 个项目，'
+            '其中 ${state.projectsWithoutMemory().length} 个缺少 .memory/',
+            style: const TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: () async {
+                  final count = await state.backfillProjectMemory();
+                  if (!context.mounted) return;
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('已补齐 $count 个项目的记忆索引')),
+                  );
+                },
+                child: const Text('一键补齐全部项目'),
+              ),
+            ],
+          ),
           _section('压缩会话'),
           Row(
             children: [

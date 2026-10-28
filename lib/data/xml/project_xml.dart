@@ -35,6 +35,10 @@ class ProjectXml {
     out.leafText('provider', project.provider);
     out.leafText('model', project.model);
     out.leaf('system_prompt', project.systemPrompt);
+    // Absent element = "never set" (projects predating the memory index).
+    if (project.memoryEnabled != null) {
+      out.leafText('memory_enabled', project.memoryEnabled! ? 'true' : 'false');
+    }
     if (project.archivedAt != null) {
       out.leafText('archived_at', project.archivedAt!.toUtc().toIso8601String());
     }
@@ -61,6 +65,9 @@ class ProjectXml {
     } else {
       sandbox = rawSandbox;
     }
+    // Projects written before the memory index existed have no such element:
+    // they stay "never set" (their behaviour must not change silently).
+    final rawMemory = readTextTrim(root, 'memory_enabled');
     return Project(
       id: id.isEmpty ? _basename(filePath) : id,
       name: readTextOrEmpty(root, 'name'),
@@ -71,6 +78,7 @@ class ProjectXml {
       provider: readTextOrEmpty(root, 'provider'),
       model: readTextOrEmpty(root, 'model'),
       systemPrompt: readTextOrEmpty(root, 'system_prompt'),
+      memoryEnabled: rawMemory == null ? null : rawMemory == 'true',
       archivedAt: DateTime.tryParse(readTextOrEmpty(root, 'archived_at')),
     );
   }

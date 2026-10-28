@@ -66,6 +66,7 @@ dart run tool/gen_memory_index.dart --check  # 校验是否与代码一致（过
 | 页面 / 布局 | — | `lib/ui/pages/*`（`home_page.dart` 近 3000 行，先 grep 再改） |
 | 消息渲染 / 公式 | `GOTCHAS.md` §8 | `lib/ui/widgets/markdown_view.dart`、`math_support.dart` |
 | 全局配置项 | `FEATURES.md` §8 | `lib/models/app_config.dart`、`lib/data/config_repository.dart` |
+| 项目记忆索引（`.memory/`） | `FEATURES.md` §7 | `lib/core/memory_protocol.dart`、`lib/data/memory_repository.dart`、`lib/state/app_state.dart` |
 | 会话列表 / 索引 | `GOTCHAS.md` §7 | `lib/data/index_repository.dart`、`lib/models/catalog_index.dart` |
 | 多会话并行 / 审批 | `GOTCHAS.md` §9 | `lib/session/session_controller.dart`、`lib/state/approval_center.dart` |
 | 构建 / 发布 / 平台差异 | `FEATURES.md` §10 | `android/`、`ios/`、`linux/`、`windows/`、`macos/` |

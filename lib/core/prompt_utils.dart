@@ -1,6 +1,8 @@
 /// Prompt assembly helpers shared by the session-creation flow.
 library;
 
+import 'memory_protocol.dart';
+
 /// Prefix of the auto-injected workspace-root line (matched against the
 /// trimmed start of each prompt line).
 const String kWorkspaceRootPrefix = '工作空间根目录';
@@ -39,4 +41,38 @@ String composePromptSections(List<String> sections) {
       .where((s) => s.isNotEmpty)
       .toList(growable: false);
   return parts.join(kPromptSectionSeparator);
+}
+
+/// Appends the project memory protocol to [systemPrompt].
+///
+/// The block is a separate section (separated by [kPromptSectionSeparator])
+/// so it can never be confused with the hand-written prompt text. An empty
+/// prompt yields the block alone.
+///
+/// **Idempotent**: a prompt that already carries the protocol is returned
+/// unchanged. This matters for sessions created by compressing another one:
+/// the stored prompt of the source session already contains the block, and
+/// injecting it again would duplicate it (and waste tokens).
+///
+/// When the prompt starts with the workspace-root line, a one-line pointer is
+/// inserted right after it — the agent should notice the index *before* it
+/// reads a long hand-written prompt. The full duties stay at the end of the
+/// prompt, next to the conversation.
+String injectMemoryProtocol(String systemPrompt, {String projectName = ''}) {
+  if (systemPrompt.contains(kMemoryProtocolMarker)) return systemPrompt;
+  final body = systemPrompt.trim();
+  final block = memoryProtocolBlock(projectName: projectName);
+  if (body.isEmpty) return block;
+  final lines = body.split('\n');
+  final String composed;
+  if (lines.first.trim().startsWith(kWorkspaceRootPrefix)) {
+    composed = <String>[
+      lines.first,
+      memoryPointerLine(projectName: projectName),
+      ...lines.skip(1),
+    ].join('\n');
+  } else {
+    composed = body;
+  }
+  return '$composed$kPromptSectionSeparator$block';
 }
