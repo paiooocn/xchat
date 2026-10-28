@@ -71,6 +71,7 @@ class ProviderConfig {
     this.useMaxCompletionTokens = false,
     this.contextWindow,
     this.maxOutputTokens,
+    this.maxOutputTokensByEffort,
     this.defaultThinkingReplyMode = ThinkingReplyMode.auto,
     this.syncReasoningEffort = false,
     Map<String, ModelSpec>? modelSpecs,
@@ -111,6 +112,14 @@ class ProviderConfig {
   /// [useMaxCompletionTokens] 决定参数名是 `max_completion_tokens` 还是
   /// `max_tokens`；会话参数 `max_tokens` 有值时以会话为准。
   int? maxOutputTokens;
+
+  /// 按思考档位分别设置输出上限，规格串：`{档位}:{长度}`，各档位用 `/` 分隔，
+  /// 例如 `low:1280/medium:2560/high:3840/xhigh:5120`。
+  ///
+  /// 非空时**取代** [maxOutputTokens]：当前思考档位命中 → 用该档位的长度；
+  /// 没有命中的档位（含未选档位）→ 不限制。档位名不区分大小写。
+  String? maxOutputTokensByEffort;
+
   /// How history thinking should be echoed for this provider.
   ThinkingReplyMode defaultThinkingReplyMode;
 
@@ -162,6 +171,18 @@ class ProviderConfig {
   /// Context window for [model], falling back to the provider-wide value.
   int? contextWindowFor(String model) => specFor(model)?.contextWindow ?? contextWindow;
 
+  /// 解析当前思考档位对应的输出上限（见 [maxOutputTokensByEffort]）。
+  ///
+  /// [effort] 是会话当前的思考档位（`reasoning_effort`），`null` / 空串表示
+  /// 未选档位。返回 `null` = 不限制（请求体不带输出上限参数）。
+  int? maxOutputTokensFor(String? effort) {
+    final table = parseMaxTokensByEffort(maxOutputTokensByEffort);
+    if (table.isEmpty) return maxOutputTokens;
+    final key = effort?.trim().toLowerCase();
+    if (key == null || key.isEmpty) return null;
+    return table[key];
+  }
+
   ProviderConfig copyWith({String? id, String? name}) => ProviderConfig(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -174,6 +195,7 @@ class ProviderConfig {
         useMaxCompletionTokens: useMaxCompletionTokens,
         contextWindow: contextWindow,
         maxOutputTokens: maxOutputTokens,
+        maxOutputTokensByEffort: maxOutputTokensByEffort,
         defaultThinkingReplyMode: defaultThinkingReplyMode,
         syncReasoningEffort: syncReasoningEffort,
         models: List<String>.of(models),
@@ -196,6 +218,8 @@ class ProviderConfig {
         'use_max_completion_tokens': useMaxCompletionTokens,
         'context_window': contextWindow,
         'max_output_tokens': maxOutputTokens,
+        if (maxOutputTokensByEffort != null)
+          'max_output_tokens_by_effort': maxOutputTokensByEffort,
         'thinking_reply_mode': defaultThinkingReplyMode.wire,
         if (syncReasoningEffort) 'sync_reasoning_effort': true,
         if (models.isNotEmpty) 'models': models,
@@ -220,6 +244,8 @@ class ProviderConfig {
       useMaxCompletionTokens: asBool(json['use_max_completion_tokens']),
       contextWindow: asInt(json['context_window']),
       maxOutputTokens: asInt(json['max_output_tokens']),
+      maxOutputTokensByEffort:
+          _nonEmpty(asString(json['max_output_tokens_by_effort'])),
       defaultThinkingReplyMode:
           ThinkingReplyMode.parse(asString(json['thinking_reply_mode'])),
       models: asStringList(json['models']),
@@ -248,4 +274,30 @@ List<String> reasoningEffortOptionsFor(ProviderConfig? provider, String model) {
   return kReasoningEffortOptions
       .where((value) => value.isNotEmpty)
       .toList(growable: false);
+}
+
+/// 解析「按思考档位的输出上限」规格串：`{档位}:{长度}`，各档位用 `/` 分隔，
+/// 例如 `low:1280/medium:2560/high:3840/xhigh:5120`。
+///
+/// 非法项被丢弃；返回空表 = 未配置。键统一为小写档位名。
+Map<String, int> parseMaxTokensByEffort(String? spec) {
+  if (spec == null) return const <String, int>{};
+  final table = <String, int>{};
+  for (final part in spec.split('/')) {
+    final item = part.trim();
+    if (item.isEmpty) continue;
+    final index = item.indexOf(':');
+    if (index <= 0) continue;
+    final key = item.substring(0, index).trim().toLowerCase();
+    final value = int.tryParse(item.substring(index + 1).trim());
+    if (key.isEmpty || value == null || value <= 0) continue;
+    table[key] = value;
+  }
+  return table;
+}
+
+/// `null` / 空白串 → `null`（避免把空值写进配置文件）。
+String? _nonEmpty(String? value) {
+  final trimmed = value?.trim();
+  return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
 }

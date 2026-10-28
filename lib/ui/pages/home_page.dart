@@ -2484,7 +2484,8 @@ class _ReasoningControls extends StatelessWidget {
         ),
         if (efforts.isNotEmpty)
           PopupMenuButton<String>(
-            tooltip: '思考强度：${effort.isEmpty ? '默认（不传入）' : effort}',
+            tooltip: '思考强度：${effort.isEmpty ? '默认（不传入）' : effort}'
+                ' · 最大输出tokens：${_maxTokensLabel(session)}',
             onSelected: (value) => controller.setReasoningEffort(value),
             itemBuilder: (context) => [
               CheckedPopupMenuItem(
@@ -2525,6 +2526,14 @@ class _ReasoningControls extends StatelessWidget {
   /// 会话模板 `reasoning_effort` 的全部候选值（见 [reasoningEffortOptionsFor]）。
   List<String> _effortOptions(Session session) =>
       reasoningEffortOptionsFor(controller.activeProvider, session.model);
+
+  /// 当前会话生效的输出上限：会话（模板）里显式指定的值优先，否则用模型服务
+  /// 的配置（可按思考档位取值）。`null` = 不限制。
+  String _maxTokensLabel(Session session) {
+    final value = session.params.maxTokens ??
+        controller.activeProvider.maxOutputTokensFor(session.params.reasoningEffort);
+    return value == null ? '不限制' : '$value';
+  }
 }
 
 /// 思考控件用的紧凑图标按钮（32×32）。

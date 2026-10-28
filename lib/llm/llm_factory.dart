@@ -4,16 +4,22 @@ import '../models/provider_config.dart';
 
 /// Builds an `llm_api` provider from an [ProviderConfig].
 ///
+/// [reasoningEffort] is the thinking level of the current session
+/// (`reasoning_effort`); it selects the output cap when the service defines
+/// per-effort caps (see [ProviderConfig.maxOutputTokensByEffort]).
+///
 /// Uses the plain transport: request/response JSON is never dumped to the
 /// console, in either debug or release builds.
-LlmProvider createProvider(ProviderConfig config) {
-  return OpenAiCompatibleProvider(config: buildOpenAiConfig(config));
+LlmProvider createProvider(ProviderConfig config, {String? reasoningEffort}) {
+  return OpenAiCompatibleProvider(
+      config: buildOpenAiConfig(config, reasoningEffort: reasoningEffort));
 }
 
 /// Translates an [ProviderConfig] into the wire-level configuration.
 ///
 /// Exposed separately so the request body can be inspected in tests.
-OpenAiCompatibleConfig buildOpenAiConfig(ProviderConfig config) {
+OpenAiCompatibleConfig buildOpenAiConfig(ProviderConfig config,
+    {String? reasoningEffort}) {
   return OpenAiCompatibleConfig(
     baseUrl: Uri.parse(config.baseUrl),
     name: config.id,
@@ -23,7 +29,8 @@ OpenAiCompatibleConfig buildOpenAiConfig(ProviderConfig config) {
     reasoningRequestStyle: _reasoningStyle(config.reasoningStyle),
     useMaxCompletionTokens: config.useMaxCompletionTokens,
     // Output cap of the service; a request-level `max_tokens` overrides it.
-    defaultMaxTokens: config.maxOutputTokens,
+    // With per-effort caps the value depends on the session's thinking level.
+    defaultMaxTokens: config.maxOutputTokensFor(reasoningEffort),
     sendStreamOptions: true,
   );
 }

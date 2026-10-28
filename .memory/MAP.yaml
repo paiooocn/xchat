@@ -5,21 +5,21 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-10-28 15:45"
-  git_sha: "9ff395b"
+  generated_at: "2026-10-28 16:50"
+  git_sha: "8d4595f"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
   file_count: 116
-  line_count: 28169
+  line_count: 28313
 
 modules:
   - id: "agent"
     path: "lib/agent"
-    lines: 549
+    lines: 551
     deps: ["core", "data", "llm", "models", "pkg.llm_api"]
     files:
       - path: "lib/agent/agent_engine.dart"
-        lines: 447
+        lines: 449
         symbols: ["AgentEngine"]
       - path: "lib/agent/agent_events.dart"
         lines: 102
@@ -151,12 +151,12 @@ modules:
         symbols: ["XmlOut"]
   - id: "llm"
     path: "lib/llm"
-    lines: 536
+    lines: 543
     deps: ["models", "pkg.llm_api"]
     files:
       - path: "lib/llm/llm_factory.dart"
-        lines: 65
-        symbols: ["createProvider", "buildOpenAiConfig", "fetchModels", "testProvider"]
+        lines: 72
+        symbols: ["createProvider", "fetchModels", "testProvider"]
       - path: "lib/llm/outbound_adapter.dart"
         lines: 179
         symbols: ["resolveEchoMode"]
@@ -169,7 +169,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 3541
+    lines: 3593
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -198,8 +198,8 @@ modules:
         lines: 92
         symbols: ["Project"]
       - path: "lib/models/provider_config.dart"
-        lines: 251
-        symbols: ["ModelSpec", "ProviderConfig", "reasoningEffortOptionsFor"]
+        lines: 303
+        symbols: ["ModelSpec", "ProviderConfig", "reasoningEffortOptionsFor", "parseMaxTokensByEffort"]
       - path: "lib/models/proxy_config.dart"
         lines: 121
         symbols: ["ProxyConfig", "proxyHostPort", "buildProxiedHttpClient"]
@@ -367,7 +367,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8322
+    lines: 8405
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -380,13 +380,13 @@ modules:
         lines: 218
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 2912
+        lines: 2921
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
         symbols: ["PipPackagesPage"]
       - path: "lib/ui/pages/providers_page.dart"
-        lines: 965
+        lines: 987
         symbols: ["ProvidersPage"]
       - path: "lib/ui/pages/search_page.dart"
         lines: 394
@@ -398,10 +398,10 @@ modules:
         lines: 626
         symbols: ["SettingsPage", "PathsSection"]
       - path: "lib/ui/pages/template_wizard_page.dart"
-        lines: 565
+        lines: 592
         symbols: ["TemplateWizardPage"]
       - path: "lib/ui/pages/templates_page.dart"
-        lines: 382
+        lines: 407
         symbols: ["TemplatesPage"]
       - path: "lib/ui/pages/tools_page.dart"
         lines: 804
@@ -534,8 +534,8 @@ tests:
     lines: 56
     cases: 7
   - path: "test/provider_max_output_test.dart"
-    lines: 170
-    cases: 7
+    lines: 329
+    cases: 22
   - path: "test/python_runtime_test.dart"
     lines: 203
     cases: 15
@@ -569,3 +569,6 @@ tests:
   - path: "test/template_default_test.dart"
     lines: 138
     cases: 5
+  - path: "test/template_max_tokens_test.dart"
+    lines: 123
+    cases: 4

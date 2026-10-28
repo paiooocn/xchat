@@ -89,7 +89,9 @@ class AgentEngine {
     }
     final token = llm.CancelToken();
     _cancel = token;
-    final provider = createProvider(providerConfig);
+    // The thinking level selects the per-effort output cap (if any).
+    final provider = createProvider(providerConfig,
+        reasoningEffort: session.params.reasoningEffort);
     // Make sure the session/project sandbox exists before tools run.
     try {
       await Directory(session.sandbox).create(recursive: true);

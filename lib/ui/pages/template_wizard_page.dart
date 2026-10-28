@@ -33,7 +33,17 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
   final _instruction = TextEditingController();
   final _model = TextEditingController();
   final _limit = TextEditingController();
+  final _maxTokens = TextEditingController();
   final Set<String> _tools = <String>{};
+
+  /// 「最大输出 tokens」输入值：空 = 用模型服务配置；非法或 ≤0 按不限制处理。
+  int? get _maxTokensValue {
+    final raw = _maxTokens.text.trim();
+    if (raw.isEmpty) return null;
+    final value = int.tryParse(raw);
+    if (value == null || value <= 0) return null;
+    return value;
+  }
 
   String _category = '';
   late String _providerId;
@@ -63,6 +73,7 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
     _providerId = state.config.currentProviderId;
     _model.text = state.config.currentModel;
     _limit.text = state.config.defaultToolCallsLimit.toString();
+    _maxTokens.text = state.config.defaultParams.maxTokens?.toString() ?? '';
     _tools.addAll(state.config.defaultTools);
     _thinking = state.config.defaultParams.thinking;
     _effort = state.config.defaultParams.reasoningEffort ?? '';
@@ -77,6 +88,7 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
     _instruction.dispose();
     _model.dispose();
     _limit.dispose();
+    _maxTokens.dispose();
     super.dispose();
   }
 
@@ -205,7 +217,11 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
       thinkingReplyMode: _replyMode,
       toolCallsLimit: int.tryParse(_limit.text.trim()) ?? 0,
       systemPrompt: _system.text,
-      params: SessionParams(thinking: _thinking, reasoningEffort: _effort.isEmpty ? null : _effort),
+      params: SessionParams(
+        thinking: _thinking,
+        reasoningEffort: _effort.isEmpty ? null : _effort,
+        maxTokens: _maxTokensValue,
+      ),
       tools: _tools.toList(),
     );
     await state.saveTemplate(template);
@@ -452,6 +468,17 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
               ),
           ],
           onChanged: (value) => setState(() => _effort = value ?? ''),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _maxTokens,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '最大输出 tokens（留空 = 用模型服务配置）',
+            helperText: '显式填写的值优先于模型服务的输出上限；'
+                '留空则用服务配置（服务里可按思考档位分别设置）',
+            helperMaxLines: 2,
+          ),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<ThinkingReplyMode>(

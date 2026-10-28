@@ -297,7 +297,9 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     _apiKey.text = provider.apiKey;
     _models.text = provider.models.join(', ');
     _contextWindow.text = provider.contextWindow?.toString() ?? '';
-    _maxOutputTokens.text = provider.maxOutputTokens?.toString() ?? '';
+    _maxOutputTokens.text = provider.maxOutputTokensByEffort ??
+        provider.maxOutputTokens?.toString() ??
+        '';
     _preset = provider.preset;
     _reasoningSource = provider.reasoningSource;
     _reasoningStyle = provider.reasoningStyle;
@@ -328,19 +330,35 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
       .where((m) => m.isNotEmpty)
       .toList();
 
-  /// 解析「最大输出 tokens」输入：空 = 不限制；非法或 ≤0 也按不限制处理。
-  int? _parseMaxOutputTokens() {
+  /// 解析「最大输出 tokens」输入：
+  ///
+  /// - 空 = 不限制；
+  /// - 纯数字 = 固定上限（如 `4096`）；
+  /// - `{档位}:{长度}` 用 `/` 分隔 = 按思考档位分别设置
+  ///   （如 `low:1280/medium:2560/high:3840/xhigh:5120`）。
+  ///
+  /// 非法内容按不限制处理。
+  ({int? plain, String? spec}) _parseMaxOutputTokens() {
     final raw = _maxOutputTokens.text.trim();
-    if (raw.isEmpty) return null;
+    if (raw.isEmpty) return (plain: null, spec: null);
+    if (raw.contains(':')) {
+      final table = parseMaxTokensByEffort(raw);
+      if (table.isEmpty) return (plain: null, spec: null);
+      return (
+        plain: null,
+        spec: table.entries.map((entry) => '${entry.key}:${entry.value}').join('/'),
+      );
+    }
     final value = int.tryParse(raw);
-    if (value == null || value <= 0) return null;
-    return value;
+    if (value == null || value <= 0) return (plain: null, spec: null);
+    return (plain: value, spec: null);
   }
 
   /// Writes the form fields onto [target]; per-model specs are pruned to the
   /// models currently in the list.
   ProviderConfig _applyTo(ProviderConfig target) {
     final models = _modelList;
+    final cap = _parseMaxOutputTokens();
     return target
       ..id = _id.text.trim()
       ..name = _name.text.trim()
@@ -351,7 +369,8 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
       ..reasoningStyle = _reasoningStyle
       ..useMaxCompletionTokens = _useMaxCompletionTokens
       ..contextWindow = int.tryParse(_contextWindow.text.trim())
-      ..maxOutputTokens = _parseMaxOutputTokens()
+      ..maxOutputTokens = cap.plain
+      ..maxOutputTokensByEffort = cap.spec
       ..syncReasoningEffort = _syncReasoningEffort
       ..models = models
       ..modelSpecs = <String, ModelSpec>{
@@ -600,12 +619,15 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
           const SizedBox(height: 8),
           TextField(
             controller: _maxOutputTokens,
-            keyboardType: TextInputType.number,
+            keyboardType: TextInputType.text,
             decoration: const InputDecoration(
               labelText: '最大输出 tokens（max_tokens / max_completion_tokens）',
               helperText: '本次回复的输出上限，会作为请求参数传给 LLM；'
-                  '留空 = 不限制。会话参数 max_tokens 有值时以会话为准',
-              helperMaxLines: 3,
+                  '留空 = 不限制。可填固定值（如 4096），也可按思考档位分别设置：'
+                  'low:1280/medium:2560/high:3840/xhigh:5120'
+                  '（没有匹配的档位 = 不限制）。'
+                  '会话参数 max_tokens 有值时以会话为准',
+              helperMaxLines: 4,
             ),
           ),
           const SizedBox(height: 12),

@@ -7,10 +7,151 @@
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.6.0 (build 1) |
-| 最近提交 | 本次：release: v0.6.0 项目记忆索引（.memory/）机制（上一提交 `9ff395b` v0.5.10） |
+| 应用版本 | 0.6.1 (build 1) |
+| 最近提交 | 本次：release: v0.6.1 输出上限按思考档位 + 模板显式最大输出 tokens（上一提交 `8d4595f` v0.6.0） |
 | 工作区 | 干净（本次改动已提交） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart` |
+
+## 2026-10-30 · release: v0.6.1 — 输出上限按思考档位 / 模板显式指定
+
+**做了什么**
+
+两个功能点（细节见下面两节，不在此重复）：
+
+1. **输出上限可按思考档位分别设置**（服务商配置）→
+   见「输出上限（max_tokens）可按思考档位分别设置」
+2. **会话模板显式指定「最大输出 tokens」** + 思考强度按钮 tooltip 显示生效上限 →
+   见「会话模板显式「最大输出 tokens」+ 思考强度按钮 tooltip」
+
+- 版本 0.6.0+1 → 0.6.1+1（构建号沿用仓库惯例保持 +1，见 `VERSIONING.md`）
+
+**怎么验证**
+
+- `flutter analyze lib test` → No issues found
+- `flutter test` → 287 passed（新增 21 条）
+- `dart run tool/gen_memory_index.dart --check` → OK
+
+**下一步**
+
+- 用户侧验证见下面两节的「下一步」。
+
+---
+
+## 2026-10-30 · 会话模板显式「最大输出 tokens」+ 思考强度按钮 tooltip
+
+**做了什么**
+
+- 会话模板（模板页直接编辑 + 模板向导）新增「最大输出 tokens」输入框：
+  - **留空** = 不显式指定 → 用**模型服务商**的配置（可按思考档位分别设置，
+    见上一节）；
+  - **填了值** = 用这个显式值（盖过服务配置与档位表）。
+- 落盘位置复用已有的 `SessionParams.maxTokens`（模板 XML 的
+  `meta/params/max_tokens`，`template_xml` 的 `_paramsKeys` 本来就含它），
+  新会话从模板创建时经 `createSessionDraft(params: template.params.copyWith())`
+  继承；新建会话页同样继承（`(_template?.params ?? SessionParams()).copyWith()`）。
+  → **存量模板/会话零迁移**。
+- 优先级链（唯一出处）：**会话显式 max_tokens > 服务按档位算出的值 >
+  服务固定值**；都没有 → 不限制（请求体不带输出上限参数）。
+- 输入区下栏的「思考强度」按钮 tooltip 现在同时显示生效的输出上限：
+  `思考强度：high · 最大输出tokens：3840`（不限制时显示「不限制」）。
+  计算口径与请求体一致：会话显式值优先，否则
+  `ProviderConfig.maxOutputTokensFor(会话 reasoning_effort)`。
+
+**改了什么文件**
+
+- `lib/ui/pages/templates_page.dart`（模板编辑：输入框 + 保存到
+  `template.params.maxTokens`）
+- `lib/ui/pages/template_wizard_page.dart`（向导同字段，落到新建模板的 params）
+- `lib/ui/pages/home_page.dart`（`_ReasoningControls._maxTokensLabel` + tooltip 文案）
+- `test/template_max_tokens_test.dart`（新增：模板→会话继承 / 留空=用服务配置 /
+  显式值优先 / 编辑页输入并保存）
+- `FEATURES.md`（§6 模板页行）、`.memory/ANNOTATIONS.yaml`（providers 契约）
+
+**怎么验证**
+
+- `flutter analyze lib test` → No issues found
+- `flutter test` → **287 passed**（新增 4 条：模板→会话继承 / 留空=用服务配置 /
+  显式值优先 / 编辑页输入并保存）
+- 踩坑（已记入 `GOTCHAS.md §14`）：widget test 里「点保存 → 断言落盘」必须让
+  **假时钟（`pump`）与真实事件循环（`runAsync`）交替**让行，
+  只用 `pumpAndSettle` 会在保存完成前就断言 → 假失败。
+
+**下一步**
+
+- 用户侧验证：模板编辑 → 填「最大输出 tokens = 4096」→ 用该模板建会话 →
+  输入区悬停思考强度按钮应显示「最大输出tokens：4096」；把模板里该字段清空 →
+  显示服务配置算出的值（未配则「不限制」）。
+
+**遗留问题**
+
+- 会话运行中无法直接改输出上限（只有模板/会话参数里的 `max_tokens`），要改仍得
+  改模板或 XML 编辑器。
+
+---
+
+## 2026-10-30 · 输出上限（max_tokens）可按思考档位分别设置
+
+**做了什么**
+
+- 模型服务页的「最大输出 tokens」输入框现在支持**两种写法**：
+  - 固定值（`4096`）——与之前一致；
+  - **按思考档位的规格串**：`{档位}:{长度}`，各档位用 `/` 分隔，
+    如 `low:1280/medium:2560/high:3840/xhigh:5120`。
+- 语义（与需求一致）：**当前思考档位命中 → 用该档位的长度；没有匹配的档位
+  （含未选档位）→ 不限制**（请求体不带输出上限参数）。档位名不区分大小写。
+- 数据流：
+  `ProviderConfig.maxOutputTokensByEffort`（JSON `max_output_tokens_by_effort`）
+  → `parseMaxTokensByEffort()` 解析成表 → `ProviderConfig.maxOutputTokensFor(effort)`
+  → `llm_factory.buildOpenAiConfig(config, reasoningEffort: …)` 的
+  `OpenAiCompatibleConfig.defaultMaxTokens` → 请求体 `max_tokens` /
+  `max_completion_tokens`（参数名仍由 `useMaxCompletionTokens` 决定）。
+- **会话级 `max_tokens` 仍然优先**（llm_api 里 `request.maxTokens ?? defaultMaxTokens`）；
+  配了档位表就**取代**固定值（两者同时存在时以档位表为准）。
+- 档位表只在**有思考档位**时生效：`AgentEngine` 建 provider 时把
+  `session.params.reasoningEffort` 传进去；应用功能调用（自动命名、提示词润色）
+  没有档位 → 不限制。
+- 非法项被丢弃（`low:abc` / `bad` / `high:0`）；固定值 ≤0 仍按不限制处理。
+  存量 `config.json` 不受影响（未设置时新键不落盘）。
+
+**改了什么文件**
+
+- `lib/models/provider_config.dart`（`maxOutputTokensByEffort` 字段 + JSON 往返 +
+  `maxOutputTokensFor` + 顶层 `parseMaxTokensByEffort`）
+- `lib/llm/llm_factory.dart`（`createProvider` / `buildOpenAiConfig` 增加
+  `reasoningEffort` 参数，用 `maxOutputTokensFor` 解析上限）
+- `lib/agent/agent_engine.dart`（建 provider 时传会话的思考档位）
+- `lib/ui/pages/providers_page.dart`（输入框接受数值或规格串 + helper 文案 +
+  保存时分类落到两个字段）
+- `test/provider_max_output_test.dart`（新增 17 条：档位命中/未命中/未选档位/
+  取代固定值/参数名/会话优先/解析容错/配置往返/编辑页保存）
+- `FEATURES.md`（§2 ProviderConfig、§6 模型服务页）、`.memory/ANNOTATIONS.yaml`（providers 契约）
+
+**怎么验证**
+
+- 本轮 **shell 被托管模式拒绝**，`flutter analyze` / `flutter test` 未执行，
+  需要用户侧跑一遍：
+  ```sh
+  flutter analyze lib test
+  flutter test
+  ```
+- 预期：新增用例全绿，存量 268 条不变。
+
+**下一步**
+
+- 用户侧验证：模型服务页 → 「最大输出 tokens」填
+  `low:1280/medium:2560/high:3840/xhigh:5120` → 会话里把思考强度切到
+  `high` → 抓包/日志确认请求体带 `max_tokens: 3840`；切到 `minimal` → 该参数消失。
+- 若要跑 `dart run tool/gen_memory_index.dart` 刷新 `.memory/MAP.yaml`
+  （本次新增了 `parseMaxTokensByEffort` / `maxOutputTokensFor` 等符号，MAP 已过期）。
+
+**遗留问题**
+
+- 档位名按**字面**匹配：会话用 `max` 而表里写 `xhigh` 不会命中（= 不限制）。
+  是否要做 `max`↔`xhigh` 别名映射，待定。
+- 会话级 `max_tokens` 仍是**单一数值**，不能按档位；它一有值就压过档位表。
+- 应用功能调用（自动命名 / 提示词润色）没有思考档位 → 配了档位表后它们不受限。
+
+---
 
 ## 2026-10-30 · release: v0.6.0 — 项目记忆索引（.memory/）机制
 

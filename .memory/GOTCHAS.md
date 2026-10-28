@@ -130,3 +130,33 @@ v0.5.6 为修「粘贴丢换行」，给每个文本块后面加了一个隐藏�
 - 工具次数上限用尽后追加的是 **user 消息**，由模型自判是否继续（`DESIGN.md §9.2`）。
 - 新建会话的系统提示词首行自动写入工作空间根目录（v0.3.1）。
 - 图片附件是 **base64 内联**传输，有大小上限，超限直接丢弃而不是截断（`DESIGN.md §10.1.1`）。
+
+## 14. widget test 里保存类操作要走真实 I/O
+
+`testWidgets` 跑在**假时钟**里：`pumpAndSettle()` 只等「有没有待绘制的帧」，
+**不等挂起的真实 I/O**（写盘 / 读盘）。所以「点保存 → 断言数据已落盘」这类用例
+会**假失败**：断言跑在保存完成之前，`state.xxx` 还是旧的。
+
+两个都要用，且必须**交替**：
+
+- `tester.pump()` —— 让假时钟里的微任务继续（await 的续体在这里跑）；
+- `tester.runAsync(() => Future.delayed(...))` —— 让真实事件循环转起来，
+  真实 I/O 才能完成。
+
+只写 `runAsync` 不够：它跑的时候假时钟是暂停的，I/O 完成后回调排在假时钟的
+微任务队列里，没人 drain；反过来只 `pump` 也不行，真实 I/O 根本没机会完成。
+
+正确写法（保存 → 重新读盘这种两段式异步最容易踩）：
+
+```dart
+await tester.tap(find.text('保存'));
+for (var i = 0; i < 30; i++) {
+  await tester.pump();
+  await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+  if (state.templates.any((t) => t.params.maxTokens == 4096)) break;
+}
+```
+
+顺带：断言**内存态**（如 `state.config.providers`，`upsertProvider` 在内存里改）
+不受影响，所以不是所有保存类用例都会踩。
+→ 参考用例 `test/template_max_tokens_test.dart`。

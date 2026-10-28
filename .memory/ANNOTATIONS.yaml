@@ -276,6 +276,8 @@ features:
     design: "DESIGN.md §13"
     contracts:
       - "输出上限：ProviderConfig.maxOutputTokens → OpenAiCompatibleConfig.defaultMaxTokens（会话参数 max_tokens 优先）"
+      - "按档位的输出上限：ProviderConfig.maxOutputTokensByEffort（规格串 'low:1280/high:3840'）→ ProviderConfig.maxOutputTokensFor(会话 reasoning_effort) → defaultMaxTokens；未命中档位=不限制；配了档位表就取代固定值"
+      - "输出上限优先级：会话/模板显式 max_tokens（模板「最大输出 tokens」字段，留空=不显式指定）> 服务按档位/固定值算出的上限"
       - "参数名：useMaxCompletionTokens 决定请求体用 max_completion_tokens 还是 max_tokens"
 
   - id: models_dev

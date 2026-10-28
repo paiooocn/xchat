@@ -191,6 +191,7 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
   final _system = TextEditingController();
   final _model = TextEditingController();
   final _limit = TextEditingController();
+  final _maxTokens = TextEditingController();
   final Set<String> _tools = <String>{};
   late String _providerId;
   ThinkingSwitch _thinking = ThinkingSwitch.auto;
@@ -209,6 +210,7 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
     _system.text = template.systemPrompt;
     _model.text = template.model;
     _limit.text = template.toolCallsLimit.toString();
+    _maxTokens.text = template.params.maxTokens?.toString() ?? '';
     _tools.addAll(template.tools);
     _providerId = template.provider.isNotEmpty ? template.provider : state.config.currentProviderId;
     _thinking = template.params.thinking;
@@ -238,6 +240,16 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
     ];
   }
 
+  /// 解析「最大输出 tokens」：空 = 不限制（用模型服务配置）；非法或 ≤0 也按
+  /// 不限制处理。
+  int? _parseMaxTokens() {
+    final raw = _maxTokens.text.trim();
+    if (raw.isEmpty) return null;
+    final value = int.tryParse(raw);
+    if (value == null || value <= 0) return null;
+    return value;
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -245,6 +257,7 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
     _system.dispose();
     _model.dispose();
     _limit.dispose();
+    _maxTokens.dispose();
     super.dispose();
   }
 
@@ -260,7 +273,8 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
       ..thinkingReplyMode = _replyMode
       ..params = (widget.template.params
         ..thinking = _thinking
-        ..reasoningEffort = _effort.isEmpty ? null : _effort)
+        ..reasoningEffort = _effort.isEmpty ? null : _effort
+        ..maxTokens = _parseMaxTokens())
       ..tools = _tools.toList();
     await state.saveTemplate(template);
     if (mounted) Navigator.of(context).pop();
@@ -344,6 +358,17 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
                 ),
             ],
             onChanged: (value) => setState(() => _effort = value ?? ''),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _maxTokens,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '最大输出 tokens（留空 = 用模型服务配置）',
+              helperText: '显式填写的值优先于模型服务的输出上限；'
+                  '留空则用服务配置（服务里可按思考档位分别设置）',
+              helperMaxLines: 2,
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<ThinkingReplyMode>(
