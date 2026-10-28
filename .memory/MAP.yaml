@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-10-28 13:04"
-  git_sha: "7084a34"
+  generated_at: "2026-10-28 13:43"
+  git_sha: "c97576f"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
   file_count: 112
-  line_count: 27013
+  line_count: 27238
 
 modules:
   - id: "agent"
@@ -69,7 +69,7 @@ modules:
         lines: 79
   - id: "core"
     path: "lib/core"
-    lines: 1066
+    lines: 1084
     deps: ["models"]
     files:
       - path: "lib/core/app_paths.dart"
@@ -86,9 +86,9 @@ modules:
         doc: "Small, defensive helpers for reading untyped JSON payloads."
         symbols: ["asMap", "asList", "asString", "asInt", "asDouble", "asBool", "pruneNulls"]
       - path: "lib/core/prompt_utils.dart"
-        lines: 24
+        lines: 42
         doc: "Prompt assembly helpers shared by the session-creation flow."
-        symbols: ["injectWorkspaceRoot"]
+        symbols: ["injectWorkspaceRoot", "composePromptSections"]
       - path: "lib/core/python_packages.dart"
         lines: 262
         symbols: ["PythonPackage", "PythonPackageStore"]
@@ -123,14 +123,14 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 588
+    lines: 591
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
         lines: 28
         symbols: ["readText", "readTextTrim"]
       - path: "lib/data/xml/project_xml.dart"
-        lines: 86
+        lines: 89
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
         lines: 316
@@ -162,7 +162,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 3437
+    lines: 3457
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -173,7 +173,7 @@ modules:
         lines: 528
         symbols: ["ContinueMode", "AppConfig"]
       - path: "lib/models/catalog_index.dart"
-        lines: 274
+        lines: 286
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
       - path: "lib/models/extract_script.dart"
         lines: 266
@@ -185,7 +185,7 @@ modules:
         lines: 518
         symbols: ["ReasoningOption", "ModelsDevModel", "ModelsDevProvider", "ModelsDevSource", "ModelsDevCatalog", "modelsDevPresetFor", "compareModelsDevNewestFirst", "ModelsDevApplyResult", "ModelsDevSyncResult"]
       - path: "lib/models/project.dart"
-        lines: 64
+        lines: 72
         symbols: ["Project"]
       - path: "lib/models/provider_config.dart"
         lines: 240
@@ -346,18 +346,18 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 904
+    lines: 906
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 801
+        lines: 803
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8044
+    lines: 8226
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -370,7 +370,7 @@ modules:
         lines: 218
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 2940
+        lines: 2961
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
@@ -382,7 +382,7 @@ modules:
         lines: 394
         symbols: ["SearchPage"]
       - path: "lib/ui/pages/session_wizard_page.dart"
-        lines: 389
+        lines: 550
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
         lines: 597
@@ -499,6 +499,9 @@ tests:
   - path: "test/models_dev_test.dart"
     lines: 210
     cases: 10
+  - path: "test/project_prompt_test.dart"
+    lines: 103
+    cases: 8
   - path: "test/prompt_utils_test.dart"
     lines: 56
     cases: 7
@@ -520,6 +523,9 @@ tests:
   - path: "test/session_thinking_test.dart"
     lines: 78
     cases: 3
+  - path: "test/session_wizard_prompt_test.dart"
+    lines: 149
+    cases: 4
   - path: "test/session_xml_test.dart"
     lines: 95
     cases: 2

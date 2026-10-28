@@ -17,6 +17,7 @@ import 'xml_writer.dart';
 ///   <updated_at>...</updated_at>
 ///   <provider>...</provider>
 ///   <model>...</model>
+///   <system_prompt><![CDATA[...]]></system_prompt>
 /// </project>
 /// ```
 class ProjectXml {
@@ -33,6 +34,7 @@ class ProjectXml {
     out.leafText('updated_at', project.updatedAt.toUtc().toIso8601String());
     out.leafText('provider', project.provider);
     out.leafText('model', project.model);
+    out.leaf('system_prompt', project.systemPrompt);
     if (project.archivedAt != null) {
       out.leafText('archived_at', project.archivedAt!.toUtc().toIso8601String());
     }
@@ -68,6 +70,7 @@ class ProjectXml {
       updatedAt: DateTime.tryParse(readTextOrEmpty(root, 'updated_at')) ?? createdAt,
       provider: readTextOrEmpty(root, 'provider'),
       model: readTextOrEmpty(root, 'model'),
+      systemPrompt: readTextOrEmpty(root, 'system_prompt'),
       archivedAt: DateTime.tryParse(readTextOrEmpty(root, 'archived_at')),
     );
   }

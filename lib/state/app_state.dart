@@ -650,6 +650,7 @@ class AppState extends ChangeNotifier {
     String? sandbox,
     String? providerId,
     String? model,
+    String systemPrompt = '',
   }) async {
     final id = newId();
     final now = DateTime.now();
@@ -664,6 +665,7 @@ class AppState extends ChangeNotifier {
       updatedAt: now,
       provider: providerId ?? '',
       model: model ?? '',
+      systemPrompt: systemPrompt.trim(),
     );
     await projectRepository.write(project);
     await refreshProjects();

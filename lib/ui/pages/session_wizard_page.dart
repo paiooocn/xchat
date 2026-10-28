@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/ids.dart';
+import '../../core/prompt_utils.dart';
+import '../../models/project.dart';
 import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
@@ -27,10 +29,19 @@ class SessionWizardPage extends StatefulWidget {
 class _SessionWizardPageState extends State<SessionWizardPage> {
   SessionTemplate? _template;
   final _title = TextEditingController();
+
+  /// 会话提示词：模板带入或手写的会话级系统提示词。
   final _system = TextEditingController();
+
+  /// 新增提示词：本次会话额外追加的一段提示词。
+  final _extra = TextEditingController();
+
   final _sandbox = TextEditingController();
   final _seedUser = TextEditingController();
   final _seedAssistant = TextEditingController();
+
+  /// 是否把所选项目的「项目提示词」并入会话系统提示词。
+  bool _useProjectPrompt = false;
 
   /// Manual model ID field — mirrors [_model] both ways.
   final _modelInput = TextEditingController();
@@ -52,6 +63,25 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     super.initState();
     _projectId = widget.initialProjectId;
     _applyDefaults();
+    // 带着项目进来时，若该项目有提示词则默认启用。
+    final initial = _projectId == null
+        ? null
+        : context.read<AppState>().projectById(_projectId!);
+    _useProjectPrompt = initial?.systemPrompt.trim().isNotEmpty ?? false;
+  }
+
+  /// The project currently selected in the project dropdown (null = none).
+  Project? get _project => _projectId == null ? null : context.read<AppState>().projectById(_projectId!);
+
+  /// Builds the final system prompt: 会话提示词 / 项目提示词 / 新增提示词,
+  /// each non-empty section separated by a `---` line.
+  String _composeSystemPrompt() {
+    final project = _project;
+    return composePromptSections(<String>[
+      _system.text,
+      if (_useProjectPrompt && project != null) project.systemPrompt,
+      _extra.text,
+    ]);
   }
 
   void _applyDefaults() {
@@ -94,6 +124,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   void dispose() {
     _title.dispose();
     _system.dispose();
+    _extra.dispose();
     _sandbox.dispose();
     _seedUser.dispose();
     _seedAssistant.dispose();
@@ -111,7 +142,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
       title: _title.text.trim(),
       providerId: _providerId,
       model: _model,
-      systemPrompt: _system.text,
+      systemPrompt: _composeSystemPrompt(),
       tools: _tools,
       toolCallsLimit: _limit,
       thinkingReplyMode: _replyMode,
@@ -220,7 +251,13 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
               _projectId = value;
               if (value != null) {
                 final project = state.projectById(value);
-                if (project != null) _sandbox.text = project.sandbox;
+                if (project != null) {
+                  _sandbox.text = project.sandbox;
+                  // 选了带提示词的项目就默认启用，用户可再关掉。
+                  _useProjectPrompt = project.systemPrompt.trim().isNotEmpty;
+                }
+              } else {
+                _useProjectPrompt = false;
               }
             }),
           ),
@@ -232,12 +269,35 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
             ),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _system,
-            minLines: 4,
-            maxLines: 10,
-            decoration: const InputDecoration(
-              labelText: '系统提示词（顶行自动写入 工作空间根目录: <sandbox 绝对路径>）',
+          _PromptSection(
+            label: '① 会话提示词',
+            hint: '模板带入或手写的会话级提示词（顶行自动写入 工作空间根目录: <sandbox 绝对路径>）',
+            child: TextField(
+              controller: _system,
+              minLines: 4,
+              maxLines: 10,
+              decoration: const InputDecoration(
+                labelText: '会话提示词',
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _ProjectPromptSection(
+            project: _project,
+            enabled: _useProjectPrompt,
+            onChanged: (value) => setState(() => _useProjectPrompt = value),
+          ),
+          const SizedBox(height: 12),
+          _PromptSection(
+            label: '③ 新增提示词',
+            hint: '本次会话额外追加的一段提示词（排在最后）',
+            child: TextField(
+              controller: _extra,
+              minLines: 3,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                labelText: '新增提示词（可选）',
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -384,6 +444,107 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A titled block holding one prompt section (会话提示词 / 新增提示词).
+class _PromptSection extends StatelessWidget {
+  const _PromptSection({
+    required this.label,
+    required this.hint,
+    required this.child,
+  });
+
+  final String label;
+  final String hint;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(hint, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 6),
+        child,
+      ],
+    );
+  }
+}
+
+/// The 「启用项目提示词」 switch: it folds the selected project's own prompt
+/// into the session's system prompt. Disabled when no project is selected or
+/// the project has no prompt yet (the prompt is edited in the project panel).
+class _ProjectPromptSection extends StatelessWidget {
+  const _ProjectPromptSection({
+    required this.project,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  /// The selected project (null = the session belongs to no project).
+  final Project? project;
+
+  /// Whether the project prompt is currently folded into the session prompt.
+  final bool enabled;
+
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final prompt = project?.systemPrompt.trim() ?? '';
+    final hasPrompt = prompt.isNotEmpty;
+    final subtitle = project == null
+        ? '未选择项目；项目提示词在「项目编辑面板」中维护'
+        : (hasPrompt
+            ? '将项目「${project!.name.isEmpty ? project!.id : project!.name}」的提示词并入会话提示词'
+            : '该项目尚未设置提示词，可在「项目编辑面板」中补充');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '② 项目提示词',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(subtitle, style: theme.textTheme.bodySmall),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: enabled && hasPrompt,
+          onChanged: hasPrompt ? onChanged : null,
+          title: const Text('启用项目提示词'),
+        ),
+        if (hasPrompt)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: SelectableText(
+              prompt,
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
+            ),
+          ),
+      ],
     );
   }
 }

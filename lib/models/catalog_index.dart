@@ -148,6 +148,7 @@ class ProjectIndexEntry {
     this.provider = '',
     this.model = '',
     this.archivedAt,
+    this.systemPrompt = '',
   });
 
   String id;
@@ -159,6 +160,10 @@ class ProjectIndexEntry {
   String provider;
   String model;
   DateTime? archivedAt;
+
+  /// The project's system prompt (kept in the index so the session wizard can
+  /// offer it without re-reading every project file).
+  String systemPrompt;
 
   bool get archived => archivedAt != null;
 
@@ -172,6 +177,7 @@ class ProjectIndexEntry {
         provider: project.provider,
         model: project.model,
         archivedAt: project.archivedAt,
+        systemPrompt: project.systemPrompt,
       );
 
   factory ProjectIndexEntry.fromJson(Object? value) {
@@ -186,6 +192,7 @@ class ProjectIndexEntry {
       provider: asString(json['provider']) ?? '',
       model: asString(json['model']) ?? '',
       archivedAt: DateTime.tryParse(asString(json['archived_at']) ?? ''),
+      systemPrompt: asString(json['system_prompt']) ?? '',
     );
   }
 
@@ -198,6 +205,7 @@ class ProjectIndexEntry {
         'updated_at': updatedAt.toUtc().toIso8601String(),
         'provider': provider,
         'model': model,
+        'system_prompt': systemPrompt,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
       };
 
@@ -211,6 +219,7 @@ class ProjectIndexEntry {
         provider: provider,
         model: model,
         archivedAt: archivedAt,
+        systemPrompt: systemPrompt,
       );
 }
 
@@ -227,7 +236,10 @@ class CatalogIndex {
         archivedSessions = archivedSessions ?? <SessionIndexEntry>[],
         archivedProjects = archivedProjects ?? <ProjectIndexEntry>[];
 
-  static const int version = 1;
+  /// Bumped to 2 when project entries gained `system_prompt`: older index
+  /// files lack the field, so they are discarded and rebuilt from the project
+  /// XML files instead of silently losing every project prompt.
+  static const int version = 2;
 
   List<SessionIndexEntry> sessions;
   List<ProjectIndexEntry> projects;

@@ -5,6 +5,10 @@ library;
 /// trimmed start of each prompt line).
 const String kWorkspaceRootPrefix = '工作空间根目录';
 
+/// Separator placed between the prompt sections of a composed system prompt
+/// (会话提示词 / 项目提示词 / 新增提示词).
+const String kPromptSectionSeparator = '\n---\n';
+
 /// Prepends a `工作空间根目录: <sandbox>` line holding the session's absolute
 /// sandbox path to [systemPrompt].
 ///
@@ -21,4 +25,18 @@ String injectWorkspaceRoot(String systemPrompt, String sandbox) {
       .join('\n')
       .trim();
   return body.isEmpty ? line : '$line\n\n$body';
+}
+
+/// Joins the prompt sections of a session's system prompt in the canonical
+/// order — 会话提示词 / 项目提示词 / 新增提示词 — with [kPromptSectionSeparator]
+/// between them.
+///
+/// Empty sections are dropped, so a session without a project prompt does not
+/// get a stray separator.
+String composePromptSections(List<String> sections) {
+  final parts = sections
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList(growable: false);
+  return parts.join(kPromptSectionSeparator);
 }

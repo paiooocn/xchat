@@ -79,7 +79,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 - 模板：与会话同构但无 messages（或含预置 system/few-shot），含名称、说明、provider/model、
   params、tools、tool_calls_limit、system prompt、thinking_reply_mode、标签。
-- 项目：`id / name / description / sandbox / created_at / updated_at / provider / model / archived_at`。
+- 项目：`id / name / description / sandbox / created_at / updated_at / provider / model / system_prompt / archived_at`。
 
 ### 1.4 Token usage 口径
 
@@ -302,6 +302,8 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 功能 | 说明 |
 | --- | --- |
 | 创建向导 | 分步：起点（空白/模板）→ 模型（provider+model+参数）→ 系统提示 → 工具与预算 → 存储与标识（sandbox/标题/标签/thinking_reply_mode）→ 生成 id 落盘进聊天 |
+| 提示词三段式 | 系统提示词由三段组成：**会话提示词**（模板带入或手写）/ **项目提示词**（所选项目自带，开关「启用项目提示词」并入）/ **新增提示词**（本次会话临时追加）；非空段之间用 `\n---\n` 分隔，顺序固定 |
+| 项目提示词 | 项目编辑面板（新建/编辑项目对话框）可写「项目提示词」，随项目 XML 落盘；新建会话页按开关并入该提示词 |
 | 会话模板 | 新建/编辑/复制/删除/「用此模板新建会话」；模板向导含 LLM 生成/改写系统提示词 |
 | 首页模板选择 | 欢迎页「会话模板」下拉：选中只显示模板名，**发送对话时才创建会话**；未选时用设置里的默认会话模板；两者都无则发送时提示先选模板或去配置默认模板 |
 | 克隆（3 种） | ①到首个 user 为止（含）②到首轮结束 ③全量复制；新 id、时间戳=now、tool_calls/usage 清零，保留配置 |

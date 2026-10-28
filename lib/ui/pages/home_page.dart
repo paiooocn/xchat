@@ -227,6 +227,7 @@ class _HomePageState extends State<HomePage> {
       name: result.name,
       description: result.description,
       sandbox: result.sandbox,
+      systemPrompt: result.systemPrompt,
     );
   }
 
@@ -237,7 +238,8 @@ class _HomePageState extends State<HomePage> {
     project
       ..name = result.name
       ..description = result.description
-      ..sandbox = result.sandbox;
+      ..sandbox = result.sandbox
+      ..systemPrompt = result.systemPrompt;
     await state.saveProject(project);
   }
 
@@ -251,37 +253,55 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() => _selectedId = id);
   }
 
-  Future<({String name, String description, String sandbox})?> _showProjectDialog(
+  Future<({String name, String description, String sandbox, String systemPrompt})?>
+      _showProjectDialog(
     BuildContext context, {
     Project? existing,
   }) async {
     final name = TextEditingController(text: existing?.name ?? '');
     final desc = TextEditingController(text: existing?.description ?? '');
     final sandbox = TextEditingController(text: existing?.sandbox ?? '');
+    final prompt = TextEditingController(text: existing?.systemPrompt ?? '');
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(existing == null ? '新建项目' : '编辑项目'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              decoration: const InputDecoration(labelText: '项目名称'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(labelText: '项目名称'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: desc,
+                  decoration: const InputDecoration(labelText: '说明'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: sandbox,
+                  decoration: const InputDecoration(
+                    labelText: '工作目录（留空=默认 projects/<项目id>）',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: prompt,
+                  minLines: 3,
+                  maxLines: 10,
+                  decoration: const InputDecoration(
+                    labelText: '项目提示词（可选）',
+                    helperText:
+                        '本项目新建会话时可在「启用项目提示词」中并入系统提示词',
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: desc,
-              decoration: const InputDecoration(labelText: '说明'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: sandbox,
-              decoration: const InputDecoration(
-                labelText: '工作目录（留空=默认 projects/<项目id>）',
-              ),
-            ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -300,6 +320,7 @@ class _HomePageState extends State<HomePage> {
       name: name.text.trim(),
       description: desc.text.trim(),
       sandbox: sandbox.text.trim(),
+      systemPrompt: prompt.text.trim(),
     );
   }
 

@@ -334,8 +334,21 @@ features:
       - "lib/models/project.dart"
       - "lib/data/project_repository.dart"
       - "lib/data/xml/project_xml.dart"
+      - "lib/ui/pages/home_page.dart"
     design: "FEATURES.md §1.3"
-    contracts: []
+    contracts:
+      - "Project.systemPrompt 是项目级提示词，在项目编辑面板里写，新建会话页按开关并入"
+
+  - id: session_prompts
+    title: "会话系统提示词的三段式组装"
+    files:
+      - "lib/core/prompt_utils.dart"
+      - "lib/ui/pages/session_wizard_page.dart"
+      - "lib/state/app_state.dart"
+    design: "FEATURES.md §7"
+    contracts:
+      - "顺序固定：会话提示词 / 项目提示词 / 新增提示词，空段丢弃，段间用 \\n---\\n"
+      - "工作空间根目录行由 injectWorkspaceRoot 写在最上面"
 
   - id: external_editor
     title: "外部编辑器 / 工作目录 / URL 打开"

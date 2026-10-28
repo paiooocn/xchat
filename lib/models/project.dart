@@ -15,6 +15,7 @@ class Project {
     this.provider = '',
     this.model = '',
     this.archivedAt,
+    this.systemPrompt = '',
   });
 
   String id;
@@ -33,6 +34,11 @@ class Project {
   /// When set, the project is archived and hidden from the active list.
   DateTime? archivedAt;
 
+  /// Project-level system prompt. New sessions created inside this project can
+  /// opt in to it (新建会话页的「启用项目提示词」); it is stored per project and
+  /// edited in the project edit panel.
+  String systemPrompt;
+
   bool get isArchived => archivedAt != null;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -44,6 +50,7 @@ class Project {
         'updated_at': updatedAt.toUtc().toIso8601String(),
         'provider': provider,
         'model': model,
+        'system_prompt': systemPrompt,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
       };
 
@@ -58,6 +65,7 @@ class Project {
       updatedAt: DateTime.tryParse(asString(json['updated_at']) ?? '') ?? DateTime.now(),
       provider: asString(json['provider']) ?? '',
       model: asString(json['model']) ?? '',
+      systemPrompt: asString(json['system_prompt']) ?? '',
       archivedAt: DateTime.tryParse(asString(json['archived_at']) ?? ''),
     );
   }

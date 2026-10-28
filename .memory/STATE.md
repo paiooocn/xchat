@@ -9,8 +9,56 @@
 |---|---|
 | 应用版本 | 0.5.8 (build 1) |
 | 最近提交 | `7084a34` — release: v0.5.8 修复代码围栏之后的文本无法选中复制 |
-| 工作区 | 干净（除 `.memory/`、`tool/gen_memory_index.dart` 未跟踪） |
+| 工作区 | 有未提交改动（提示词三段式改造，见下节） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart` |
+
+## 2026-10-29 · 新建会话页提示词三段式（会话 / 项目 / 新增）
+
+**做了什么**
+
+- 新建会话页（`lib/ui/pages/session_wizard_page.dart`）的系统提示词拆成三段：
+  **① 会话提示词**（原字段，模板带入或手写）、**② 项目提示词**（开关「启用项目提示词」
+  控制，来自所选项目）、**③ 新增提示词**（本次会话临时追加）。
+- 拼装规则写死在 `lib/core/prompt_utils.dart` 的 `composePromptSections`：
+  顺序固定，**空段丢弃**，段间用 `\n---\n` 分隔；`工作空间根目录` 行仍由
+  `injectWorkspaceRoot` 写在最上面。
+- 项目提示词落在项目上：`Project.systemPrompt` → 项目 XML 的 `<system_prompt>`（CDATA）→
+  `ProjectIndexEntry.system_prompt`（index.json 版本 1 → **2**，旧索引自动重建，
+  否则老索引会静默丢掉所有项目提示词）。
+- 编辑入口放在**项目编辑面板**：`home_page.dart` 的新建/编辑项目对话框新增「项目提示词」
+  多行输入框（对话框加了滚动 + 固定宽度，避免小屏溢出）。
+- 选了带提示词的项目时开关默认打开（可再关掉）；项目无提示词时开关置灰不可用。
+
+**改了什么文件**
+
+- `lib/core/prompt_utils.dart`（`kPromptSectionSeparator` + `composePromptSections`）
+- `lib/models/project.dart`、`lib/models/catalog_index.dart`（`systemPrompt` 字段 + JSON）
+- `lib/data/xml/project_xml.dart`（`<system_prompt>` 编解码）
+- `lib/state/app_state.dart`（`createProject(systemPrompt:)`）
+- `lib/ui/pages/home_page.dart`（项目编辑面板 + 提示词字段）
+- `lib/ui/pages/session_wizard_page.dart`（三段式 UI + 拼装）
+- `test/project_prompt_test.dart`、`test/session_wizard_prompt_test.dart`（新增）
+- `FEATURES.md`（§1.3 项目字段、§7 会话功能两行）
+
+**怎么验证**
+
+- `flutter analyze lib test` → No issues found
+- `flutter test` → 214 passed（新增 10 条用例：拼装顺序 / 空段 / XML 往返 / 索引往返 /
+  向导页开关默认态与关闭态）
+- `dart run tool/gen_memory_index.dart --check` → OK
+
+**下一步**
+
+- 用户侧验证：真机建项目 → 写项目提示词 → 项目内新建会话，确认开关默认打开、
+  落盘的 `<system>` 内容里三段以 `---` 分隔。
+
+**遗留问题**
+
+- 欢迎页「发送即建会话」的路径（`home_page.dart` 的 `_startSession`）走
+  `createFromTemplateDraft`，**不经过新建会话页**，因此不会并入项目提示词；
+  若希望该路径也带上项目提示词，需要在 `AppState` 层再补一次拼装。
+
+---
 
 ## 2026-10-28 · 收敛提示词层（AGENTS.md 指针 + 协议单一出处）
 
