@@ -7,17 +7,24 @@ import '../models/provider_config.dart';
 /// Uses the plain transport: request/response JSON is never dumped to the
 /// console, in either debug or release builds.
 LlmProvider createProvider(ProviderConfig config) {
-  return OpenAiCompatibleProvider(
-    config: OpenAiCompatibleConfig(
-      baseUrl: Uri.parse(config.baseUrl),
-      name: config.id,
-      apiKey: config.apiKey.isEmpty ? null : config.apiKey,
-      headers: config.headers,
-      reasoningSource: _reasoningSource(config.reasoningSource),
-      reasoningRequestStyle: _reasoningStyle(config.reasoningStyle),
-      useMaxCompletionTokens: config.useMaxCompletionTokens,
-      sendStreamOptions: true,
-    ),
+  return OpenAiCompatibleProvider(config: buildOpenAiConfig(config));
+}
+
+/// Translates an [ProviderConfig] into the wire-level configuration.
+///
+/// Exposed separately so the request body can be inspected in tests.
+OpenAiCompatibleConfig buildOpenAiConfig(ProviderConfig config) {
+  return OpenAiCompatibleConfig(
+    baseUrl: Uri.parse(config.baseUrl),
+    name: config.id,
+    apiKey: config.apiKey.isEmpty ? null : config.apiKey,
+    headers: config.headers,
+    reasoningSource: _reasoningSource(config.reasoningSource),
+    reasoningRequestStyle: _reasoningStyle(config.reasoningStyle),
+    useMaxCompletionTokens: config.useMaxCompletionTokens,
+    // Output cap of the service; a request-level `max_tokens` overrides it.
+    defaultMaxTokens: config.maxOutputTokens,
+    sendStreamOptions: true,
   );
 }
 ReasoningSource _reasoningSource(String value) => switch (value) {

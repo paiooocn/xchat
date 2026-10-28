@@ -272,8 +272,11 @@ features:
       - "lib/llm/llm_factory.dart"
       - "lib/models/provider_config.dart"
       - "lib/models/proxy_config.dart"
+      - "packages/llm_api/lib/src/providers/openai_compatible.dart"
     design: "DESIGN.md §13"
-    contracts: []
+    contracts:
+      - "输出上限：ProviderConfig.maxOutputTokens → OpenAiCompatibleConfig.defaultMaxTokens（会话参数 max_tokens 优先）"
+      - "参数名：useMaxCompletionTokens 决定请求体用 max_completion_tokens 还是 max_tokens"
 
   - id: models_dev
     title: "models.dev 模型目录同步"

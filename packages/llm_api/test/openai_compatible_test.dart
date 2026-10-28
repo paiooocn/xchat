@@ -107,6 +107,32 @@ void main() {
       expect(messages[4]['content'], 'done');
     });
 
+    test('sends the provider default output cap when the request has none',
+        () async {
+      final transport = MockHttpTransport.sse(<Object?>[
+        <String, Object?>{'choices': <Object?>[]},
+      ]);
+      await build(
+        transport,
+        tweak: (config) => config.copyWith(
+          useMaxCompletionTokens: true,
+          defaultMaxTokens: 4096,
+        ),
+      ).complete(simpleRequest());
+      expect(transport.lastBody['max_completion_tokens'], 4096);
+      expect(transport.lastBody.containsKey('max_tokens'), isFalse);
+
+      final legacy = MockHttpTransport.sse(<Object?>[
+        <String, Object?>{'choices': <Object?>[]},
+      ]);
+      await build(
+        legacy,
+        tweak: (config) => config.copyWith(defaultMaxTokens: 512),
+      ).complete(simpleRequest());
+      expect(legacy.lastBody['max_tokens'], 512);
+      expect(legacy.lastBody.containsKey('max_completion_tokens'), isFalse);
+    });
+
     test('replays reasoning when explicitly requested', () async {
       final transport = MockHttpTransport.sse(<Object?>[
         <String, Object?>{'choices': <Object?>[<String, Object?>{'delta': <String, Object?>{'content': 'x'}}]},

@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-10-28 13:43"
-  git_sha: "c97576f"
+  generated_at: "2026-10-28 14:13"
+  git_sha: "74d2833"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
   file_count: 112
-  line_count: 27238
+  line_count: 27307
 
 modules:
   - id: "agent"
@@ -144,12 +144,12 @@ modules:
         symbols: ["XmlOut"]
   - id: "llm"
     path: "lib/llm"
-    lines: 529
+    lines: 536
     deps: ["models", "pkg.llm_api"]
     files:
       - path: "lib/llm/llm_factory.dart"
-        lines: 58
-        symbols: ["createProvider", "fetchModels", "testProvider"]
+        lines: 65
+        symbols: ["createProvider", "buildOpenAiConfig", "fetchModels", "testProvider"]
       - path: "lib/llm/outbound_adapter.dart"
         lines: 179
         symbols: ["resolveEchoMode"]
@@ -162,7 +162,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 3457
+    lines: 3468
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -188,7 +188,7 @@ modules:
         lines: 72
         symbols: ["Project"]
       - path: "lib/models/provider_config.dart"
-        lines: 240
+        lines: 251
         symbols: ["ModelSpec", "ProviderConfig", "reasoningEffortOptionsFor"]
       - path: "lib/models/proxy_config.dart"
         lines: 121
@@ -221,7 +221,7 @@ modules:
         symbols: ["TokenUsage"]
   - id: "pkg.llm_api"
     path: "packages/llm_api/lib"
-    lines: 5464
+    lines: 5476
     deps: []
     files:
       - path: "packages/llm_api/lib/llm_api.dart"
@@ -294,7 +294,7 @@ modules:
         doc: "Provider for Google's Gemini `generateContent` API."
         symbols: ["GeminiConfig", "GeminiProvider"]
       - path: "packages/llm_api/lib/src/providers/openai_compatible.dart"
-        lines: 516
+        lines: 528
         doc: "Provider for the OpenAI `/chat/completions` wire format."
         symbols: ["OpenAiReasoningRequestStyle", "OpenAiCompatibleConfig", "OpenAiCompatibleProvider", "OpenAiReasoningContext"]
       - path: "packages/llm_api/lib/src/providers/presets.dart"
@@ -357,7 +357,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8226
+    lines: 8265
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -376,7 +376,7 @@ modules:
         lines: 389
         symbols: ["PipPackagesPage"]
       - path: "lib/ui/pages/providers_page.dart"
-        lines: 926
+        lines: 965
         symbols: ["ProvidersPage"]
       - path: "lib/ui/pages/search_page.dart"
         lines: 394
@@ -504,6 +504,9 @@ tests:
     cases: 8
   - path: "test/prompt_utils_test.dart"
     lines: 56
+    cases: 7
+  - path: "test/provider_max_output_test.dart"
+    lines: 170
     cases: 7
   - path: "test/python_runtime_test.dart"
     lines: 203

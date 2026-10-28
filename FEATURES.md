@@ -107,7 +107,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | `Session` | 见 §1.2；含 clone 系列的切片逻辑（到 system / 到首个 user / 到首轮结束 / 全量） |
 | `SessionMessage` | role/id/content/reasoning(+mode)/toolCalls/tool_call_id/name/is_error/usage/attachments |
 | `SessionParams` | temperature / top_p / max_tokens / thinking(auto\|on\|off) / reasoning_effort / reasoning_budget |
-| `ProviderConfig` | id/name/preset/baseUrl/apiKey/headers/reasoning_source/reasoning_style/ thinking_reply_mode/contextWindow/models[]/modelSpecs{} |
+| `ProviderConfig` | id/name/preset/baseUrl/apiKey/headers/reasoning_source/reasoning_style/ thinking_reply_mode/contextWindow/max_output_tokens/use_max_completion_tokens/models[]/modelSpecs{} |
 | `ModelSpec` | 每模型：contextWindow / maxOutputTokens / reasoning / toolCall / status |
 | `SessionTemplate` | 模板字段（§1.3） |
 | `Project` | 项目字段（§1.3） |
@@ -368,7 +368,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 聊天面板 | 头部（模型选择器/执行模式/用量/上下文条）、消息流（用户右/助手左）、实时流区域、状态栏、压缩进度弹窗、审批弹窗/列表 |
 | 创建向导 | 分步表单（§7） |
 | 模板页 + 模板向导 | 模板 CRUD；向导分步 + LLM 生成/改写系统提示词（含场景类别） |
-| 模型服务页 | provider 列表/编辑（baseUrl/apiKey/headers/预设/思考参数/模型清单/model_specs）、测试连接、拉取模型、models.dev 同步/填充/添加向导；API Key 字段支持显示/隐藏切换与「从剪贴板粘贴」（Android 输入法禁止在密码型输入框粘贴，故提供 App 侧剪贴板按钮兜底） |
+| 模型服务页 | provider 列表/编辑（baseUrl/apiKey/headers/预设/思考参数/模型清单/model_specs）、**最大输出 tokens（数值输入，作为请求体的输出上限；留空=不限制）**、**输出上限参数名（`max_tokens` / `max_completion_tokens`，前者通用、后者为 OpenAI o 系列 / gpt-5 必填）**、测试连接、拉取模型、models.dev 同步/填充/添加向导；API Key 字段支持显示/隐藏切换与「从剪贴板粘贴」（Android 输入法禁止在密码型输入框粘贴，故提供 App 侧剪贴板按钮兜底） |
 | 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、**默认会话模板（从会话模板中选一）**、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
 | 工具管理页 | 每工具审批等级、shell 三名单编辑（正则校验/一键默认）、shell 审批详情、工具配置 JSON 导入/导出 |
 | 手动搜索页 | §6.5 |

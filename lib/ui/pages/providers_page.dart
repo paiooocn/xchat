@@ -246,6 +246,7 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
   final _apiKey = TextEditingController();
   final _models = TextEditingController();
   final _contextWindow = TextEditingController();
+  final _maxOutputTokens = TextEditingController();
   late String _preset;
   late String _reasoningSource;
   late String _reasoningStyle;
@@ -296,6 +297,7 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     _apiKey.text = provider.apiKey;
     _models.text = provider.models.join(', ');
     _contextWindow.text = provider.contextWindow?.toString() ?? '';
+    _maxOutputTokens.text = provider.maxOutputTokens?.toString() ?? '';
     _preset = provider.preset;
     _reasoningSource = provider.reasoningSource;
     _reasoningStyle = provider.reasoningStyle;
@@ -316,6 +318,7 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     _apiKey.dispose();
     _models.dispose();
     _contextWindow.dispose();
+    _maxOutputTokens.dispose();
     super.dispose();
   }
 
@@ -324,6 +327,15 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
       .map((m) => m.trim())
       .where((m) => m.isNotEmpty)
       .toList();
+
+  /// 解析「最大输出 tokens」输入：空 = 不限制；非法或 ≤0 也按不限制处理。
+  int? _parseMaxOutputTokens() {
+    final raw = _maxOutputTokens.text.trim();
+    if (raw.isEmpty) return null;
+    final value = int.tryParse(raw);
+    if (value == null || value <= 0) return null;
+    return value;
+  }
 
   /// Writes the form fields onto [target]; per-model specs are pruned to the
   /// models currently in the list.
@@ -339,6 +351,7 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
       ..reasoningStyle = _reasoningStyle
       ..useMaxCompletionTokens = _useMaxCompletionTokens
       ..contextWindow = int.tryParse(_contextWindow.text.trim())
+      ..maxOutputTokens = _parseMaxOutputTokens()
       ..syncReasoningEffort = _syncReasoningEffort
       ..models = models
       ..modelSpecs = <String, ModelSpec>{
@@ -585,10 +598,36 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
             onChanged: (value) => setState(() => _reasoningStyle = value ?? 'none'),
           ),
           const SizedBox(height: 8),
-          SwitchListTile(
-            value: _useMaxCompletionTokens,
-            title: const Text('使用 max_completion_tokens'),
-            onChanged: (value) => setState(() => _useMaxCompletionTokens = value),
+          TextField(
+            controller: _maxOutputTokens,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '最大输出 tokens（max_tokens / max_completion_tokens）',
+              helperText: '本次回复的输出上限，会作为请求参数传给 LLM；'
+                  '留空 = 不限制。会话参数 max_tokens 有值时以会话为准',
+              helperMaxLines: 3,
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey('max-tokens-key-$_useMaxCompletionTokens'),
+            initialValue: _useMaxCompletionTokens ? 'max_completion_tokens' : 'max_tokens',
+            decoration: const InputDecoration(
+              labelText: '输出上限参数名',
+              helperText: 'max_tokens：通用；max_completion_tokens：'
+                  'OpenAI o 系列 / gpt-5 只接受这个参数名',
+              helperMaxLines: 2,
+            ),
+            items: const [
+              DropdownMenuItem(value: 'max_tokens', child: Text('max_tokens')),
+              DropdownMenuItem(
+                value: 'max_completion_tokens',
+                child: Text('max_completion_tokens'),
+              ),
+            ],
+            onChanged: (value) => setState(
+              () => _useMaxCompletionTokens = value == 'max_completion_tokens',
+            ),
           ),
           SwitchListTile(
             value: _syncReasoningEffort,

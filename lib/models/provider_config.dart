@@ -70,6 +70,7 @@ class ProviderConfig {
     this.reasoningStyle = 'none',
     this.useMaxCompletionTokens = false,
     this.contextWindow,
+    this.maxOutputTokens,
     this.defaultThinkingReplyMode = ThinkingReplyMode.auto,
     this.syncReasoningEffort = false,
     Map<String, ModelSpec>? modelSpecs,
@@ -103,6 +104,13 @@ class ProviderConfig {
 
   /// Context window (tokens) for the context bar; `null` = unknown.
   int? contextWindow;
+
+  /// 最大输出 tokens（可选）：该服务单次回复的输出上限。
+  ///
+  /// `null` = 不限制（请求体不带输出上限参数）。请求时按
+  /// [useMaxCompletionTokens] 决定参数名是 `max_completion_tokens` 还是
+  /// `max_tokens`；会话参数 `max_tokens` 有值时以会话为准。
+  int? maxOutputTokens;
   /// How history thinking should be echoed for this provider.
   ThinkingReplyMode defaultThinkingReplyMode;
 
@@ -165,6 +173,7 @@ class ProviderConfig {
         reasoningStyle: reasoningStyle,
         useMaxCompletionTokens: useMaxCompletionTokens,
         contextWindow: contextWindow,
+        maxOutputTokens: maxOutputTokens,
         defaultThinkingReplyMode: defaultThinkingReplyMode,
         syncReasoningEffort: syncReasoningEffort,
         models: List<String>.of(models),
@@ -186,6 +195,7 @@ class ProviderConfig {
         'reasoning_style': reasoningStyle,
         'use_max_completion_tokens': useMaxCompletionTokens,
         'context_window': contextWindow,
+        'max_output_tokens': maxOutputTokens,
         'thinking_reply_mode': defaultThinkingReplyMode.wire,
         if (syncReasoningEffort) 'sync_reasoning_effort': true,
         if (models.isNotEmpty) 'models': models,
@@ -209,6 +219,7 @@ class ProviderConfig {
       reasoningStyle: asString(json['reasoning_style']) ?? 'none',
       useMaxCompletionTokens: asBool(json['use_max_completion_tokens']),
       contextWindow: asInt(json['context_window']),
+      maxOutputTokens: asInt(json['max_output_tokens']),
       defaultThinkingReplyMode:
           ThinkingReplyMode.parse(asString(json['thinking_reply_mode'])),
       models: asStringList(json['models']),

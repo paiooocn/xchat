@@ -7,10 +7,58 @@
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.5.8 (build 1) |
-| 最近提交 | `7084a34` — release: v0.5.8 修复代码围栏之后的文本无法选中复制 |
-| 工作区 | 有未提交改动（提示词三段式改造，见下节） |
+| 应用版本 | 0.5.10 (build 1) |
+| 最近提交 | 本次：release: v0.5.10 模型服务页「max_completion_tokens」改为可输入数值（上一提交 `74d2833` v0.5.9） |
+| 工作区 | 干净（本次改动已提交） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart` |
+
+## 2026-10-29 · 提供商页「max_completion_tokens」改为可输入数值
+
+**做了什么**
+
+- 问题：模型服务页的「使用 max_completion_tokens」只是个开关，只能开/关；**全 App
+  没有任何地方能填「输出多少 tokens」**——`SessionParams.maxTokens` 没有 UI 入口
+  （设置页「默认参数」只有思考开关），所以请求体的输出上限一直是空的。
+- 修法（拆成两个正交控件）：
+  - 新增 `ProviderConfig.maxOutputTokens`（JSON 键 `max_output_tokens`）：
+    **最大输出 tokens** 数值输入框，留空 = 不限制。
+  - 原来的开关换成下拉「输出上限参数名」：`max_tokens`（通用）/
+    `max_completion_tokens`（OpenAI o 系列 / gpt-5 只接受这个）；底层仍是
+    `use_max_completion_tokens`，**存量 config.json 无需迁移**。
+- 传递链路（保证真的传到 LLM）：
+  `ProviderConfig.maxOutputTokens` → `llm_factory.buildOpenAiConfig` 的
+  `OpenAiCompatibleConfig.defaultMaxTokens` → `OpenAiCompatibleProvider.buildRequestBody`
+  的 `request.maxTokens ?? config.defaultMaxTokens` → 按参数名写入
+  `max_tokens` / `max_completion_tokens`。
+  **会话级 `max_tokens` 优先于服务级上限**。
+- `llm_factory` 拆出 `buildOpenAiConfig(ProviderConfig)`，单测可直接检查请求体。
+
+**改了什么文件**
+
+- `lib/models/provider_config.dart`（`maxOutputTokens` 字段 + JSON 往返）
+- `lib/llm/llm_factory.dart`（`buildOpenAiConfig` + `defaultMaxTokens`）
+- `lib/ui/pages/providers_page.dart`（数值输入框 + 参数名下拉）
+- `packages/llm_api/lib/src/providers/openai_compatible.dart`（`defaultMaxTokens`）
+- `packages/llm_api/test/openai_compatible_test.dart`、`test/provider_max_output_test.dart`（新增用例）
+- `FEATURES.md`（§2 ProviderConfig 字段、§6 模型服务页）、`.memory/ANNOTATIONS.yaml`（providers 契约）
+
+**怎么验证**
+
+- `flutter analyze lib test` → No issues found
+- `flutter test` → 221 passed（新增 7 条：参数名两种、缺省不传、会话优先、JSON 往返、
+  编辑页输入数值并保存）
+- `cd packages/llm_api && dart test` → 66 passed
+- `dart run tool/gen_memory_index.dart --check` → OK
+
+**下一步**
+
+- 用户侧验证：模型服务页填「最大输出 tokens = 4096」、参数名选 `max_completion_tokens`，
+  发一条消息，确认请求体里有 `max_completion_tokens: 4096`。
+
+**遗留问题**
+
+- 会话级 `max_tokens` 仍无 UI 入口（只能靠模板 XML / `config.json` 的 `default_params`）；
+  本次只补了服务级入口。要按会话覆盖，需在新建会话页/设置页补字段。
 
 ## 2026-10-29 · 新建会话页提示词三段式（会话 / 项目 / 新增）
 

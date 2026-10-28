@@ -69,6 +69,7 @@ class OpenAiCompatibleConfig {
     this.startInReasoning = false,
     this.reasoningRequestStyle = OpenAiReasoningRequestStyle.none,
     this.useMaxCompletionTokens = false,
+    this.defaultMaxTokens,
     this.sendStreamOptions = true,
     this.capabilities = const ProviderCapabilities(),
     this.defaultBody = const <String, Object?>{},
@@ -112,6 +113,13 @@ class OpenAiCompatibleConfig {
   /// o-series / gpt-5 reject `max_tokens` and require `max_completion_tokens`.
   final bool useMaxCompletionTokens;
 
+  /// Fallback output cap, used when the request does not carry one.
+  ///
+  /// It is sent under the same key as an explicit request value
+  /// (`max_completion_tokens` or `max_tokens`, see [useMaxCompletionTokens]),
+  /// so a request-level value always wins.
+  final int? defaultMaxTokens;
+
   /// Send `stream_options: {"include_usage": true}` to get token counts while
   /// streaming.
   final bool sendStreamOptions;
@@ -140,6 +148,7 @@ class OpenAiCompatibleConfig {
     bool? startInReasoning,
     OpenAiReasoningRequestStyle? reasoningRequestStyle,
     bool? useMaxCompletionTokens,
+    int? defaultMaxTokens,
     bool? sendStreamOptions,
     ProviderCapabilities? capabilities,
     Map<String, Object?>? defaultBody,
@@ -161,6 +170,7 @@ class OpenAiCompatibleConfig {
         startInReasoning: startInReasoning ?? this.startInReasoning,
         reasoningRequestStyle: reasoningRequestStyle ?? this.reasoningRequestStyle,
         useMaxCompletionTokens: useMaxCompletionTokens ?? this.useMaxCompletionTokens,
+        defaultMaxTokens: defaultMaxTokens ?? this.defaultMaxTokens,
         sendStreamOptions: sendStreamOptions ?? this.sendStreamOptions,
         capabilities: capabilities ?? this.capabilities,
         defaultBody: defaultBody ?? this.defaultBody,
@@ -220,6 +230,8 @@ class OpenAiCompatibleProvider extends HttpLlmProvider {
         (request.reasoning?.includeInHistory ?? false) || config.capabilities.requiresReasoningEcho;
     final maxTokensKey =
         config.useMaxCompletionTokens ? 'max_completion_tokens' : 'max_tokens';
+    // A request-level cap wins over the provider-wide default.
+    final maxTokens = request.maxTokens ?? config.defaultMaxTokens;
 
     final body = <String, Object?>{
       'model': request.model,
@@ -231,7 +243,7 @@ class OpenAiCompatibleProvider extends HttpLlmProvider {
         'stream_options': const <String, Object?>{'include_usage': true},
       if (request.temperature != null) 'temperature': request.temperature,
       if (request.topP != null) 'top_p': request.topP,
-      if (request.maxTokens != null) maxTokensKey: request.maxTokens,
+      if (maxTokens != null) maxTokensKey: maxTokens,
       if (request.stop != null && request.stop!.isNotEmpty) 'stop': request.stop,
       if (request.seed != null) 'seed': request.seed,
       if (request.responseJsonSchema != null)
