@@ -3,7 +3,26 @@ import '../core/json_utils.dart';
 import 'agent_mode.dart';
 import 'session_message.dart';
 import 'session_params.dart';
+import 'task_item.dart';
 import 'token_usage.dart';
+
+/// How a session is presented and used.
+enum SessionKind {
+  /// A single conversation.
+  normal,
+
+  /// A list of task items; each item is its own conversation view, and the
+  /// messages carry the owning task id. The model still sees the whole
+  /// session history (the kind only affects display).
+  task;
+
+  static SessionKind parse(String? value) => switch (value) {
+        'task' => SessionKind.task,
+        _ => SessionKind.normal,
+      };
+
+  String get wire => name;
+}
 
 /// The in-memory representation of a session (mirrors the XML document).
 ///
@@ -28,6 +47,8 @@ class Session {
     this.provider = '',
     this.model = '',
     this.mode = AgentMode.auto,
+    this.kind = SessionKind.normal,
+    List<TaskItem>? tasks,
     this.thinkingReplyMode = ThinkingReplyMode.auto,
     this.webSearchEnabled = true,
     List<String>? tools,
@@ -38,6 +59,7 @@ class Session {
   })  : tags = tags ?? <String>[],
         tools = tools ?? <String>[],
         params = params ?? SessionParams(),
+        tasks = tasks ?? <TaskItem>[],
         messages = messages ?? <SessionMessage>[];
 
   String id;
@@ -64,6 +86,12 @@ class Session {
 
   /// Execution mode controlling tool-call approval.
   AgentMode mode;
+
+  /// Normal conversation or task list (see [SessionKind]).
+  SessionKind kind;
+
+  /// Task items of a [SessionKind.task] session.
+  List<TaskItem> tasks;
   ThinkingReplyMode thinkingReplyMode;
 
   /// Whether `web_search` is passed in the request (manual per-send switch).
@@ -81,6 +109,37 @@ class Session {
   bool get hasBudget => toolCallsLimit > 0;
 
   bool get isArchived => archivedAt != null;
+
+  bool get isTaskSession => kind == SessionKind.task;
+
+  TaskItem? taskById(String? id) {
+    if (id == null) return null;
+    for (final task in tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
+  }
+
+  /// The conversation messages belonging to one task item.
+  List<SessionMessage> taskMessages(String taskId) => messages
+      .where((m) => m.role != MessageRole.system && m.taskId == taskId)
+      .toList(growable: false);
+
+  /// Whether the task item already has an assistant reply (i.e. it is not a
+  /// freshly created task).
+  bool taskHasReply(String taskId) =>
+      taskMessages(taskId).any((m) => m.role == MessageRole.assistant);
+
+  /// Removes a task item together with every message tagged with it.
+  void removeTask(String taskId) {
+    tasks.removeWhere((t) => t.id == taskId);
+    messages.removeWhere(
+      (m) => m.role != MessageRole.system && m.taskId == taskId,
+    );
+    recomputeToolCalls();
+    recomputeUsage();
+    updatedAt = DateTime.now();
+  }
 
   /// The system message; created lazily so cumulative usage always has a home.
   SessionMessage ensureSystem() {
@@ -153,6 +212,13 @@ class Session {
       provider: provider,
       model: model,
       mode: mode,
+      kind: kind,
+      tasks: [for (final task in tasks) TaskItem(
+            id: task.id,
+            title: task.title,
+            content: task.content,
+            done: task.done,
+          )],
       thinkingReplyMode: thinkingReplyMode,
       webSearchEnabled: webSearchEnabled,
       tools: List<String>.of(tools),
@@ -246,6 +312,7 @@ class Session {
         toolName: message.toolName,
         isError: message.isError,
         usage: message.usage,
+        taskId: message.taskId,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -262,6 +329,8 @@ class Session {
         'provider': provider,
         'model': model,
         'mode': mode.wire,
+        'kind': kind.wire,
+        if (tasks.isNotEmpty) 'tasks': tasks.map((t) => t.toJson()).toList(),
         'thinking_reply_mode': thinkingReplyMode.wire,
         'web_search_enabled': webSearchEnabled,
         if (tools.isNotEmpty) 'tools': tools,
@@ -285,6 +354,8 @@ class Session {
       provider: asString(json['provider']) ?? '',
       model: asString(json['model']) ?? '',
       mode: AgentMode.parse(asString(json['mode'])),
+      kind: SessionKind.parse(asString(json['kind'])),
+      tasks: asList(json['tasks']).map(TaskItem.fromJson).toList(),
       thinkingReplyMode: ThinkingReplyMode.parse(asString(json['thinking_reply_mode'])),
       webSearchEnabled: asBool(json['web_search_enabled'], fallback: true),
       tools: asStringList(json['tools']),

@@ -38,6 +38,10 @@ class SessionController extends ChangeNotifier {
   AgentEngine? _engine;
   bool _running = false;
 
+  /// Task item the running turn belongs to (`null` = normal session, or a
+  /// task-style session's turn that is somehow untagged).
+  String? _runningTaskId;
+
   final StringBuffer _reasoning = StringBuffer();
   final StringBuffer _content = StringBuffer();
   final List<ToolCallData> _liveToolCalls = <ToolCallData>[];
@@ -48,6 +52,9 @@ class SessionController extends ChangeNotifier {
 
   Session? get session => _session;
   bool get isRunning => _running;
+
+  /// The task item whose turn is currently streaming (see [_running]).
+  String? get runningTaskId => _runningTaskId;
   String get streamReasoning => _reasoning.toString();
   String get streamContent => _content.toString();
   List<ToolCallData> get liveToolCalls =>
@@ -80,21 +87,28 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> send(String text, {List<MessageAttachment>? attachments}) async {
+  Future<void> send(
+    String text, {
+    List<MessageAttachment>? attachments,
+    String? taskId,
+  }) async {
     final session = _session;
     final files = attachments ?? const <MessageAttachment>[];
     if (session == null || _running) return;
     if (text.trim().isEmpty && files.isEmpty) return;
     _error = null;
     _notice = null;
-    await _run(() => _engine!.run(userText: text, attachments: files));
+    await _run(
+      () => _engine!.run(userText: text, attachments: files),
+      taskId: taskId,
+    );
   }
 
   /// Re-runs using the existing history (after editing the last user message).
-  Future<void> resend() async {
+  Future<void> resend({String? taskId}) async {
     final session = _session;
     if (session == null || _running) return;
-    if (SessionOps.lastUserIndex(session) < 0) {
+    if (SessionOps.lastUserIndex(session, onlyTaskId: taskId) < 0) {
       _error = '没有可重发的用户消息';
       notifyListeners();
       return;
@@ -102,7 +116,7 @@ class SessionController extends ChangeNotifier {
     _error = null;
     _notice = null;
     await repository.write(session);
-    await _run(() => _engine!.run());
+    await _run(() => _engine!.run(), taskId: taskId);
   }
 
   void stop() {
@@ -165,10 +179,14 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _run(Stream<AgentEvent> Function() build) async {
+  Future<void> _run(
+    Stream<AgentEvent> Function() build, {
+    String? taskId,
+  }) async {
     final session = _session;
     if (session == null) return;
     _running = true;
+    _runningTaskId = taskId;
     _clearStream();
     notifyListeners();
 
@@ -178,6 +196,7 @@ class SessionController extends ChangeNotifier {
       config: config,
       repository: repository,
       onApproval: approvalHandler,
+      taskId: taskId,
     );
     _engine = engine;
 
@@ -188,6 +207,7 @@ class SessionController extends ChangeNotifier {
       }
     } finally {
       _running = false;
+      _runningTaskId = null;
       _engine = null;
       notifyListeners();
     }

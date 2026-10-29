@@ -91,3 +91,9 @@ UI 发消息
 8. **controller 生命周期长于面板**：切换会话不 dispose，否则并行会话会被打断。
 9. **用量口径固定**：单次写 assistant，累计写 system（含 context）。
 10. **新字段必须能读旧文件**：会话 XML 是长期存档，格式只能加不能改语义。
+11. **`task_id` 是显示维度，不是上下文维度**：任务式会话（`kind="task"`）里消息带
+    `task_id`，但出站历史永远是整个会话（`buildChatMessages(session)`，方案 B）；
+    `SessionOps.*OnlyTaskId` 只用于编辑/删除/滚动定位这类「改数据」的路径，
+    而删改必须限定在同一任务的范围内（否则会误删别的任务的对话）。
+12. **一手消息一手 taskId**：一次 turn 产生的 user/assistant/tool 消息由
+    `AgentEngine` 统一打标（构造参数 `taskId`），别在别处补。

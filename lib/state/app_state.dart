@@ -24,6 +24,7 @@ import '../models/session.dart';
 import '../models/session_message.dart';
 import '../models/session_params.dart';
 import '../models/session_template.dart';
+import '../models/task_item.dart';
 import '../session/session_controller.dart';
 import 'approval_center.dart';
 
@@ -303,6 +304,8 @@ class AppState extends ChangeNotifier {
     AgentMode? mode,
     bool? webSearchEnabled,
     bool? useMemoryProtocol,
+    SessionKind? kind,
+    List<TaskItem>? tasks,
   }) async {
     final session = createSessionDraft(
       title: title,
@@ -320,6 +323,8 @@ class AppState extends ChangeNotifier {
       mode: mode,
       webSearchEnabled: webSearchEnabled,
       useMemoryProtocol: useMemoryProtocol,
+      kind: kind,
+      tasks: tasks,
     );
     await persistSession(session);
     return session;
@@ -347,6 +352,8 @@ class AppState extends ChangeNotifier {
     AgentMode? mode,
     bool? webSearchEnabled,
     bool? useMemoryProtocol,
+    SessionKind? kind,
+    List<TaskItem>? tasks,
   }) {
     final resolvedProvider = providerId ?? config.currentProviderId;
     final provider = providerById(resolvedProvider);
@@ -377,6 +384,8 @@ class AppState extends ChangeNotifier {
       model: model ?? (config.currentModel.isNotEmpty ? config.currentModel : _defaultModel(provider)),
       thinkingReplyMode: thinkingReplyMode ?? ThinkingReplyMode.auto,
       mode: mode ?? AgentMode.auto,
+      kind: kind ?? SessionKind.normal,
+      tasks: <TaskItem>[...?tasks],
       webSearchEnabled: webSearchEnabled ?? true,
       tools: tools ?? List<String>.of(config.defaultTools),
       params: params ?? config.defaultParams.copyWith(),

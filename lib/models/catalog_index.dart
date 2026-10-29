@@ -23,6 +23,9 @@ class SessionIndexEntry {
     this.provider = '',
     this.model = '',
     this.mode = AgentMode.auto,
+    this.kind = SessionKind.normal,
+    this.taskCount = 0,
+    this.taskDoneCount = 0,
     this.thinkingReplyMode = ThinkingReplyMode.auto,
     this.webSearchEnabled = true,
     List<String>? tools,
@@ -44,6 +47,17 @@ class SessionIndexEntry {
   String provider;
   String model;
   AgentMode mode;
+
+  /// Session presentation mode ([SessionKind]); task titles/messages are not
+  /// in the index — they come from the session XML when it is opened.
+  SessionKind kind;
+
+  /// Number of task items (0 for a normal session).
+  int taskCount;
+
+  /// Number of task items marked done.
+  int taskDoneCount;
+
   ThinkingReplyMode thinkingReplyMode;
   bool webSearchEnabled;
   List<String> tools;
@@ -65,6 +79,9 @@ class SessionIndexEntry {
         provider: session.provider,
         model: session.model,
         mode: session.mode,
+        kind: session.kind,
+        taskCount: session.tasks.length,
+        taskDoneCount: session.tasks.where((t) => t.done).length,
         thinkingReplyMode: session.thinkingReplyMode,
         webSearchEnabled: session.webSearchEnabled,
         tools: List<String>.of(session.tools),
@@ -87,6 +104,9 @@ class SessionIndexEntry {
       provider: asString(json['provider']) ?? '',
       model: asString(json['model']) ?? '',
       mode: AgentMode.parse(asString(json['mode'])),
+      kind: SessionKind.parse(asString(json['kind'])),
+      taskCount: asInt(json['task_count']) ?? 0,
+      taskDoneCount: asInt(json['task_done_count']) ?? 0,
       thinkingReplyMode: ThinkingReplyMode.parse(asString(json['thinking_reply_mode'])),
       webSearchEnabled: asBool(json['web_search_enabled'], fallback: true),
       tools: asStringList(json['tools']),
@@ -108,6 +128,9 @@ class SessionIndexEntry {
         'provider': provider,
         'model': model,
         'mode': mode.wire,
+        'kind': kind.wire,
+        if (taskCount > 0) 'task_count': taskCount,
+        if (taskDoneCount > 0) 'task_done_count': taskDoneCount,
         'thinking_reply_mode': thinkingReplyMode.wire,
         'web_search_enabled': webSearchEnabled,
         if (tools.isNotEmpty) 'tools': tools,
@@ -129,6 +152,7 @@ class SessionIndexEntry {
         provider: provider,
         model: model,
         mode: mode,
+        kind: kind,
         thinkingReplyMode: thinkingReplyMode,
         webSearchEnabled: webSearchEnabled,
         tools: List<String>.of(tools),
@@ -255,7 +279,11 @@ class CatalogIndex {
   /// Bumped to 3 when project entries gained `memory_enabled` — same reason:
   /// an index without the field would silently disable every project's memory
   /// index.
-  static const int version = 3;
+  ///
+  /// Bumped to 4 when session entries gained `kind` / task counters — an index
+  /// without them would present every task-style session as a normal one (the
+  /// task list would never open).
+  static const int version = 4;
 
   List<SessionIndexEntry> sessions;
   List<ProjectIndexEntry> projects;

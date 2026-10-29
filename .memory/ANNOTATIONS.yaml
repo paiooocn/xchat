@@ -129,6 +129,7 @@ features:
       - "根元素 chat，sandbox 属性记录工作目录，文件名为会话 UUID"
       - "正文一律 CDATA，任何缩进/格式化不得注入空白"
       - "新增字段要同时改写与读，且必须能读旧文件"
+      - "kind / tasks / task_id 只在任务式会话写；普通会话文件保持原格式（不写 kind、不写 tasks）"
 
   - id: catalog_index
     title: "目录索引 index.json（列表加速）"
@@ -138,6 +139,26 @@ features:
     design: "FEATURES.md §1.5"
     contracts:
       - "索引是缓存，磁盘为准，加载时校验并透明重建"
+
+  - id: task_sessions
+    title: "任务式会话（任务项分组 + 按任务显示）"
+    files:
+      - "lib/models/task_item.dart"
+      - "lib/models/session.dart"
+      - "lib/models/session_message.dart"
+      - "lib/data/xml/session_xml.dart"
+      - "lib/session/session_ops.dart"
+      - "lib/session/session_controller.dart"
+      - "lib/agent/agent_engine.dart"
+      - "lib/ui/widgets/task_session_view.dart"
+      - "lib/ui/pages/session_wizard_page.dart"
+      - "lib/ui/pages/home_page.dart"
+    design: "FEATURES.md §1.2 / §7"
+    contracts:
+      - "task_id 只做显示分组：出站历史始终是整个会话（方案 B），改这里别把过滤带进 buildChatMessages"
+      - "一个 turn 内的 user/assistant/tool 消息必须带同一个 task_id（AgentEngine 统一打标）"
+      - "SessionOps 的 lastUserIndex/editLastUser/dropLastAssistant 必须按 onlyTaskId 限定范围，否则会删掉别的任务的对话"
+      - "一个会话只有一个 SessionController → 任务串行；runningTaskId 用于把流式区绑到对应任务"
 
   - id: thinking_echo
     title: "思考模式显示与回发"

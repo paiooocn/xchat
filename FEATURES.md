@@ -48,33 +48,40 @@ Documents/XChat/                  # 数据根（AppPaths）
 - 结构（详见 DESIGN.md §6）：
 
 ```xml
-<chat sandbox=".../sessions">
+<chat sandbox=".../sessions" kind="task">   <!-- kind 仅任务式会话写；普通会话不写 -->
   <meta>
     <id/><created_at/><updated_at/>
     <tool_calls/><tool_calls_limit/>
     <params><temperature/><top_p/><max_tokens/><thinking/><reasoning_effort/><reasoning_budget/></params>
   </meta>
+  <tasks>                      <!-- 仅任务式会话：任务项清单 -->
+    <task id="…" done="true|false"><title/><content/></task>
+  </tasks>
   <title/><tags/>              <!-- tags 逗号分隔 -->
   <provider/><model/><thinking_reply_mode/>
   <tools><tool/><tool/>…</tools>
   <system input="…" output="…" cache="…" context="…">   <!-- 累计 usage -->
     <content/>
   </system>
-  <user id="…"><content/><attachments>…</attachments></user>
-  <assistant id="…" input="…" output="…" cache="…">      <!-- 单次 usage -->
+  <user id="…" task_id="…"><content/><attachments>…</attachments></user>
+  <assistant id="…" task_id="…" input="…" output="…" cache="…">   <!-- 单次 usage -->
     <reasoning mode="reasoning_content|think_tag"><![CDATA[…]]></reasoning>
     <content/>
     <tool_calls><tool_call id="…" name="…"><arguments/></tool_call></tool_calls>
   </assistant>
-  <tool id="…" tool_call_id="…" name="…" error="true|false"><content/></tool>
+  <tool id="…" task_id="…" tool_call_id="…" name="…" error="true|false"><content/></tool>
 </chat>
 ```
+
+- `task_id` = 该消息归属的任务项 id（任务式会话）。**同一次 turn 产生的 user/assistant/tool
+  消息带同一个 task_id**，`system` 永不带。它只影响**显示**，不影响发给模型的历史。
 
 - 读写规则：数值属性缺失视为 `null`（不写 0）；未知元素忽略；空 `<system>` 保留（承载累计 usage）。
 - 会话 JSON 模型字段：`id / sandbox / created_at / updated_at / tool_calls / tool_calls_limit /
   title / tags / provider / model / params / thinking_reply_mode / tools / messages[]`；
   消息字段：`role(system|user|assistant|tool) / id / content / reasoning(+mode) /
-  tool_calls[{id,name,arguments}] / tool_call_id / name / is_error / usage / attachments`。
+  tool_calls[{id,name,arguments}] / tool_call_id / name / is_error / usage / attachments /
+  task_id`；会话字段另有 `kind(normal|task)` 与 `tasks[{id,title,content,done}]`。
 
 ### 1.3 模板 XML / 项目 XML
 
@@ -96,6 +103,8 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 - 四桶目录：`sessions / projects / archivedSessions / archivedProjects`（含标题、标签、
   时间、provider/model 等摘要），供列表/筛选/归档查询，避免逐个解析 XML。
+- 会话条目还带 `kind` 与 `task_count / task_done_count`（任务式会话的进度徽标）；任务项
+  标题本身不进索引，打开会话时读 XML。版本号 **4**（缺 `kind` 的旧索引会重建）。
 - 每次加载与磁盘目录比对（按 id 集合），文件变动则透明重建；损坏文件跳过不阻塞。
 
 ### 1.6 会话归档
@@ -108,8 +117,9 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 | 模型 | 字段 / 说明 |
 | --- | --- |
-| `Session` | 见 §1.2；含 clone 系列的切片逻辑（到 system / 到首个 user / 到首轮结束 / 全量） |
-| `SessionMessage` | role/id/content/reasoning(+mode)/toolCalls/tool_call_id/name/is_error/usage/attachments |
+| `Session` | 见 §1.2；含 clone 系列的切片逻辑（到 system / 到首个 user / 到首轮结束 / 全量）；`kind`(normal\|task) 与 `tasks[]` 决定会话形态 |
+| `SessionMessage` | role/id/content/reasoning(+mode)/toolCalls/tool_call_id/name/is_error/usage/attachments/**taskId（归属任务项，仅显示用）** |
+| `TaskItem` | id / title / content / done；`displayTitle`（标题回落到内容首行）、`promptText`（开始任务时的首条 user 消息，**纯内容**）、`anchorTitle`（出站锚用的标题，无标题时回落内容首行）、`parseTaskMarkdown()` 按 `## 标题` 切分批量导入 |
 | `SessionParams` | temperature / top_p / max_tokens / thinking(auto\|on\|off) / reasoning_effort / reasoning_budget |
 | `ProviderConfig` | id/name/preset/baseUrl/apiKey/headers/reasoning_source/reasoning_style/ thinking_reply_mode/contextWindow/max_output_tokens/**max_output_tokens_by_effort（按思考档位：`low:1280/medium:2560/high:3840/xhigh:5120`，未命中的档位=不限制）**/use_max_completion_tokens/models[]/modelSpecs{} |
 | `ModelSpec` | 每模型：contextWindow / maxOutputTokens / reasoning / toolCall / status |
@@ -325,6 +335,10 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 编辑器打开 | 外部编辑器命令模板（`{file}` 占位，如 `code --goto {file}`），未配置用系统默认程序；移动端/无外部编辑器时用**内置 XML 编辑器**（等宽字体、保存前 XML 校验）；保存后自动重载 |
 | 打开工作目录 | 系统文件管理器打开会话 sandbox（open/explorer/xdg-open） |
 | 多会话并行 | 控制器按会话 id 全局持有，切换不中断后台流式对话；进行中会话在边栏显示旋转圈 |
+| 任务式会话 | 新建会话时选「任务式会话」并录入任务项（逐项新增 / `## 标题` 批量导入）；打开会话先显示**任务列表**（标题、消息数、未开始/尚无回复、完成勾选、删除），点某项进入与普通会话一样的对话视图 |
+| 任务项对话 | 只显示 `task_id` 等于该任务的消息（含 thinking / tool）；发送、流式、审批与普通会话一致。**发给模型的历史仍是整个会话**（任务项只是分组维度）；开始新任务（该项还没有 assistant 回复）时弹窗询问是否立即发送，发送即把任务内容写成该项第一条 user 消息 |
+| 任务锚（出站） | 任务式会话里**每条** user 消息（含追问、含预算续判、含工具图片合成消息）在发给模型时首行加 `【任务：<标题>】`；标题按 `task_id` 从任务项反查（XML 里消息只存 `task_id`，不冗余存标题，任务改名后历史自动跟随）；任务项已删除 → 不加锚；普通会话完全不受影响。作用是给「整会话历史都发」的扁平消息流加分段标签，避免跨任务串台 |
+| 任务项增删 | 会话内可继续「新增任务」「批量导入」「勾选完成」；删除任务项**连同其全部对话消息**（二次确认）。同一会话**串行**执行：有任务在运行时禁止切换到别的任务/删除 |
 | 导入/导出 | 会话 XML 导出；工具配置 JSON 导入/导出（§5.3） |
 | 搜索/筛选 | 会话列表搜索、按标签/项目筛选、按更新时间排序 |
 | 会话信息 | 会话列表「三竖点 → 查看会话信息」：完整会话 XML 路径（可复制）、system 元素 token 用量（input/output/cache/context，K/M/B 两位小数）、模型/思考开关/思考档位、启动的工具（已启用 + 已调用）、完整系统提示词、created/updated 时间 |

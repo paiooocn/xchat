@@ -65,3 +65,4 @@ app.*.map.json
 third_party/
 
 .workbuddy/
+.VSCodeCounter/

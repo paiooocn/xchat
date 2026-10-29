@@ -5,10 +5,13 @@ import '../../core/ids.dart';
 import '../../core/prompt_utils.dart';
 import '../../models/project.dart';
 import '../../models/provider_config.dart';
+import '../../models/session.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
+import '../../models/task_item.dart';
 import '../../state/app_state.dart';
+import '../widgets/task_session_view.dart';
 
 /// Creates a session from a single configuration page, optionally seeded from
 /// a template. Model/params and tools/budget are inherited from the template
@@ -39,6 +42,14 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   final _sandbox = TextEditingController();
   final _seedUser = TextEditingController();
   final _seedAssistant = TextEditingController();
+
+  /// 会话模式：普通 / 任务式（任务式需至少一个任务项）。
+  SessionKind _kind = SessionKind.normal;
+
+  /// 任务式会话的任务项草稿（创建时写进会话）。
+  final List<TaskItem> _draftTasks = <TaskItem>[];
+  final _taskTitle = TextEditingController();
+  final _taskContent = TextEditingController();
 
   /// 是否把所选项目的「项目提示词」并入会话系统提示词。
   bool _useProjectPrompt = false;
@@ -143,12 +154,20 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     _sandbox.dispose();
     _seedUser.dispose();
     _seedAssistant.dispose();
+    _taskTitle.dispose();
+    _taskContent.dispose();
     _modelInput.dispose();
     super.dispose();
   }
 
   Future<void> _finish() async {
     final state = context.read<AppState>();
+    if (_kind == SessionKind.task && _draftTasks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('任务式会话至少需要一个任务项（可新增或批量导入）')),
+      );
+      return;
+    }
     final extras = _seedMessages();
     final params = (_template?.params ?? SessionParams()).copyWith()
       ..thinking = _thinking
@@ -167,9 +186,34 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
       sandbox: _sandbox.text.trim(),
       extraMessages: extras.isEmpty ? null : extras,
       useMemoryProtocol: _useMemoryProtocol,
+      kind: _kind,
+      tasks: _kind == SessionKind.task ? List<TaskItem>.of(_draftTasks) : null,
     );
     // 标题留空时，会在第一轮对话结束后由会话模型自动命名。
     if (mounted) Navigator.of(context).pop(session);
+  }
+
+  /// Adds one task item from the two draft fields.
+  void _addDraftTask() {
+    final title = _taskTitle.text.trim();
+    final content = _taskContent.text.trim();
+    if (title.isEmpty && content.isEmpty) return;
+    setState(() {
+      _draftTasks.add(TaskItem(
+        id: newShortId(),
+        title: title,
+        content: content,
+      ));
+      _taskTitle.clear();
+      _taskContent.clear();
+    });
+  }
+
+  /// Batch import from Markdown (`## 标题` sections).
+  Future<void> _importDraftTasks() async {
+    final imported = await showTaskImportDialog(context);
+    if (imported == null || imported.isEmpty || !mounted) return;
+    setState(() => _draftTasks.addAll(imported));
   }
 
   /// Builds the optional pre-seeded first turn. The assistant entry is only
@@ -244,6 +288,27 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
             ],
           ),
           const SizedBox(height: 16),
+          _SectionLabel(
+            label: '会话模式',
+            hint: '任务式会话打开后先显示任务列表，点进某一项后才是对话；'
+                '发给模型的历史仍是整个会话。',
+          ),
+          Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('普通会话'),
+                selected: _kind == SessionKind.normal,
+                onSelected: (_) => setState(() => _kind = SessionKind.normal),
+              ),
+              ChoiceChip(
+                label: const Text('任务式会话'),
+                selected: _kind == SessionKind.task,
+                onSelected: (_) => setState(() => _kind = SessionKind.task),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _title,
             decoration: const InputDecoration(
@@ -287,6 +352,17 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
               labelText: '工作目录 sandbox（留空=默认 sandboxs/<会话id> 或项目目录）',
             ),
           ),
+          if (_kind == SessionKind.task) ...[
+            const SizedBox(height: 16),
+            _TaskDraftSection(
+              tasks: _draftTasks,
+              titleController: _taskTitle,
+              contentController: _taskContent,
+              onImport: _importDraftTasks,
+              onAdd: _addDraftTask,
+              onRemove: (index) => setState(() => _draftTasks.removeAt(index)),
+            ),
+          ],
           const SizedBox(height: 12),
           _PromptSection(
             label: '① 会话提示词',
@@ -469,6 +545,137 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 任务式会话的「任务项」小节：草稿列表 + 批量导入 + 逐项新增。
+///
+/// 单独抽成 widget，是为了把「新建任务项」放在「工作目录」之后（任务项与生成
+/// 方式无关，属于会话内容的一部分）。
+class _TaskDraftSection extends StatelessWidget {
+  const _TaskDraftSection({
+    required this.tasks,
+    required this.titleController,
+    required this.contentController,
+    required this.onImport,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<TaskItem> tasks;
+  final TextEditingController titleController;
+  final TextEditingController contentController;
+  final VoidCallback onImport;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '任务项（${tasks.length}）',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onImport,
+              icon: const Icon(Icons.playlist_add, size: 18),
+              label: const Text('批量导入（## 标题分段）'),
+            ),
+          ],
+        ),
+        Text(
+          '每个任务项进入后各自一段对话；发给模型的历史仍是整个会话。',
+          style: theme.textTheme.bodySmall,
+        ),
+        for (var i = 0; i < tasks.length; i++)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Text('${i + 1}'),
+            title: Text(
+              tasks[i].displayTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: tasks[i].content.isEmpty
+                ? null
+                : Text(
+                    tasks[i].content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            trailing: IconButton(
+              tooltip: '移除',
+              iconSize: 18,
+              onPressed: () => onRemove(i),
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
+          ),
+        TextField(
+          controller: titleController,
+          decoration: const InputDecoration(
+            labelText: '任务标题（留空则用内容首行）',
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: contentController,
+          minLines: 3,
+          maxLines: 8,
+          decoration: const InputDecoration(
+            labelText: '任务内容（开始该任务时作为第一条 user 消息）',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('添加任务项'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A titled block without a child input (会话模式 etc.).
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label, required this.hint});
+
+  final String label;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(hint, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 6),
+      ],
     );
   }
 }

@@ -7,6 +7,7 @@ import '../../models/message_attachment.dart';
 import '../../models/session.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
+import '../../models/task_item.dart';
 import '../../models/token_usage.dart';
 import 'cdata.dart';
 import 'xml_writer.dart';
@@ -30,7 +31,12 @@ class SessionXml {
     session.ensureSystem();
     final out = XmlOut();
     out.declaration();
-    out.open('chat', {'sandbox': session.sandbox});
+    out.open('chat', {
+      'sandbox': session.sandbox,
+      // Only written for task-style sessions: a normal session file stays
+      // byte-identical to the old format.
+      if (session.kind == SessionKind.task) 'kind': SessionKind.task.wire,
+    });
 
     // --- meta ---------------------------------------------------------
     out.open('meta');
@@ -49,6 +55,21 @@ class SessionXml {
     }
     out.close('params');
     out.close('meta');
+
+    // --- task items (task-style sessions) ------------------------------
+    if (session.kind == SessionKind.task) {
+      out.open('tasks');
+      for (final task in session.tasks) {
+        out.open('task', _attrs({
+          'id': task.id,
+          'done': task.done ? 'true' : null,
+        }));
+        out.leaf('title', task.title);
+        out.leaf('content', task.content);
+        out.close('task');
+      }
+      out.close('tasks');
+    }
 
     // --- other session JSON fields ------------------------------------
     out.leaf('title', session.title);
@@ -75,7 +96,7 @@ class SessionXml {
           out.leaf('content', message.content);
           out.close('system');
         case MessageRole.user:
-          out.open('user', _attrs({'id': message.id}));
+          out.open('user', _attrs({'id': message.id, 'task_id': message.taskId}));
           if (message.hasAttachments) {
             out.open('attachments');
             for (final file in message.attachments) {
@@ -91,7 +112,14 @@ class SessionXml {
           out.leaf('content', message.content);
           out.close('user');
         case MessageRole.assistant:
-          out.open('assistant', _attrs({'id': message.id, ..._usageAttrs(message.usage)}));
+          out.open(
+            'assistant',
+            _attrs({
+              'id': message.id,
+              'task_id': message.taskId,
+              ..._usageAttrs(message.usage),
+            }),
+          );
           if (message.hasReasoning) {
             out.leaf('reasoning', message.reasoning, _attrs({'mode': message.reasoningMode}));
           }
@@ -111,6 +139,7 @@ class SessionXml {
             'tool',
             _attrs({
               'id': message.id,
+              'task_id': message.taskId,
               'tool_call_id': message.toolCallId,
               'name': message.toolName,
               'error': message.isError ? 'true' : null,
@@ -192,6 +221,8 @@ class SessionXml {
       webSearchEnabled: (readText(root, 'web_search_enabled') ?? 'true') != 'false',
       tools: _decodeTools(root),
       params: params,
+      kind: SessionKind.parse(root.getAttribute('kind')),
+      tasks: _decodeTasks(root),
     );
 
     for (final element in root.childElements) {
@@ -210,6 +241,7 @@ class SessionXml {
             id: element.getAttribute('id'),
             content: readTextOrEmpty(element, 'content'),
             attachments: _decodeAttachments(element, session.sandbox),
+            taskId: element.getAttribute('task_id'),
           ));
         case 'assistant':
           session.messages.add(_decodeAssistant(element));
@@ -221,6 +253,7 @@ class SessionXml {
             toolName: element.getAttribute('name'),
             isError: element.getAttribute('error') == 'true',
             content: readTextOrEmpty(element, 'content'),
+            taskId: element.getAttribute('task_id'),
           ));
       }
     }
@@ -267,6 +300,7 @@ class SessionXml {
       reasoningMode: reasoningElement?.getAttribute('mode'),
       toolCalls: toolCalls,
       usage: TokenUsage.fromAttrs(_attrsOf(element)),
+      taskId: element.getAttribute('task_id'),
     );
   }
 
@@ -278,6 +312,24 @@ class SessionXml {
       elements[child.name.local] = child.innerText;
     }
     return SessionParams.fromElements(elements);
+  }
+
+  /// Reads `<tasks><task id done><title/><content/></task></tasks>`.
+  static List<TaskItem> _decodeTasks(XmlElement root) {
+    final container = root.getElement('tasks');
+    if (container == null) return <TaskItem>[];
+    final out = <TaskItem>[];
+    for (final element in container.findElements('task')) {
+      final id = element.getAttribute('id') ?? '';
+      if (id.isEmpty) continue;
+      out.add(TaskItem(
+        id: id,
+        title: readTextOrEmpty(element, 'title'),
+        content: readTextOrEmpty(element, 'content'),
+        done: element.getAttribute('done') == 'true',
+      ));
+    }
+    return out;
   }
 
   static List<String> _decodeTools(XmlElement root) {

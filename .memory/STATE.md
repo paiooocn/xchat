@@ -3,14 +3,153 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-03 · 默认工具集改为空（空白会话默认不带 read_file）
+
+**做了什么**
+
+- 需求：定位「空白会话模板」用的工具代码后用户拍板 —— **默认工具集改为空**（方案 B，
+  新旧路径统一）。
+- `lib/models/app_config.dart`：
+  - 构造器 `defaultTools = defaultTools ?? <String>[]`（原 `['read_file']`）；
+  - `AppConfig.fromJson` 去掉 `isEmpty ? ['read_file']` 兜底，直接
+    `defaultTools: asStringList(json['default_tools'])` ——**键缺失 = 空**。
+- → 空白会话（`SessionWizardPage` 的「空白」chip → `_applyDefaults()` 取
+  `config.defaultTools`）落盘 `<tools>` 为空，`AgentEngine` 的 `enabledTools` 为空，
+  模型纯对话；会话信息对话框显示「（未启用）」。
+- 老 `config.json` 若没有 `default_tools` 键，升级后也会变成「无工具」（这是本次
+  有意接受的语义变更，不是 bug）。新建会话页**没有**工具勾选 UI，要给工具只能走
+  模板或直接改会话 XML。
+
+**改了什么文件**
+
+- `lib/models/app_config.dart`（两处：构造器默认值、`fromJson`）
+
+**怎么验证**
+
+- 用户要求**只改不测**，本轮未跑 `flutter analyze` / `flutter test`。
+  建议：`flutter analyze lib test`；`flutter test` 预计无红（`test/compress_test.dart`
+  显式传了 `['read_file']`，无用例断言 `fromJson({}).defaultTools`）。
+- 手工：删/改 `config.json` 的 `default_tools` → 新建「空白」会话 → 会话信息里
+  「启动的工具」应为「（未启用）」。
+
+**下一步**
+
+- 若日后要给空白会话配工具，需要补一个 UI 入口（当前只有模板页 / 模板向导的
+  FilterChip 列表，遍历 `BuiltinTools.descriptions.keys`）。
+
+**补充（同日）：任务锚（每条 user 消息首行带任务标题）**
+
+- 需求演进：先把标题塞进首条 user 消息（`promptText`），评估后改为**出站层注入**——
+  标题的唯一出处仍是任务项，消息只存 `task_id`，发请求时按 id 反查。
+- `lib/llm/outbound_adapter.dart` 的 `buildChatMessages`：
+  - 先建 `taskTitles`（`task.anchorTitle`，即标题或内容首行；空任务没有锚）；
+  - 每条 `user` 消息首行加 `【任务：<标题>】`：纯文本走 `ChatMessage.user`，
+    多模态走 `userParts` 的第一个 `ContentPart.text`；工具图片合成的 user 消息取
+    `pendingToolImages.first.taskId` 的锚；
+  - 任务项已被删除 → 查不到 → **不加锚**；普通会话（无 tasks / 无 task_id）逐字不变。
+- `TaskItem.promptText` 回退为**纯内容**（避免首条双标题）；新增 `TaskItem.anchorTitle`。
+- 为什么这样最好（决策依据）：XML 零改动、界面/编辑框是用户原文、任务改名后历史消息
+  自动用新标题，同时给方案 B 的扁平历史加了低成本分段标签（≈10 tokens/条）。
+
+**遗留问题**
+
+- 默认工具集无任何 UI 入口（只能改 `config.json` 或建会话后改 XML）。
+
+---
+
+## 2026-11-02 · 任务式会话（任务项分组 + 按任务显示）
+
+**做了什么**（需求与拍板：4 条决策见本节末）
+
+- 新增第三种「会话形态」：`Session.kind = SessionKind.task` + `Session.tasks[]`
+  （`TaskItem{id,title,content,done}`）。普通会话文件格式**一字未变**（不写 `kind`/`tasks`），
+  旧文件读出来就是 `normal`。
+- 消息归属：`SessionMessage.taskId`。**同一次 turn 的 user/assistant/tool 消息同 taskId**，
+  由 `AgentEngine(taskId:)` 统一打标；`system` 永不带。
+- **上下文是方案 B**：出站历史仍是整个会话（`buildChatMessages(session)` 未改），
+  `task_id` 只做显示过滤。这是本轮最容易踩反的地方（见 ARCHITECTURE 不变量 11/12）。
+- 展示：`SessionChatPanel(taskId:)` 过滤消息 + 「返回任务列表」条（`TaskChatHeader`，
+  带手动「完成」开关）+ `TaskListView`（标题 / 消息数 / 未开始 / 尚无回复 / 完成勾选 / 删除）。
+  侧栏 tile 对任务式会话显示清单图标与 `已完成/总数`。
+- 串行：一个会话仍只有一个 controller（`runningTaskId` 暴露给 UI）；有任务在跑时
+  列表禁止切到别的任务/删除（提示先停止），流式区只在所属任务的视图里显示。
+- 新任务（该项下**没有 assistant 消息**）进入对话时弹窗「开始这个任务？」：
+  `立即发送` → 若还没有 user 消息则把 `## 任务标题` + 任务内容写成第一条 user 消息，然后
+  `controller.resend(taskId:)` 跑一轮；`稍后（先看任务）` → 只看不发。
+- 会话内可「新增任务 / 批量导入（`## 标题` 分段，`parseTaskMarkdown`）/ 勾选完成 / 删除」；
+  删除**连同该项全部消息**并二次确认（`Session.removeTask`）。
+- 创建：`SessionWizardPage` 增加「会话模式：普通 / 任务式」+ 任务项草稿编辑（逐项新增、
+  批量导入、移除）；任务式至少一项才允许创建。**任务项小节的位置在工作目录（sandbox）
+  之后**（`_TaskDraftSection`），会话模式的选项仍紧跟在「会话模式」标题下。
+- 索引：`SessionIndexEntry` 增加 `kind` / `taskCount` / `taskDoneCount`，`CatalogIndex.version`
+  3 → 4（缺 `kind` 的旧索引会重建；任务标题不进索引，打开会话时读 XML）。
+
+**四条拍板决定（勿擅自改回）**
+
+1. 上下文 = **方案 B**（整会话历史都发，任务项只是分组/显示维度）。
+2. 新任务（无 assistant 消息）→ **弹窗问是否发送**，用户确认后任务内容作为首条 user 消息。
+3. **串行**：不按任务拆 controller（同一 XML 不做并发写）。
+4. 支持**新增/删除**（删除连带消息 + 二次确认）+ **手动标记完成** + **Markdown `##` 批量导入**。
+
+**改了什么文件**
+
+- 新增：`lib/models/task_item.dart`（`TaskItem` + `parseTaskMarkdown`）、
+  `lib/ui/widgets/task_session_view.dart`（`TaskListView` / `TaskChatHeader` /
+  `showTaskEditorDialog` / `showTaskImportDialog`）、`test/task_session_test.dart`、
+  `test/task_session_flow_test.dart`
+- 改：`lib/models/session.dart`（`SessionKind`、`tasks`、`taskById`/`taskMessages`/
+  `taskHasReply`/`removeTask`、clone 带 kind+tasks）、`lib/models/session_message.dart`（`taskId`）、
+  `lib/models/catalog_index.dart`（kind/计数 + version 4）、
+  `lib/data/xml/session_xml.dart`（`kind` 属性、`<tasks>`、消息 `task_id`）、
+  `lib/session/session_ops.dart`（`onlyTaskId` 限定 + 只删本任务的 tool 结果）、
+  `lib/session/session_controller.dart`（`send/resend(taskId:)`、`runningTaskId`）、
+  `lib/agent/agent_engine.dart`（`taskId` 打标）、`lib/state/app_state.dart`
+  （`createSession/createSessionDraft(kind:, tasks:)`）、`lib/ui/pages/home_page.dart`
+  （`_activeTaskId` + `_sessionArea` + 面板过滤/任务条/开始任务弹窗 + 移动端同样两段式 +
+  侧栏 tile 徽标）、`lib/ui/pages/session_wizard_page.dart`（模式选择 + 任务项草稿）
+- 文档：`FEATURES.md`（§1.2 XML 契约、§1.5 索引、§2 模型表、§7 功能表）、
+  `.memory/ARCHITECTURE.md`（不变量 11/12）、`.memory/ANNOTATIONS.yaml`（`task_sessions`）
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**（中途修掉一条 `prefer_interpolation_to_compose_strings`）
+- `flutter test` → **315 passed, 1 skipped**（基线 287 + 新增 28：XML 往返 / 旧文件兼容 /
+  索引计数 / 按任务删改不越界 / Markdown 解析 / TaskItem 回落与锚 / 出站锚 6 条 / 两条界面流程）
+- `dart run tool/gen_memory_index.dart --check` → OK
+- 建议手工路径：任务式会话建 2 项 → 打开列表 → 点第 1 项（弹窗）→ 立即发送 →
+  回复只出现在第 1 项 → 返回列表看「1 条/未开始」计数 → 点第 2 项「稍后」→ 列表勾完成 →
+  重启 App 确认 `kind/tasks/task_id/done` 都在。老会话打开应仍是普通对话（kind=normal）。
+
+**下一步 / 待验证**
+
+- 版本：`0.6.1+1` → **`0.6.11+1`**（修订号 +10，构建号沿用仓库惯例保持 +1；
+  发版时两处同步改：`pubspec.yaml` 的 `version:` 与 `lib/core/app_version.dart`）。
+- 用户侧只做真机体验确认：①「稍后」后再进入仍会再次询问（当前设计）；
+  ②编辑重发/删除消息在任务视图里只影响本任务（`SessionOps(onlyTaskId:)`）；
+  ③真实模型下逐项跑任务、切任务时的串行提示。
+
+**遗留问题**
+
+- 任务项**不能编辑标题/内容、不能排序**（拍板只要新增/删除）。
+- 任务式会话的 `压缩会话` 仍按整会话生成（不按任务），产物是新会话、任务列表被 clone 但消息不带
+  语义对齐 → 视为已知限制。
+- 没有「按任务统计 token」；用量仍按整会话累计（`<system>` 属性）。
+- 侧栏 tile 的 `已完成/总数` 徽标依赖会话对象里的 `tasks`：只从 index 建出来的
+  `Session`（尚未打开过）`tasks` 为空，徽标要等首次打开（`reloadSession`）后才出现；
+  索引里其实已有 `task_count/task_done_count`，但对齐它需要给 `Session` 加冗余计数，
+  本轮没做。
+- 任务式会话内**不能编辑任务的标题/内容**（拍板只要求新增/删除），要改只能编辑会话 XML。
+
+---
+
 ## 当前快照
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.6.1 (build 1) |
-| 最近提交 | 本次：release: v0.6.1 输出上限按思考档位 + 模板显式最大输出 tokens（上一提交 `8d4595f` v0.6.0） |
-| 工作区 | 干净（本次改动已提交） |
-| 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart` |
+| 应用版本 | 0.6.11 (build 1)（任务式会话这一轮改的版本号） |
+| 最近提交 | `dcc13fe` release: v0.6.11 — 任务式会话（已提交 + 打标签 + 推送 origin/main） |
+| 工作区 | 干净（除两处与本轮无关的本地改动：`lib/models/app_config.dart` 的 defaultTools 默认值、未跟踪的 `.VSCodeCounter/`） |
+| 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart`（MAP 已刷新） |
 
 ## 2026-10-30 · release: v0.6.1 — 输出上限按思考档位 / 模板显式指定
 

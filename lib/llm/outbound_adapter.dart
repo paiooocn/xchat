@@ -33,6 +33,19 @@ Future<List<llm.ChatMessage>> buildChatMessages(
   List<SessionMessage>? messages,
 }) async {
   final source = messages ?? session.messages;
+  // 任务式会话：每条 user 消息前加一行「【任务：标题】」。
+  //
+  // 标题的唯一出处是任务项（`session.tasks`），消息里只有 `task_id`，所以这里
+  // 按 id 反查——XML 不必在每条消息上冗余存标题，任务改名后历史消息也自动跟着变。
+  // 它同时也是方案 B（整会话历史都发给模型）的分段标签：不同任务的消息各有各的
+  // 锚，模型能分清哪一段属于哪个任务。任务项已被删除 → 查不到 → 不加锚。
+  final taskTitles = <String, String>{};
+  for (final task in session.tasks) {
+    final title = task.anchorTitle;
+    if (title != null) taskTitles[task.id] = title;
+  }
+  String? anchorOf(String? taskId) =>
+      taskId == null ? null : taskTitles[taskId];
   final echo = resolveEchoMode(session, provider);
   final thinkingOn = session.params.thinkingEnabled;
   final out = <llm.ChatMessage>[];
@@ -48,6 +61,9 @@ Future<List<llm.ChatMessage>> buildChatMessages(
   Future<void> flushToolImages() async {
     if (pendingToolImages.isEmpty) return;
     final parts = <llm.ContentPart>[];
+    // 这条合成消息属于产出图片的那个任务，同样带上锚。
+    final anchor = anchorOf(pendingToolImages.first.taskId);
+    if (anchor != null) parts.add(llm.ContentPart.text('【任务：$anchor】\n'));
     for (final message in pendingToolImages) {
       parts.addAll(await _imageParts(message));
     }
@@ -66,11 +82,18 @@ Future<List<llm.ChatMessage>> buildChatMessages(
         ));
       case MessageRole.user:
         await flushToolImages();
+        final anchor = anchorOf(message.taskId);
         final parts = await _userParts(message);
         if (parts == null) {
-          out.add(llm.ChatMessage.user(message.content ?? ''));
+          final text = message.content ?? '';
+          out.add(llm.ChatMessage.user(
+            anchor == null ? text : '【任务：$anchor】\n$text',
+          ));
         } else {
-          out.add(llm.ChatMessage.userParts(parts));
+          out.add(llm.ChatMessage.userParts([
+            if (anchor != null) llm.ContentPart.text('【任务：$anchor】\n'),
+            ...parts,
+          ]));
         }
       case MessageRole.tool:
         out.add(llm.ChatMessage.tool(

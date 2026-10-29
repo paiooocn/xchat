@@ -91,7 +91,7 @@ class AppConfig {
     this.defaultTemplateId = '',
   })  : providers = providers ?? defaultProviders(),
         defaultParams = defaultParams ?? SessionParams(),
-        defaultTools = defaultTools ?? <String>['read_file'],
+        defaultTools = defaultTools ?? <String>[],
         searchEngines = searchEngines ?? SearchEngineConfig.defaults(),
         proxy = proxy ?? ProxyConfig(),
         toolApprovals = toolApprovals ?? defaultToolApprovals(),
@@ -250,9 +250,7 @@ class AppConfig {
           : asString(json['window_size'])!,
       continueMode: ContinueMode.parse(asString(json['continue_mode'])),
       defaultToolCallsLimit: asInt(json['default_tool_calls_limit']) ?? 20,
-      defaultTools: asStringList(json['default_tools']).isEmpty
-          ? <String>['read_file']
-          : asStringList(json['default_tools']),
+      defaultTools: asStringList(json['default_tools']),
       continuePrompt: asString(json['continue_prompt']) ?? kDefaultContinuePrompt,
       maxToolCallsPerTurn: asInt(json['max_tool_calls_per_turn']) ?? 0,
       maxAttachmentBytes:

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
+import '../../core/ids.dart';
 import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../models/agent_mode.dart';
@@ -17,6 +18,7 @@ import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
+import '../../models/task_item.dart';
 import '../../session/session_controller.dart';
 import '../../session/session_ops.dart';
 import '../../state/app_state.dart';
@@ -28,6 +30,7 @@ import '../widgets/input_area.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/project_dialog.dart';
 import '../widgets/session_info_dialog.dart';
+import '../widgets/task_session_view.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
 import 'pip_packages_page.dart';
@@ -53,6 +56,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String? _selectedId;
+
+  /// 任务式会话中当前打开的任务项（空 = 显示任务列表）。
+  String? _activeTaskId;
 
   /// Selected session tag filters (empty = show all).
   final Set<String> _tagFilter = <String>{};
@@ -257,7 +263,12 @@ class _HomePageState extends State<HomePage> {
     // Load the authoritative copy (full conversation) before showing it, so the
     // panel always has messages instead of the index's metadata-only entry.
     await state.reloadSession(id);
-    if (mounted) setState(() => _selectedId = id);
+    if (mounted) {
+      setState(() {
+        _selectedId = id;
+        _activeTaskId = null;
+      });
+    }
   }
 
   /// Opens the project create/edit dialog.
@@ -333,13 +344,7 @@ class _HomePageState extends State<HomePage> {
                                 projectPath: projectPath,
                               ),
                             )
-                          : SessionChatPanel(
-                              key: ValueKey(selected.id),
-                              sessionId: selected.id,
-                              onCompressCompleted: (id) async {
-                                await _openSession(context, id);
-                              },
-                            ),
+                          : _sessionArea(context, state, selected),
                     ),
                   ],
                 )
@@ -378,6 +383,35 @@ class _HomePageState extends State<HomePage> {
                 ),
         );
       },
+    );
+  }
+
+  /// 右栏内容：普通会话直接进对话；任务式会话先进任务列表，再进某个任务的对话。
+  Widget _sessionArea(BuildContext context, AppState state, Session session) {
+    if (!session.isTaskSession) {
+      return SessionChatPanel(
+        key: ValueKey(session.id),
+        sessionId: session.id,
+        onCompressCompleted: (id) async => _openSession(context, id),
+      );
+    }
+    final taskId = _activeTaskId;
+    if (taskId == null) {
+      final controller = state.controllerFor(session.id);
+      return TaskListView(
+        key: ValueKey('tasks-${session.id}'),
+        session: session,
+        running: controller.isRunning,
+        runningTaskId: controller.runningTaskId,
+        onOpenTask: (id) => setState(() => _activeTaskId = id),
+      );
+    }
+    return SessionChatPanel(
+      key: ValueKey('${session.id}-$taskId'),
+      sessionId: session.id,
+      taskId: taskId,
+      onBackToTasks: () => setState(() => _activeTaskId = null),
+      onCompressCompleted: (id) async => _openSession(context, id),
     );
   }
 
@@ -553,7 +587,10 @@ class _HomePageState extends State<HomePage> {
   /// 回到欢迎页（取消选中当前会话）。
   void _goHome() {
     if (_selectedId == null) return;
-    setState(() => _selectedId = null);
+    setState(() {
+      _selectedId = null;
+      _activeTaskId = null;
+    });
   }
 
   /// 欢迎页发起的第一轮：建会话并直接发送。
@@ -922,9 +959,28 @@ class _MobileChatPageState extends State<_MobileChatPage> {
   /// reclaim vertical space; toggled from the top bar.
   bool _showInfo = false;
 
+  /// 任务式会话：当前打开的任务项（空 = 任务列表）。
+  String? _activeTaskId;
+
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<AppState>().sessionById(widget.sessionId);
+    final state = context.watch<AppState>();
+    final session = state.sessionById(widget.sessionId);
+    final taskId = session?.isTaskSession == true ? _activeTaskId : null;
+    if (session != null && session.isTaskSession && taskId == null) {
+      final controller = state.controllerFor(session.id);
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(session.title.isNotEmpty ? session.title : '任务式会话'),
+        ),
+        body: TaskListView(
+          session: session,
+          running: controller.isRunning,
+          runningTaskId: controller.runningTaskId,
+          onOpenTask: (id) => setState(() => _activeTaskId = id),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(session?.title.isNotEmpty == true ? session!.title : '会话'),
@@ -941,6 +997,8 @@ class _MobileChatPageState extends State<_MobileChatPage> {
           : SessionChatPanel(
               key: ValueKey(session.id),
               sessionId: session.id,
+              taskId: taskId,
+              onBackToTasks: () => setState(() => _activeTaskId = null),
               showHeader: _showInfo,
               mobileLayout: true,
               onCompressCompleted: (id) {
@@ -1429,10 +1487,25 @@ class _SessionTile extends StatelessWidget {
               ),
             )
           : leading,
-      title: Text(
-        session.title.isNotEmpty ? session.title : '(未命名会话)',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: Row(
+        children: [
+          if (session.isTaskSession) ...[
+            Icon(Icons.checklist, size: 14, color: theme.colorScheme.primary),
+            const SizedBox(width: 4),
+          ],
+          Expanded(
+            child: Text(
+              session.title.isNotEmpty ? session.title : '(未命名会话)',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (session.isTaskSession && session.tasks.isNotEmpty)
+            Text(
+              '${session.tasks.where((t) => t.done).length}/${session.tasks.length}',
+              style: theme.textTheme.bodySmall,
+            ),
+        ],
       ),
       trailing: _SessionMenu(session: session, state: context.read<AppState>()),
       onTap: onTap,
@@ -1872,6 +1945,8 @@ class SessionChatPanel extends StatefulWidget {
     this.onCompressCompleted,
     this.showHeader = true,
     this.mobileLayout = false,
+    this.taskId,
+    this.onBackToTasks,
   });
 
   final String sessionId;
@@ -1886,6 +1961,14 @@ class SessionChatPanel extends StatefulWidget {
   /// 移动端布局：模型选择 / 思考开关 / 思考强度从输入栏移到顶部「i」面板里，
   /// 输入栏右侧只保留发送键——窄屏下原本这两组控件会把发送键挤出可视区。
   final bool mobileLayout;
+
+  /// 任务式会话中当前打开的任务项；为空表示普通会话视图（显示整会话消息）。
+  ///
+  /// 它只影响**显示**：发给模型的历史始终是整个会话（任务项只是分组维度）。
+  final String? taskId;
+
+  /// 从任务对话返回任务列表。
+  final VoidCallback? onBackToTasks;
 
   @override
   State<SessionChatPanel> createState() => _SessionChatPanelState();
@@ -1902,6 +1985,69 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
   void initState() {
     super.initState();
     _controller = _build();
+    if (widget.taskId != null) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _maybeStartTask());
+    }
+  }
+
+  /// 打开一个「新任务」（该任务项下还没有 assistant 回复）时，询问用户是否
+  /// 立即发送：发送会把任务内容写成该任务的第一条 user 消息并跑一轮。
+  Future<void> _maybeStartTask() async {
+    final controller = _controller;
+    final session = controller?.session;
+    final taskId = widget.taskId;
+    if (!mounted || controller == null || session == null || taskId == null) {
+      return;
+    }
+    if (controller.isRunning) return;
+    final task = session.taskById(taskId);
+    if (task == null || session.taskHasReply(taskId)) return;
+    final start = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('开始这个任务？'),
+        content: Text(
+          '该任务还没有回复。立即发送会把任务内容作为第一条 user 消息发出，并开始一轮对话。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('稍后（先看任务）'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('立即发送'),
+          ),
+        ],
+      ),
+    );
+    if (start != true || !mounted) return;
+    await _startTask(controller, session, task);
+  }
+
+  /// Ensures the task content is the task's first `user` message, then runs a
+  /// turn with the existing history (the whole session history is sent).
+  Future<void> _startTask(
+    SessionController controller,
+    Session session,
+    TaskItem task,
+  ) async {
+    final hasUser = session
+        .taskMessages(task.id)
+        .any((m) => m.role == MessageRole.user);
+    if (!hasUser) {
+      session.messages.add(SessionMessage(
+        role: MessageRole.user,
+        id: newShortId(),
+        content: task.promptText,
+        taskId: task.id,
+      ));
+      session.updatedAt = DateTime.now();
+      await controller.save();
+    }
+    if (!mounted) return;
+    await controller.resend(taskId: task.id);
   }
 
   @override
@@ -2119,13 +2265,28 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     if (controller == null || session == null) {
       return const Center(child: Text('会话不存在'));
     }
+    // 任务式会话只看当前任务项的消息；普通会话（taskId 为空）看全部。
     final messages = session.messages
-        .where((m) => m.role != MessageRole.system)
+        .where((m) =>
+            m.role != MessageRole.system &&
+            (widget.taskId == null || m.taskId == widget.taskId))
         .toList(growable: false);
-    final lastUserIndex = SessionOps.lastUserIndex(session);
+    final lastUserIndex =
+        SessionOps.lastUserIndex(session, onlyTaskId: widget.taskId);
+    // 同一会话串行执行：只有本视图所属任务在运行时才显示流式区。
+    final live = controller.isRunning && controller.runningTaskId == widget.taskId;
 
     return Column(
       children: [
+        if (widget.taskId != null) ...[
+          TaskChatHeader(
+            session: session,
+            taskId: widget.taskId!,
+            running: controller.isRunning,
+            onBack: widget.onBackToTasks,
+          ),
+          const Divider(height: 1),
+        ],
         if (widget.showHeader) ...[
           _Header(controller: controller, showControls: widget.mobileLayout),
           const Divider(height: 1),
@@ -2137,7 +2298,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
               child: ListView.builder(
                 controller: _scroll,
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            itemCount: messages.length + (controller.isRunning ? 1 : 0),
+            itemCount: messages.length + (live ? 1 : 0),
             itemBuilder: (context, index) {
               if (index >= messages.length) {
                 return _LiveStream(controller: controller);
@@ -2176,7 +2337,11 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           child: InputArea(
             running: controller.isRunning,
             onSend: (text, attachments) {
-              controller.send(text, attachments: attachments);
+              controller.send(
+                text,
+                attachments: attachments,
+                taskId: widget.taskId,
+              );
               return true;
             },
             onStop: controller.stop,
@@ -2267,7 +2432,7 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
   }
 
   Future<void> _editLastUser(BuildContext context, Session session) async {
-    final index = SessionOps.lastUserIndex(session);
+    final index = SessionOps.lastUserIndex(session, onlyTaskId: widget.taskId);
     if (index < 0) return;
     final controller = TextEditingController(text: session.messages[index].content ?? '');
     final text = await showDialog<String>(
@@ -2288,8 +2453,8 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
       ),
     );
     if (text == null) return;
-    if (SessionOps.editLastUser(session, text)) {
-      await _controller?.resend();
+    if (SessionOps.editLastUser(session, text, onlyTaskId: widget.taskId)) {
+      await _controller?.resend(taskId: widget.taskId);
       setState(() {});
     }
   }

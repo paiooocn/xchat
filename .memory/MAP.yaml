@@ -5,21 +5,21 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-10-28 16:50"
-  git_sha: "8d4595f"
+  generated_at: "2026-10-29 13:21"
+  git_sha: "17a0fc5"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 116
-  line_count: 28313
+  file_count: 118
+  line_count: 29506
 
 modules:
   - id: "agent"
     path: "lib/agent"
-    lines: 551
+    lines: 562
     deps: ["core", "data", "llm", "models", "pkg.llm_api"]
     files:
       - path: "lib/agent/agent_engine.dart"
-        lines: 449
+        lines: 460
         symbols: ["AgentEngine"]
       - path: "lib/agent/agent_events.dart"
         lines: 102
@@ -130,7 +130,7 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 599
+    lines: 651
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
@@ -140,7 +140,7 @@ modules:
         lines: 97
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
-        lines: 316
+        lines: 368
         symbols: ["SessionXml"]
       - path: "lib/data/xml/template_xml.dart"
         lines: 88
@@ -151,14 +151,14 @@ modules:
         symbols: ["XmlOut"]
   - id: "llm"
     path: "lib/llm"
-    lines: 543
+    lines: 566
     deps: ["models", "pkg.llm_api"]
     files:
       - path: "lib/llm/llm_factory.dart"
         lines: 72
         symbols: ["createProvider", "fetchModels", "testProvider"]
       - path: "lib/llm/outbound_adapter.dart"
-        lines: 179
+        lines: 202
         symbols: ["resolveEchoMode"]
       - path: "lib/llm/prompt_assistant.dart"
         lines: 122
@@ -169,7 +169,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 3593
+    lines: 3818
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -177,10 +177,10 @@ modules:
         doc: "Session execution mode controlling when tool calls require approval."
         symbols: ["AgentMode", "requiresApproval"]
       - path: "lib/models/app_config.dart"
-        lines: 528
+        lines: 526
         symbols: ["ContinueMode", "AppConfig"]
       - path: "lib/models/catalog_index.dart"
-        lines: 302
+        lines: 330
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
       - path: "lib/models/extract_script.dart"
         lines: 266
@@ -207,10 +207,10 @@ modules:
         lines: 187
         symbols: ["SearchEngineConfig"]
       - path: "lib/models/session.dart"
-        lines: 295
-        symbols: ["Session"]
+        lines: 366
+        symbols: ["SessionKind", "Session"]
       - path: "lib/models/session_message.dart"
-        lines: 174
+        lines: 186
         symbols: ["ThinkingReplyMode", "MessageRole", "ToolCallData", "SessionMessage"]
       - path: "lib/models/session_params.dart"
         lines: 129
@@ -226,6 +226,9 @@ modules:
         lines: 66
         doc: "Shell command policy: maps a command string to an approval level, or marks"
         symbols: ["ShellMatch", "ShellClassification"]
+      - path: "lib/models/task_item.dart"
+        lines: 116
+        symbols: ["TaskItem", "parseTaskMarkdown"]
       - path: "lib/models/token_usage.dart"
         lines: 79
         symbols: ["TokenUsage"]
@@ -345,29 +348,29 @@ modules:
         symbols: ["TransportRequest", "TransportResponse", "HttpTransport"]
   - id: "session"
     path: "lib/session"
-    lines: 352
+    lines: 412
     deps: ["agent", "data", "models"]
     files:
       - path: "lib/session/session_controller.dart"
-        lines: 287
+        lines: 307
         symbols: ["SessionController"]
       - path: "lib/session/session_ops.dart"
-        lines: 65
+        lines: 105
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1015
+    lines: 1024
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 912
+        lines: 921
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8405
+    lines: 8777
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -380,7 +383,7 @@ modules:
         lines: 218
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 2921
+        lines: 3086
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
@@ -392,7 +395,7 @@ modules:
         lines: 394
         symbols: ["SearchPage"]
       - path: "lib/ui/pages/session_wizard_page.dart"
-        lines: 627
+        lines: 834
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
         lines: 626
@@ -423,7 +426,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 2278
+    lines: 2719
     deps: ["core", "models", "state", "ui.theme"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -451,6 +454,9 @@ modules:
       - path: "lib/ui/widgets/session_info_dialog.dart"
         lines: 264
         symbols: ["SessionInfoDialog"]
+      - path: "lib/ui/widgets/task_session_view.dart"
+        lines: 441
+        symbols: ["TaskListView", "TaskChatHeader", "showTaskEditorDialog", "showTaskImportDialog"]
       - path: "lib/ui/widgets/thinking_block.dart"
         lines: 74
         symbols: ["ThinkingBlock"]
@@ -566,6 +572,12 @@ tests:
   - path: "test/shell_policy_test.dart"
     lines: 53
     cases: 6
+  - path: "test/task_session_flow_test.dart"
+    lines: 144
+    cases: 2
+  - path: "test/task_session_test.dart"
+    lines: 330
+    cases: 26
   - path: "test/template_default_test.dart"
     lines: 138
     cases: 5

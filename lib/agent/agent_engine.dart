@@ -33,12 +33,19 @@ class AgentEngine {
     required this.config,
     required this.repository,
     this.onApproval,
+    this.taskId,
   });
 
   final Session session;
   final ProviderConfig providerConfig;
   final AppConfig config;
   final SessionRepository repository;
+
+  /// Task item the turn belongs to (task-style session); every message this
+  /// turn produces is tagged with it so the task view can show just its own
+  /// conversation. `null` for a normal session. It never filters what is sent
+  /// to the model — the whole session history is always sent.
+  final String? taskId;
 
   /// Optional user-consent hook. Returns `true` to run the tool, `false` to
   /// deny it. Invoked for tools whose approval level demands it under the
@@ -127,6 +134,7 @@ class AgentEngine {
           id: id,
           content: userText,
           attachments: await _storeAttachments(id, attachments ?? const []),
+          taskId: taskId,
         ));
         await _persist();
       }
@@ -165,6 +173,7 @@ class AgentEngine {
         final assistant = SessionMessage(
           role: MessageRole.assistant,
           id: _shortId(),
+          taskId: taskId,
           content: response.message.content,
           reasoning: response.message.reasoningContent,
           reasoningMode: _reasoningModeLabel(),
@@ -247,6 +256,7 @@ class AgentEngine {
           session.messages.add(SessionMessage(
             role: MessageRole.tool,
             id: toolId,
+            taskId: taskId,
             toolCallId: call.id,
             toolName: call.name,
             content: attached.error ?? result.content,
@@ -279,6 +289,7 @@ class AgentEngine {
             role: MessageRole.user,
             id: _shortId(),
             content: prompt,
+            taskId: taskId,
           ));
           await _persist();
           budgetRound = 0;

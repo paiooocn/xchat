@@ -79,6 +79,7 @@ class SessionMessage {
     this.toolName,
     this.isError = false,
     this.usage = TokenUsage.empty,
+    this.taskId,
   })  : toolCalls = toolCalls ?? <ToolCallData>[],
         attachments = attachments ?? <MessageAttachment>[];
 
@@ -102,6 +103,13 @@ class SessionMessage {
   String? toolName;
   bool isError;
 
+  /// Owning task item of a task-style session (`<task id>`); `null` for the
+  /// messages of a normal session (and for the shared `system` message).
+  ///
+  /// Every message produced by one turn carries the same id — it is what the
+  /// task view filters on. It never affects what is sent to the model.
+  String? taskId;
+
   /// Per-turn usage (assistant only).
   TokenUsage usage;
 
@@ -123,6 +131,7 @@ class SessionMessage {
     String? toolName,
     bool? isError,
     TokenUsage? usage,
+    String? taskId,
   }) =>
       SessionMessage(
         role: role ?? this.role,
@@ -136,6 +145,7 @@ class SessionMessage {
         toolName: toolName ?? this.toolName,
         isError: isError ?? this.isError,
         usage: usage ?? this.usage,
+        taskId: taskId ?? this.taskId,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -152,6 +162,7 @@ class SessionMessage {
         if (toolName != null) 'tool_name': toolName,
         if (isError) 'is_error': true,
         if (usage.isNotEmpty) 'usage': usage.toJson(),
+        if (taskId != null) 'task_id': taskId,
       });
 
   factory SessionMessage.fromJson(Object? value) {
@@ -169,6 +180,7 @@ class SessionMessage {
       toolName: asString(json['tool_name']),
       isError: asBool(json['is_error']),
       usage: TokenUsage.fromJson(json['usage']),
+      taskId: asString(json['task_id']),
     );
   }
 }
