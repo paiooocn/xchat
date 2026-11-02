@@ -160,3 +160,15 @@ for (var i = 0; i < 30; i++) {
 顺带：断言**内存态**（如 `state.config.providers`，`upsertProvider` 在内存里改）
 不受影响，所以不是所有保存类用例都会踩。
 → 参考用例 `test/template_max_tokens_test.dart`。
+
+## 15. 归档页：项目 = 父项，会话 = 子项
+
+- 归档页两个 Tab：**归档·全局**（`projectId` 为空的归档会话）与
+  **归档·项目**（父项=项目，子项=该项目的归档会话，父项默认折叠）。
+- 父项出现的条件：**项目已归档** 或 **其下有归档会话**；徽标规则见
+  `models/archive_group.dart` 的 `ArchiveBadge`（「全部」= 项目已归档且会话全归档；
+  「部分」= 有归档会话但不满足「全部」；项目无会话 → 无徽标）。
+- 分组/计数是**纯函数**（`buildArchiveProjectGroups`），别在 widget 里现算，
+  否则徽标规则会散落到 UI 层、测试不到。
+- 排序用 `project.name`（空名排末尾）；中文名按码位比较，`已` < `有`，
+  写测试断言时别想当然地按插入顺序。

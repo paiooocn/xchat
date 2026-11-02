@@ -97,3 +97,10 @@ UI 发消息
     而删改必须限定在同一任务的范围内（否则会误删别的任务的对话）。
 12. **一手消息一手 taskId**：一次 turn 产生的 user/assistant/tool 消息由
     `AgentEngine` 统一打标（构造参数 `taskId`），别在别处补。
+13. **项目归档是级联的**：归档/恢复项目会连带归档/恢复它名下**全部**会话
+    （`AppState.setProjectArchived` → `_setSessionsArchivedOfProject`）。
+    侧栏只列活动项目，所以「不级联」会让项目的会话在侧栏与归档页都看不到。
+14. **删除项目连带删除会话**：`AppState.deleteProject` 删项目时**同时删掉它的
+    全部会话**（XML + 索引 + 内存态），不再把会话「脱离项目」留下。调用方必须
+    先做二次确认（`confirmDeleteProject`）。项目的工作目录不删，只重命名为
+    `_rec_<原名>` 回收（`AppState._recycleSandbox`）。

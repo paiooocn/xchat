@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:llm_api/llm_api.dart' as llm;
 import 'package:path/path.dart' as p;
@@ -16,6 +18,7 @@ import '../llm/session_compressor.dart';
 import '../llm/session_namer.dart';
 import '../models/agent_mode.dart';
 import '../models/app_config.dart';
+import '../models/archive_group.dart';
 import '../models/memory_status.dart';
 import '../models/models_dev.dart';
 import '../models/project.dart';
@@ -225,6 +228,42 @@ class AppState extends ChangeNotifier {
     archivedProjects = await projectRepository.listArchived();
     notifyListeners();
   }
+
+  // ------------------------------------------------------------- archives
+
+  /// The archived sessions that belong to no project ("global" sessions).
+  List<Session> get archivedGlobalSessions =>
+      buildArchivedGlobalSessions(archivedSessions);
+
+  /// The archived sessions grouped by their owning project id.
+  Map<String, List<Session>> get archivedSessionsByProject {
+    final map = <String, List<Session>>{};
+    for (final session in archivedSessions) {
+      if (session.projectId.isEmpty) continue;
+      map.putIfAbsent(session.projectId, () => <Session>[]).add(session);
+    }
+    return map;
+  }
+
+  /// Number of archived sessions of the project [projectId].
+  int archivedCountOfProject(String projectId) => archivedSessions
+      .where((s) => s.projectId == projectId)
+      .length;
+
+  /// Total number of sessions of the project [projectId] (archived + active).
+  int totalSessionsOfProject(String projectId) =>
+      sessions.where((s) => s.projectId == projectId).length +
+      archivedCountOfProject(projectId);
+
+  /// The project entries of the archive page (parent items, with their
+  /// archived sessions as children).
+  List<ArchiveProjectGroup> get archiveProjectGroups =>
+      buildArchiveProjectGroups(
+        projects: projects,
+        archivedProjects: archivedProjects,
+        sessions: sessions,
+        archivedSessions: archivedSessions,
+      );
 
   Project? projectById(String id) {
     for (final project in projects) {
@@ -818,31 +857,93 @@ class AppState extends ChangeNotifier {
   }
 
   /// Archives or restores a project.
+  ///
+  /// The change cascades to the project's sessions: archiving the project
+  /// archives every session it owns, restoring it restores them all (even
+  /// the ones that were archived one by one before).
   Future<void> setProjectArchived(String id, bool archived) async {
     final project = projectById(id);
     if (project == null) return;
     project.archivedAt = archived ? DateTime.now() : null;
     project.updatedAt = DateTime.now();
     await projectRepository.write(project);
+    await _setSessionsArchivedOfProject(id, archived);
+    await refreshArchived();
+    await refreshSessions();
     await refreshProjects();
     await refreshArchivedProjects();
   }
 
+  /// Archives or restores every session of the project [projectId].
+  Future<void> _setSessionsArchivedOfProject(
+    String projectId,
+    bool archived,
+  ) async {
+    final owned = <Session>[
+      for (final meta in <Session>[...sessions, ...archivedSessions])
+        if (meta.projectId == projectId) meta,
+    ];
+    for (final meta in owned) {
+      final session = await loadFullSession(meta.id);
+      session.archivedAt = archived ? DateTime.now() : null;
+      await sessionRepository.write(session);
+      _sessionCache[session.id] = session;
+    }
+  }
+
+  /// Deletes a project **together with all of its sessions**.
+  ///
+  /// The project's working directory is not deleted: it is renamed to
+  /// `_rec_<name>` (see [_recycleSandbox]) so the files stay recoverable.
   Future<void> deleteProject(String id) async {
-    // Detach sessions so they survive as standalone sessions.
-    for (final meta in <Session>[...sessions, ...archivedSessions]) {
-      if (meta.projectId == id) {
-        final session = await loadFullSession(meta.id);
-        session.projectId = '';
-        session.sandbox = paths.sessionSandboxDir(session.id);
-        await sessionRepository.write(session);
-        _sessionCache[session.id] = session;
-      }
+    final project = projectById(id);
+    final owned = <Session>[
+      for (final meta in <Session>[...sessions, ...archivedSessions])
+        if (meta.projectId == id) meta,
+    ];
+    for (final meta in owned) {
+      await sessionRepository.delete(meta.id);
+      _sessionCache.remove(meta.id);
+      _pendingSessions.remove(meta.id);
+      _controllers.remove(meta.id)?.dispose();
+      _runningSessionIds.remove(meta.id);
+      // A pending approval of the deleted session can never be answered.
+      approvalCenter.dropForSession(meta.id);
+    }
+    if (project != null) {
+      await _recycleSandbox(project.sandbox);
     }
     await projectRepository.delete(id);
     await refreshProjects();
     await refreshArchivedProjects();
     await refreshSessions();
+    await refreshArchived();
+  }
+
+  /// Renames the project's working directory to `_rec_<name>` instead of
+  /// deleting it, so the user can still recover the files.
+  ///
+  /// Nothing happens when the directory does not exist; a failing rename
+  /// (read-only target, cross-device link) never aborts the deletion — it is
+  /// only logged.
+  Future<void> _recycleSandbox(String sandbox) async {
+    final source = sandbox.trim();
+    if (source.isEmpty) return;
+    final dir = Directory(source);
+    if (!await dir.exists()) return;
+    final parent = p.dirname(source);
+    final base = p.basename(source);
+    var target = p.join(parent, '_rec_$base');
+    var suffix = 2;
+    while (await Directory(target).exists()) {
+      target = p.join(parent, '_rec_${base}_$suffix');
+      suffix++;
+    }
+    try {
+      await dir.rename(target);
+    } catch (error) {
+      debugPrint('AppState: 工作目录回收失败 ($source): $error');
+    }
   }
 
   // --------------------------------------------------------------- providers

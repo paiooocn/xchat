@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-10-29 13:21"
-  git_sha: "17a0fc5"
+  generated_at: "2026-11-02 16:46"
+  git_sha: "bba1f53"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 118
-  line_count: 29506
+  file_count: 119
+  line_count: 29893
 
 modules:
   - id: "agent"
@@ -169,7 +169,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 3818
+    lines: 3934
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -179,6 +179,9 @@ modules:
       - path: "lib/models/app_config.dart"
         lines: 526
         symbols: ["ContinueMode", "AppConfig"]
+      - path: "lib/models/archive_group.dart"
+        lines: 116
+        symbols: ["ArchiveBadge", "ArchiveProjectGroup"]
       - path: "lib/models/catalog_index.dart"
         lines: 330
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
@@ -359,22 +362,22 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1024
+    lines: 1125
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 921
+        lines: 1022
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8777
+    lines: 8884
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
-        lines: 154
+        lines: 261
         symbols: ["ArchivePage"]
       - path: "lib/ui/pages/compress_prompts_page.dart"
         lines: 179
@@ -426,14 +429,14 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 2719
+    lines: 2782
     deps: ["core", "models", "state", "ui.theme"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
         lines: 100
         symbols: ["BrandMark"]
       - path: "lib/ui/widgets/confirm_dialog.dart"
-        lines: 29
+        lines: 92
         symbols: ["confirmDelete"]
       - path: "lib/ui/widgets/input_area.dart"
         lines: 582
@@ -482,6 +485,12 @@ tests:
   - path: "test/app_version_test.dart"
     lines: 29
     cases: 1
+  - path: "test/archive_group_test.dart"
+    lines: 172
+    cases: 10
+  - path: "test/archive_page_test.dart"
+    lines: 201
+    cases: 6
   - path: "test/brand_icon_test.dart"
     lines: 46
     cases: 1
@@ -524,6 +533,9 @@ tests:
   - path: "test/models_dev_test.dart"
     lines: 210
     cases: 10
+  - path: "test/project_archive_cascade_test.dart"
+    lines: 110
+    cases: 4
   - path: "test/project_dialog_test.dart"
     lines: 123
     cases: 2

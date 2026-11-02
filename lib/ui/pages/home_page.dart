@@ -1204,14 +1204,14 @@ class _Sidebar extends StatelessWidget {
                     onArchive: () =>
                         context.read<AppState>().setProjectArchived(project.id, true),
                     onDelete: () async {
-                      final ok = await confirmDelete(
+                      final state = context.read<AppState>();
+                      final ok = await confirmDeleteProject(
                         context,
                         '项目「${project.name.isEmpty ? project.id : project.name}」',
+                        state.totalSessionsOfProject(project.id),
                       );
                       if (ok && context.mounted) {
-                        await context
-                            .read<AppState>()
-                            .deleteProject(project.id);
+                        await state.deleteProject(project.id);
                       }
                     },
                   ),

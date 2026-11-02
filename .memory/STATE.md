@@ -3,6 +3,78 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-04 · 归档页重整（归档·全局 / 归档·项目）+ 项目归档级联 + 删项目连带删会话
+
+**做了什么**（需求与拍板见文末「拍板记录」）
+
+- 归档页（`lib/ui/pages/archive_page.dart`）从「归档会话 / 归档项目」两个平铺 Tab
+  改成 **「归档·全局」/「归档·项目」**：
+  - 归档·全局 = `projectId` 为空的归档会话（平铺，可恢复/删除）；
+  - 归档·项目 = **父项=项目**（`ExpansionTile`，默认折叠）、**子项=该项目的归档会话**；
+    父项行还有「恢复项目 / 删除项目」。
+- 父项出现条件：项目自身已归档 **或** 其下有归档会话。
+- 父项徽标（新增 `lib/models/archive_group.dart` 的 `ArchiveBadge`）：
+  **全部** = 项目已归档且会话全归档；**部分** = 有归档会话但不满足「全部」；
+  无归档会话/项目无会话 → 无徽标。分组与计数是**纯函数**（可单测）。
+- **级联**（`AppState.setProjectArchived`）：归档项目 ⇒ 其下全部会话一并归档；
+  恢复项目 ⇒ 其下全部会话（含此前单独归档的）一并恢复。
+- **删除项目 ⇒ 连带删除其全部会话**（原语义是「脱离项目保留为独立会话」，已改）：
+  `AppState.deleteProject` 逐个删 XML + 索引 + 内存态（缓存/控制器/审批队列），
+  刷新四个列表。**工作目录不删**，重命名为 `_rec_<原名>`（同名再加 `_2`/`_3`…），
+  失败只记日志不阻断删除。
+- 删除确认：`confirmDeleteProject` —— **两次确认**：第一次明示「N 个会话会一并删除」，
+  第二次「再次确认」。会话删除沿用原 `confirmDelete`（一次确认）。
+  侧栏项目菜单的删除入口同步改用它。
+- 版本：`0.6.11+1` → **`0.6.12+1`**（修订号 +1，构建号沿用仓库惯例保持 +1；
+  `pubspec.yaml` 与 `lib/core/app_version.dart` 两处同步）。
+
+**改了什么文件**
+
+- 新增：`lib/models/archive_group.dart`（`ArchiveBadge` / `ArchiveProjectGroup` /
+  `buildArchivedGlobalSessions` / `buildArchiveProjectGroups`）、
+  `test/archive_group_test.dart`、`test/archive_page_test.dart`、
+  `test/project_archive_cascade_test.dart`
+- 改：`lib/state/app_state.dart`（读取器 `archivedGlobalSessions` /
+  `archivedSessionsByProject` / `archivedCountOfProject` / `totalSessionsOfProject` /
+  `archiveProjectGroups`；`setProjectArchived` 级联；`deleteProject` 连带删会话 +
+  `_recycleSandbox` 回收工作目录）、
+  `lib/ui/pages/archive_page.dart`（整页重写）、`lib/ui/widgets/confirm_dialog.dart`
+  （新增 `confirmDeleteProject`）、`lib/ui/pages/home_page.dart`（侧栏删除入口）、
+  `pubspec.yaml`、`lib/core/app_version.dart`、`FEATURES.md`、
+  `.memory/ARCHITECTURE.md`（不变量 13/14）、`.memory/GOTCHAS.md`（§15）
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**
+- `flutter test` → **335 passed, 1 skipped**（基线 315 + 新增 20：分组/徽标纯逻辑 9、
+  归档页 widget 6、级联与删除 5）
+- 手工：建项目 + 3 会话 → 归档项目 → 归档·项目 Tab 父项显示「全部」、展开 3 个子项 →
+  单独恢复 1 个 → 徽标变「部分」→ 恢复项目 → 3 个会话全回活动列表 →
+  删除项目（两次确认）→ 项目与其会话消失、`<父目录>/_rec_<名>` 目录存在
+
+**下一步 / 待验证**
+
+- 用户侧真机确认归档页两个 Tab 的观感与徽标配色；`_rec_` 回收目录的清理策略
+  （目前只增不减，需用户自行删除）。
+- 提交/打标签/推送尚未执行（等用户确认后再做）。
+
+**遗留问题**
+
+- `_rec_*` 回收目录无自动清理；同名项目重复删除会产生 `_rec_x_2` 等多个副本。
+- 工作目录跨文件系统或无写权限时重命名失败 → 目录原地保留（不删），仅记日志。
+- 恢复项目会连带恢复此前**单独归档**的会话（按拍板执行）。
+- 删除项目后其会话 XML 被真删，**不可恢复**（仅工作目录内容还在 `_rec_` 中）。
+
+**拍板记录（勿擅自改回）**
+
+1. 徽标「全部」= 项目自身已归档 **且** 会话全归档；「部分」= 其余有归档会话的情形。
+2. 归档页只保留两个 Tab，项目本身的恢复/删除并入「归档·项目」的父项行。
+3. 项目归档/恢复**级联**其会话；删除项目**连带删会话**并两次确认；工作目录不删，
+   改名为 `_rec_<原名>` 回收。
+4. Tab 文案用「归档·全局」/「归档·项目」；父项**默认折叠**。
+
+---
+
 ## 2026-11-03 · 默认工具集改为空（空白会话默认不带 read_file）
 
 **做了什么**
