@@ -566,6 +566,9 @@ class AppState extends ChangeNotifier {
     _runningSessionIds.remove(id);
     // A pending approval of the deleted session can never be answered.
     approvalCenter.dropForSession(id);
+    // The archived list must be rebuilt as well: the session may have been
+    // deleted from the archive page, where only the archived bucket shows it.
+    await refreshArchived();
     await refreshSessions();
   }
 
@@ -608,6 +611,8 @@ class AppState extends ChangeNotifier {
     final session = await loadFullSession(id);
     session.title = title;
     await sessionRepository.write(session);
+    // The session may live in the archive — refresh both lists.
+    await refreshArchived();
     await refreshSessions();
   }
 
@@ -616,6 +621,7 @@ class AppState extends ChangeNotifier {
     final session = await loadFullSession(id);
     session.tags = List<String>.of(tags);
     await sessionRepository.write(session);
+    await refreshArchived();
     await refreshSessions();
   }
 

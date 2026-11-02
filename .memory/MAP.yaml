@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-02 16:46"
-  git_sha: "bba1f53"
+  generated_at: "2026-11-02 17:07"
+  git_sha: "cfceebe"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
   file_count: 119
-  line_count: 29893
+  line_count: 29899
 
 modules:
   - id: "agent"
@@ -362,11 +362,11 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1125
+    lines: 1131
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 1022
+        lines: 1028
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
@@ -489,8 +489,8 @@ tests:
     lines: 172
     cases: 10
   - path: "test/archive_page_test.dart"
-    lines: 201
-    cases: 6
+    lines: 237
+    cases: 8
   - path: "test/brand_icon_test.dart"
     lines: 46
     cases: 1

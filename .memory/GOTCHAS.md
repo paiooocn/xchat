@@ -172,3 +172,15 @@ for (var i = 0; i < 30; i++) {
   否则徽标规则会散落到 UI 层、测试不到。
 - 排序用 `project.name`（空名排末尾）；中文名按码位比较，`已` < `有`，
   写测试断言时别想当然地按插入顺序。
+
+## 16. 写会话后要同时刷新「活动」与「归档」两个列表
+
+`AppState` 有两套列表：`sessions`（活动）与 `archivedSessions`（归档）。
+**任何可能作用在归档会话上的写操作**（删除 / 重命名 / 改标签）都只重建了活动列表，
+归档页就会显示陈旧数据，直到重启应用自愈（磁盘 index.json 其实是对的）。
+
+- 症状对照：删了归档会话但行还在；重命名归档会话但标题是旧的。
+- 修法：先 `await refreshArchived();` 再 `await refreshSessions();`
+  （顺序不能反：`_pruneCache` 依赖最新的归档集合）。
+- 参考：`AppState.deleteSession` / `renameSession` / `setSessionTags`，
+  回归用例在 `test/archive_page_test.dart`。

@@ -167,6 +167,42 @@ void main() {
     expect(state.sessions.where((s) => s.projectId == projectId), isEmpty);
   });
 
+  testWidgets('deleting a global archived session removes it from the list',
+      (tester) async {
+    final state = await buildState(tester);
+    await tester.runAsync(() async {
+      final session = await state.createSession(title: '待删会话');
+      await state.setSessionArchived(session.id, true);
+    });
+    await pumpArchive(tester, state);
+
+    expect(find.text('待删会话'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('删除').first);
+    await tester.pumpAndSettle();
+    expect(find.text('确认删除'), findsOneWidget);
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => state.archivedGlobalSessions.isEmpty);
+
+    expect(find.text('待删会话'), findsNothing);
+  });
+
+  testWidgets('renaming an archived session updates the archive page',
+      (tester) async {
+    final state = await buildState(tester);
+    await tester.runAsync(() async {
+      final session = await state.createSession(title: '旧标题');
+      await state.setSessionArchived(session.id, true);
+      await state.renameSession(session.id, '新标题');
+    });
+    await pumpArchive(tester, state);
+
+    expect(find.text('旧标题'), findsNothing);
+    expect(find.text('新标题'), findsOneWidget);
+  });
+
   testWidgets('a session can be restored from the project tab',
       (tester) async {
     final state = await buildState(tester);

@@ -3,6 +3,46 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-04 · 修复：删除归档会话后归档页不刷新（只重建了活动列表）
+
+**做了什么**
+
+- 现象：归档页「归档·全局」删除会话后，行还在（重启应用才消失）。
+- 根因：`AppState.deleteSession` 只调 `refreshSessions()`（重建**活动**列表），
+  从没调 `refreshArchived()`；磁盘 index.json 其实已删干净（`removeSession` 会从
+  `sessions` 与 `archived_sessions` 两个桶都删），所以重启后自愈。
+  → 归档页读的是 `state.archivedSessions`（陈旧）→ 旧行一直显示。
+- 修法（`lib/state/app_state.dart`）：
+  - `deleteSession`：`await refreshArchived();` 放在 `await refreshSessions();` **之前**
+    （顺序与 `setSessionArchived` 一致：先刷新归档列表，`_pruneCache` 才能用正确的
+    归档集合裁剪缓存）；
+  - `renameSession` / `setSessionTags`：同类问题（作用在归档会话上时，归档页显示旧
+    标题/旧标签直到重启），一并改为同时刷新两个列表。
+- 归档页「归档·项目」Tab 的子项删除走同一个 `deleteSession`，随本次一并修好。
+- 未改版本号（0.6.12+1 不变），只发 `fix:` 提交。
+
+**改了什么文件**
+
+- `lib/state/app_state.dart`（`deleteSession` / `renameSession` / `setSessionTags`）
+- `test/archive_page_test.dart`（新增 2 条回归用例）
+
+**怎么验证**
+
+- `flutter analyze lib test` → No issues found
+- `flutter test` → **337 passed, 1 skipped**（335 + 新增 2）
+- 新增用例：①「归档·全局」删除会话 ⇒ 行立即消失（修复前失败）；
+  ②重命名归档会话 ⇒ 归档页标题立即更新。
+
+**下一步**
+
+- 无（等待真机确认即可）。
+
+**遗留问题**
+
+- 无。
+
+---
+
 ## 2026-11-04 · 归档页重整（归档·全局 / 归档·项目）+ 项目归档级联 + 删项目连带删会话
 
 **做了什么**（需求与拍板见文末「拍板记录」）
