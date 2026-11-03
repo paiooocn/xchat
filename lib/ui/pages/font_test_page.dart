@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_brand.dart';
 import '../theme/app_fonts.dart';
 
 /// Shows the cross-platform font rendering check panel as a dialog.
@@ -43,7 +44,7 @@ class FontTestPanel extends StatelessWidget {
         _sectionStyle('字号阶梯 / Size scale', [
           for (final s in const [12.0, 14.0, 16.0, 20.0, 24.0, 32.0])
             Text(
-              '${s.toInt()}px — XChat 跨平台 LLM Agent 字体渲染',
+              '${s.toInt()}px — $kAppBrandName 跨平台 LLM Agent 字体渲染',
               style: TextStyle(fontSize: s, height: 1.4),
             ),
         ]),

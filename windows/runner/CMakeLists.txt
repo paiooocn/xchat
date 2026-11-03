@@ -30,6 +30,10 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
+# 应用显示名（窗口标题）。改名版打包时由顶层 CMakeLists 从环境变量
+# APP_BRAND_NAME 读入，默认 "XChat"。
+target_compile_definitions(${BINARY_NAME} PRIVATE "APP_BRAND_NAME=L\"${APP_BRAND_NAME}\"")
+
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
 import '../../core/window_prefs.dart';
@@ -106,7 +107,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           TextField(
             controller: _root,
-            decoration: const InputDecoration(labelText: 'XChat 根目录'),
+            decoration: const InputDecoration(labelText: '$kAppBrandName 根目录'),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -394,7 +395,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           _section('关于'),
-          const Text('XChat · Flutter · ReAct Agent · XML 会话'),
+          const Text('$kAppBrandName · Flutter · ReAct Agent · XML 会话'),
           _section('本机信息'),
           SelectableText(
             _machineInfo(),

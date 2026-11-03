@@ -184,3 +184,27 @@ for (var i = 0; i < 30; i++) {
   （顺序不能反：`_pruneCache` 依赖最新的归档集合）。
 - 参考：`AppState.deleteSession` / `renameSession` / `setSessionTags`，
   回归用例在 `test/archive_page_test.dart`。
+
+## 17. 改名版（SixChat）：显示名只有一个来源，但原生侧要各自注入
+
+需求：每次 build 多打一个只改应用名的版本（XChat → SixChat）。做法是**构建期注入**，
+源码零分支。三个坑：
+
+- **Gradle 拿到的 `dart-defines` 是 base64 过的**：flutter 把**每个** `--dart-define`
+  单独 base64 编码，再用 "," 连接（`build_info.dart` 的 `encodeDartDefines`）。
+  Gradle 侧要先 split(",") 再逐条 base64 解码，解出来才是 `KEY=VALUE`。
+  见 `android/app/build.gradle.kts` 的 `appName`。
+- **CMake 不会因为环境变量变了就重新 configure**：`APP_BRAND_NAME` 走环境变量，
+  但 CMake 缓存不失效 → 改名版会拿到上一次的显示名（窗口标题不变）。
+  打包脚本里必须在改名版构建前删掉 `build/linux`（Windows 是 `build\windows`），
+  强制重新 configure。见 `dist/build_deb.sh` / `dist/build_windows.ps1`。
+- **原生窗口标题不读 Dart 常量**：Linux/Windows 的标题在 C++ 里写死，
+  靠 CMake 注入编译宏 `APP_BRAND_NAME`；Android 启动器名字靠
+  `resValue("string", "app_name")` + manifest 的 `@string/app_name`。
+  三处（Dart / Gradle / CMake）必须给**同一个**名字。
+- **AGP 9 要显式开 `resValues`**：`defaultConfig { resValue("string","app_name",…) }`
+  会报「defaultConfig contains custom resource values, but the feature is disabled」，
+  必须在 `android { buildFeatures { resValues = true } }` 里打开。
+- **只改显示名**：applicationId（`com.yimo.xchat`）、deb 包名、数据目录都不变，
+  所以改名版与正式版**不能共存**（装谁覆盖谁，数据共用）。要共存得另开
+  applicationId / 包名 / 数据目录，那是另一件事。

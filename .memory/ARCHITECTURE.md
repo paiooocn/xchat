@@ -104,3 +104,11 @@ UI 发消息
     全部会话**（XML + 索引 + 内存态），不再把会话「脱离项目」留下。调用方必须
     先做二次确认（`confirmDeleteProject`）。项目的工作目录不删，只重命名为
     `_rec_<原名>` 回收（`AppState._recycleSandbox`）。
+15. **应用显示名只有一个来源**：`lib/core/app_brand.dart` 的 `kAppBrandName`
+    （`String.fromEnvironment('APP_BRAND_NAME')`，默认 `XChat`）。界面文案读它；
+    改名版靠**构建期**注入（`--dart-define=APP_BRAND_NAME=SixChat`），
+    源码里不再出现硬编码的 "XChat"。**只改显示名**：applicationId / 包名 /
+    数据目录一律不变（改名版与正式版是同一个应用）。原生侧（Android 启动器
+    label、桌面窗口标题）不读 Dart 常量，各平台有各自的注入通道
+    （Gradle `resValue` / CMake 编译宏），三处必须同值。
+

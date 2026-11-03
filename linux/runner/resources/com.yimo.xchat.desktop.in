@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=XChat
+Name=@APP_BRAND_NAME@
 Comment=LLM Agent 图形客户端（会话 / 项目 / 模板）
 Exec=@XCHAT_EXEC@
 Icon=@XCHAT_ICON@

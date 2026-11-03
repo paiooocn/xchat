@@ -3,6 +3,94 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-04 · 改名版打包：每次 build 多打一个「只改应用名」的 SixChat 版本
+
+**做了什么**
+
+- 需求：每次 build 时，除了正式版（XChat），再打一个**只改应用名字**的版本
+  （XChat → SixChat），源码零改动。
+- 做法：**构建期注入**显示名，代码里不再有硬编码的 "XChat"。
+  - 新增 `lib/core/app_brand.dart`：`kAppBrandName` =
+    `String.fromEnvironment('APP_BRAND_NAME', defaultValue: 'XChat')`（唯一来源），
+    外加 `kAppBrandSlug`（产物文件名前缀）。
+  - 界面文案改读它：`lib/app.dart`（MaterialApp title）、`lib/main.dart`
+    （窗口标题）、`home_page.dart`（欢迎页文案 + 侧栏/底栏品牌行）、
+    `settings_page.dart`（根目录 label + 关于页）、`font_test_page.dart`。
+  - **Android 启动器名字**：`AndroidManifest.xml` 改 `android:label="@string/app_name"`；
+    `android/app/build.gradle.kts` 从 flutter 传入的 `-Pdart-defines`（每项单独
+    base64、"," 连接）解出 `APP_BRAND_NAME` → `resValue("string","app_name", …)`。
+  - **桌面窗口标题**：CMake（linux/ 与 windows/）从环境变量 `APP_BRAND_NAME` 取值
+    → 编译宏 `APP_BRAND_NAME`（Linux 窄串 / Windows 宽串）；
+    `linux/runner/resources/com.yimo.xchat.desktop.in` 的 `Name=@APP_BRAND_NAME@`。
+- **打包脚本**：三个脚本都在正式版之后多打一个改名版
+  （`BRAND_VARIANT_NAME` 默认 `SixChat`，`BUILD_BRAND_VARIANT=0` 可关闭）：
+  - `dist/build_apk.sh` → `dist/sixchat-vX.Y.Z.apk`
+  - `dist/build_deb.sh` → `dist/sixchat-vX.Y.Z.deb`（脚本重构为 `build_deb` 函数，
+    改名版构建前删 `build/linux`，强制 CMake 重新 configure）
+  - `dist/build_windows.ps1` → `dist/sixchat-windows-x64-vX.Y.Z.zip`
+- **CI**：三个工作流（android / linux-deb / windows）都把改名版产物一并上传 /
+  附加到 Release；Windows 工作流改为直接调用 `dist/build_windows.ps1`
+  （原来在 YAML 里内联打包，现在与本地同一条路径）。
+- 文档：`docs/BRANDING.md`（新）、`FEATURES.md` §13、
+  `.memory/ARCHITECTURE.md` 不变量 15、`.memory/GOTCHAS.md` §17。
+- **未改版本号**（0.6.12+1 不变），也不改 applicationId / 包名 / 数据目录。
+
+**改了什么文件**
+
+- 新增：`lib/core/app_brand.dart`、`test/app_brand_test.dart`、`docs/BRANDING.md`
+- 改：`lib/app.dart`、`lib/main.dart`、`lib/ui/pages/home_page.dart`、
+  `lib/ui/pages/settings_page.dart`、`lib/ui/pages/font_test_page.dart`、
+  `android/app/build.gradle.kts`、`android/app/src/main/AndroidManifest.xml`、
+  `linux/CMakeLists.txt`、`linux/runner/CMakeLists.txt`、
+  `linux/runner/my_application.cc`、`linux/runner/resources/com.yimo.xchat.desktop.in`、
+  `windows/CMakeLists.txt`、`windows/runner/CMakeLists.txt`、`windows/runner/main.cpp`、
+  `dist/build_apk.sh`、`dist/build_deb.sh`、`dist/build_windows.ps1`、
+  `.github/workflows/build-android-apk.yml`、`.github/workflows/build-linux-deb.yml`、
+  `.github/workflows/build-windows.yml`、`FEATURES.md`
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**
+- `flutter test` → **342 passed, 1 skipped**（337 + 新增 5 条品牌名守护用例）
+- `flutter test --dart-define=APP_BRAND_NAME=SixChat test/app_brand_test.dart`
+  → 默认名用例如期失败（Actual: 'SixChat'），证明 `--dart-define` 注入生效
+- 新增用例 `test/app_brand_test.dart`：默认名 / Android `@string/app_name` +
+  gradle 解 base64 / 界面读 `kAppBrandName` / 桌面原生宏 / 三个打包脚本都注入
+- **构建脚本层面的验证**（没跑完整打包，只验证了「名字怎么传到各层」）：
+  - Gradle：`cd android && ./gradlew --offline :app:help`（需 `JAVA_HOME=jdk17`）
+    配置通过；临时打印验证：带 `-Pdart-defines=<base64(APP_BRAND_NAME=SixChat)>`
+    → `appName=SixChat`，不带 → `appName=XChat`。
+    （AGP 9 会报「defaultConfig contains custom resource values, but the feature
+    is disabled」→ 必须在 `android { buildFeatures { resValues = true } }` 打开。）
+  - CMake：`cmake -S linux -B build/cmtest`（不编译，只 configure）→
+    `CXX_DEFINES` 含 `-DAPP_BRAND_NAME=\"SixChat\"`、`.desktop` 的 `Name=SixChat`；
+    不设环境变量时是 `XChat`。
+- **未实际编译打包**（按约定不代跑构建）：APK / deb / zip 的真机效果待用户验证
+
+**下一步**
+
+- 用户侧跑一次 `bash dist/build_apk.sh`，确认：
+  ① `dist/sixchat-vX.Y.Z.apk` 生成；② 装到手机上启动器名字是 SixChat；
+  ③ 界面里的品牌文案也是 SixChat；④ 与正式版 applicationId 相同（互相覆盖）。
+- 可选后续：让改名版与正式版**可共存**（另开 applicationId / deb 包名 /
+  数据目录）—— 改动面大，未做。
+
+**遗留问题**
+
+- 改名版与正式版**不能共存**（同 applicationId / 同包名 / 同数据目录），
+  装谁覆盖谁。
+- 品牌标记（侧边栏的「X」字形）与图标**没改**，改名版仍显示「X」标记；
+  `windows/runner/Runner.rc` 里的 FileDescription/ProductName 仍是 "xchat"。
+- Linux 正式版的窗口标题从 "xchat" 变成 "XChat"（与品牌名一致），属刻意的
+  一致性调整。
+- `flutter build linux` / `windows` 在改名版之前必须删构建目录，否则 CMake
+  缓存里的显示名不变（脚本已代为删除）。
+- **AGP 9 要显式开 `resValues`**：`defaultConfig { resValue(...) }` 会报
+  「defaultConfig contains custom resource values, but the feature is disabled」，
+  必须加 `android { buildFeatures { resValues = true } }`。
+
+---
+
 ## 2026-11-04 · 修复：删除归档会话后归档页不刷新（只重建了活动列表）
 
 **做了什么**
@@ -258,7 +346,7 @@
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.6.11 (build 1)（任务式会话这一轮改的版本号） |
+| 应用版本 | 0.6.12 (build 1) |
 | 最近提交 | `dcc13fe` release: v0.6.11 — 任务式会话（已提交 + 打标签 + 推送 origin/main） |
 | 工作区 | 干净（除两处与本轮无关的本地改动：`lib/models/app_config.dart` 的 defaultTools 默认值、未跟踪的 `.VSCodeCounter/`） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart`（MAP 已刷新） |

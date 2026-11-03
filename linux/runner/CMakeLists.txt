@@ -19,6 +19,10 @@ apply_standard_settings(${BINARY_NAME})
 # Add preprocessor definitions for the application ID.
 add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 
+# 应用显示名（窗口标题）。改名版打包时由顶层 CMakeLists 从环境变量
+# APP_BRAND_NAME 读入，默认 "XChat"。
+target_compile_definitions(${BINARY_NAME} PRIVATE "APP_BRAND_NAME=\"${APP_BRAND_NAME}\"")
+
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)

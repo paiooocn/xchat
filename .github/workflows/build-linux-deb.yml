@@ -57,14 +57,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xchat-linux-deb
-          path: dist/xchat-v*.deb
+          path: |
+            dist/xchat-v*.deb
+            dist/sixchat-v*.deb
           if-no-files-found: error
 
       - name: Attach to release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/xchat-v*.deb
+          files: |
+            dist/xchat-v*.deb
+            dist/sixchat-v*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -78,4 +82,4 @@ jobs:
           TAG_NAME: ${{ inputs.gitcode_tag || github.ref_name }}
           RELEASE_NAME: XChat ${{ inputs.gitcode_tag || github.ref_name }}
           RELEASE_BODY: Automated release ${{ inputs.gitcode_tag || github.ref_name }}
-        run: bash dist/gitcode_release.sh dist/xchat-v*.deb
+        run: bash dist/gitcode_release.sh dist/xchat-v*.deb dist/sixchat-v*.deb

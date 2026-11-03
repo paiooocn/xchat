@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/app_brand.dart';
 import 'state/app_state.dart';
 import 'ui/pages/home_page.dart';
 import 'ui/theme/app_theme.dart';
@@ -17,7 +18,7 @@ class XChatApp extends StatelessWidget {
       _ => ThemeMode.system,
     };
     return MaterialApp(
-      title: 'XChat',
+      title: kAppBrandName,
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: AppTheme.light(),

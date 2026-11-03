@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-02 17:07"
-  git_sha: "cfceebe"
+  generated_at: "2026-11-02 17:41"
+  git_sha: "6ac47e1"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 119
-  line_count: 29899
+  file_count: 120
+  line_count: 29937
 
 modules:
   - id: "agent"
@@ -59,19 +59,22 @@ modules:
         symbols: ["WebViewTools", "htmlProbeScript", "textProbeScript"]
   - id: "app"
     path: "lib"
-    lines: 130
+    lines: 132
     deps: []
     files:
       - path: "lib/app.dart"
-        lines: 51
+        lines: 52
         symbols: ["XChatApp"]
       - path: "lib/main.dart"
-        lines: 79
+        lines: 80
   - id: "core"
     path: "lib/core"
-    lines: 1410
+    lines: 1443
     deps: ["models"]
     files:
+      - path: "lib/core/app_brand.dart"
+        lines: 33
+        doc: "应用显示名的**唯一来源**。"
       - path: "lib/core/app_paths.dart"
         lines: 359
         symbols: ["AppPaths"]
@@ -373,7 +376,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 8884
+    lines: 8887
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -383,10 +386,10 @@ modules:
         lines: 179
         symbols: ["showCompressDialog", "CompressPromptsPage"]
       - path: "lib/ui/pages/font_test_page.dart"
-        lines: 218
+        lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3086
+        lines: 3087
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
@@ -401,7 +404,7 @@ modules:
         lines: 834
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
-        lines: 626
+        lines: 627
         symbols: ["SettingsPage", "PathsSection"]
       - path: "lib/ui/pages/template_wizard_page.dart"
         lines: 592
@@ -482,6 +485,9 @@ tests:
   - path: "test/agent_image_attach_test.dart"
     lines: 220
     cases: 11
+  - path: "test/app_brand_test.dart"
+    lines: 74
+    cases: 5
   - path: "test/app_version_test.dart"
     lines: 29
     cases: 1

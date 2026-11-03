@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'core/app_brand.dart';
 import 'core/app_paths.dart';
 import 'core/window_prefs.dart';
 import 'data/config_repository.dart';
@@ -67,7 +68,7 @@ Future<void> _showWindow(String value) async {
     size: Size(size.width.toDouble(), size.height.toDouble()),
     minimumSize: kMinimumWindowSize,
     center: true,
-    title: 'XChat',
+    title: kAppBrandName,
     titleBarStyle: TitleBarStyle.normal,
   );
   // Never await this before `runApp`: the callback fires only once the engine

@@ -6,6 +6,16 @@ project(xchat LANGUAGES CXX)
 # the on-disk name of your application.
 set(BINARY_NAME "xchat")
 
+# 应用显示名（窗口标题）。默认 "XChat"；改名版打包时用环境变量覆盖，
+# 与 Dart 侧的 --dart-define=APP_BRAND_NAME 一起给（两者必须同名）：
+#   APP_BRAND_NAME=SixChat flutter build windows --release --dart-define=APP_BRAND_NAME=SixChat
+# 只改显示名，BINARY_NAME / 安装路径不变。
+if(DEFINED ENV{APP_BRAND_NAME} AND NOT "$ENV{APP_BRAND_NAME}" STREQUAL "")
+  set(APP_BRAND_NAME "$ENV{APP_BRAND_NAME}")
+else()
+  set(APP_BRAND_NAME "XChat")
+endif()
+
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)

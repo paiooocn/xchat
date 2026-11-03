@@ -9,6 +9,12 @@
 
 #include <string.h>
 
+// 应用显示名（窗口标题）。由构建系统（CMake）注入：改名版打包时
+// APP_BRAND_NAME=SixChat，默认 "XChat"。
+#ifndef APP_BRAND_NAME
+#define APP_BRAND_NAME "XChat"
+#endif
+
 // 应用图标：与侧边栏左上角的品牌标记一致（assets/icons/app_icon.png）。
 //
 // 这里只做「进程内」的事：把打包进 bundle 的 PNG 设为窗口图标，标题栏 /
@@ -92,11 +98,11 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "xchat");
+    gtk_header_bar_set_title(header_bar, APP_BRAND_NAME);
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "xchat");
+    gtk_window_set_title(window, APP_BRAND_NAME);
   }
 
   gtk_window_set_default_size(window, 1280, 720);

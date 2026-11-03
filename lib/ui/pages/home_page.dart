@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
 import '../../core/ids.dart';
@@ -871,7 +872,7 @@ class _WelcomeViewState extends State<_WelcomeView> {
               ),
               const SizedBox(height: 8),
               Text(
-                '描述你的需求，XChat 会调用工具完成剩下的事',
+                '描述你的需求，$kAppBrandName 会调用工具完成剩下的事',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
@@ -1239,7 +1240,7 @@ class _Sidebar extends StatelessWidget {
           const BrandMark.solid(size: 26),
           const SizedBox(width: 10),
           Text(
-            'XChat',
+            kAppBrandName,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -1296,7 +1297,7 @@ class _Sidebar extends StatelessWidget {
           const BrandMark.solid(size: 20),
           const SizedBox(width: 8),
           Text(
-            'XChat',
+            kAppBrandName,
             style: theme.textTheme.labelMedium?.copyWith(
               color: scheme.onSurfaceVariant,
             ),

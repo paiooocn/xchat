@@ -50,48 +50,26 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos
 
-      - name: Build Windows (Release)
-        run: flutter build windows --release
-
-      - name: Bundle Python runtime
+      - name: Build Windows (Release) + package (含改名版)
         shell: pwsh
-        run: |
-          $ver = (Get-Content 'tool\python_version.txt' -Raw).Trim()
-          $src = Get-ChildItem -Path 'third_party\python' -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like "cpython-$ver-*" } | Select-Object -First 1
-          if (-not $src) { throw "bundled python cpython-$ver-* not found (run tool/fetch_python.sh)" }
-          $dest = 'build\windows\x64\runner\Release\runtime\python'
-          New-Item -ItemType Directory -Force -Path $dest | Out-Null
-          Copy-Item -Path (Join-Path $src.FullName '*') -Destination $dest -Recurse -Force
-          # Windows 发行版只带 python.exe，Agent 统一写 `python3 xxx.py`：补一个同名别名。
-          $exe = Join-Path $dest 'python.exe'
-          $exe3 = Join-Path $dest 'python3.exe'
-          if ((Test-Path $exe) -and -not (Test-Path $exe3)) {
-            Copy-Item -Path $exe -Destination $exe3 -Force
-            Write-Host '==> 已生成别名 python3.exe'
-          }
-          Write-Host "==> bundled python: $($src.FullName)"
-
-      - name: Package (zip)
-        shell: pwsh
-        run: |
-          $ver = ((Get-Content pubspec.yaml | Select-String '^version:\s*(.+)$').Matches[0].Groups[1].Value.Trim().Split('+')[0])
-          $dest = "xchat-windows-x64-v$ver.zip"
-          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath $dest
-          echo "PKG_NAME=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File dist/build_windows.ps1
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: xchat-windows-x64
-          path: ${{ env.PKG_NAME }}
+          path: |
+            dist/xchat-windows-*.zip
+            dist/sixchat-windows-*.zip
           if-no-files-found: error
 
       - name: Attach to release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.PKG_NAME }}
+          files: |
+            dist/xchat-windows-*.zip
+            dist/sixchat-windows-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -105,4 +83,4 @@ jobs:
           TAG_NAME: ${{ inputs.gitcode_tag || github.ref_name }}
           RELEASE_NAME: XChat ${{ inputs.gitcode_tag || github.ref_name }}
           RELEASE_BODY: Automated release ${{ inputs.gitcode_tag || github.ref_name }}
-        run: bash dist/gitcode_release.sh "${{ env.PKG_NAME }}"
+        run: bash dist/gitcode_release.sh dist/xchat-windows-*.zip dist/sixchat-windows-*.zip

@@ -471,3 +471,27 @@ Documents/XChat/                  # 数据根（AppPaths）
 8. 搜索只能走隐藏 WebView；翻页必须"验证结果集变化"，且白跑一轮要重试。
 9. 写盘原子（tmp+rename）；index.json 需与磁盘比对防多实例漂移。
 10. models.dev 同步不得覆盖用户自定义（镜像地址/API Key/Headers/思考调优）。
+
+---
+
+## 13. 品牌与改名版打包（构建期注入）
+
+- **显示名的唯一来源**：`lib/core/app_brand.dart` 的 `kAppBrandName`
+  （`String.fromEnvironment('APP_BRAND_NAME')`，默认 `XChat`）。界面文案
+  （窗口标题、侧栏品牌行、欢迎页、关于页）都读它，源码不再硬编码 "XChat"。
+- **改名版只改显示名**：包名 / applicationId / 数据目录 / 版本号全部不变，
+  因此改名版与正式版是同一个应用（装谁覆盖谁、数据共用）。
+- **三条注入通道必须同值**（Dart 常量 / Gradle / CMake）：
+  - Dart：`--dart-define=APP_BRAND_NAME=SixChat`；
+  - Android 启动器名字：`android/app/build.gradle.kts` 从 flutter 传入的
+    `-Pdart-defines`（base64）解出名字 → `resValue("string", "app_name")`，
+    manifest 用 `android:label="@string/app_name"`；
+  - 桌面窗口标题：CMake 从环境变量 `APP_BRAND_NAME` 取值 → 编译宏
+    `APP_BRAND_NAME`（Linux 窄串 / Windows 宽串），`.desktop` 条目的 `Name`
+    也用它。
+- **打包脚本每次多打一个改名版**（默认 `SixChat`，可用
+  `BRAND_VARIANT_NAME` 改名、`BUILD_BRAND_VARIANT=0` 关闭）：
+  `dist/build_apk.sh` → `dist/sixchat-vX.Y.Z.apk`；
+  `dist/build_deb.sh` → `dist/sixchat-vX.Y.Z.deb`；
+  `dist/build_windows.ps1` → `dist/sixchat-windows-x64-vX.Y.Z.zip`。
+  CI 三个工作流都会把这些产物一并上传 / 附加到 Release。

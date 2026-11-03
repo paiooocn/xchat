@@ -9,6 +9,19 @@ set(BINARY_NAME "xchat")
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.yimo.xchat")
 
+# 应用显示名（窗口标题 + 桌面项 Name）。
+#
+# 默认 "XChat"；改名版打包时用环境变量覆盖，脚本里与 Dart 侧的
+# --dart-define=APP_BRAND_NAME 一起给（两者必须同名）：
+#   APP_BRAND_NAME=SixChat flutter build linux --release --dart-define=APP_BRAND_NAME=SixChat
+#
+# 注意：只改显示名，BINARY_NAME / APPLICATION_ID / 安装路径不变。
+if(DEFINED ENV{APP_BRAND_NAME} AND NOT "$ENV{APP_BRAND_NAME}" STREQUAL "")
+  set(APP_BRAND_NAME "$ENV{APP_BRAND_NAME}")
+else()
+  set(APP_BRAND_NAME "XChat")
+endif()
+
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(SET CMP0063 NEW)
