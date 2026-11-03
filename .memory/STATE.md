@@ -33,7 +33,8 @@
   （原来在 YAML 里内联打包，现在与本地同一条路径）。
 - 文档：`docs/BRANDING.md`（新）、`FEATURES.md` §13、
   `.memory/ARCHITECTURE.md` 不变量 15、`.memory/GOTCHAS.md` §17。
-- **未改版本号**（0.6.12+1 不变），也不改 applicationId / 包名 / 数据目录。
+- 版本：`0.6.12+1` → **`0.6.13+1`**（`pubspec.yaml` 与 `lib/core/app_version.dart` 同步）；
+  applicationId / 包名 / 数据目录**没改**。
 
 **改了什么文件**
 
@@ -66,6 +67,14 @@
     `CXX_DEFINES` 含 `-DAPP_BRAND_NAME=\"SixChat\"`、`.desktop` 的 `Name=SixChat`；
     不设环境变量时是 `XChat`。
 - **未实际编译打包**（按约定不代跑构建）：APK / deb / zip 的真机效果待用户验证
+
+**发布（已执行）**
+
+- 提交 `2457a9b`（release: v0.6.13）→ 打标签 `v0.6.13` → 已推送
+  `origin/main` 与 `origin` 的标签。工作区干净。
+- 推标签会触发三个 CI 工作流（android / linux-deb / windows），它们会**同时**
+  产出 XChat 与 SixChat 两套产物并附加到 Release。
+- 本轮按用户要求**未跑测试**（上一轮改动时已跑过：analyze 干净、342 passed）。
 
 **下一步**
 
@@ -346,7 +355,7 @@
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.6.12 (build 1) |
+| 应用版本 | 0.6.13 (build 1) |
 | 最近提交 | `dcc13fe` release: v0.6.11 — 任务式会话（已提交 + 打标签 + 推送 origin/main） |
 | 工作区 | 干净（除两处与本轮无关的本地改动：`lib/models/app_config.dart` 的 defaultTools 默认值、未跟踪的 `.VSCodeCounter/`） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart`（MAP 已刷新） |
