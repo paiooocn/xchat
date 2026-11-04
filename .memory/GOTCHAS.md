@@ -339,3 +339,37 @@ data for current backend (SkSL). Found stages: Vulkan
 - **笔记列表的空态不能整列替换**：外部文件区在列表最上方，用 `Center` 空态卡片替换
   整列会让「打开 md 文件 / 打开文件夹」入口一起消失。空态改成列表内的软提示
   （`_emptyHint`）。
+
+## 25. GitCode Release 上传（`dist/gitcode_release.sh`）
+
+- **`upload_url` 是短时效预签名地址，只能一次性用**：PUT 失败后再拿同一个 URL 重试
+  必然还是失败。重试必须**每轮重新 GET `releases/:tag/upload_url`**。
+- **`RELEASE_JSON` 是快照，不能用来判"已存在"**：脚本开头取的那份在重试时已经过期，
+  会误判成「还没传」而重传。`upload_with_retry` 每轮先 `refresh_release` 再判。
+- **curl 退出码 0 不等于文件落地**：OBS 带 `x-obs-callback` 时常见「对象已落地但回调
+  超时回 5xx」，所以 2xx 之后还要 `refresh_release` + 核验 `.assets[].name`。
+- **单文件失败不要 `exit`**：`set -e` 下原写法会让后面所有附件都不传。改成收集
+  `FAILED` 数组、结尾汇总 + `exit 1`，重跑靠「已存在则跳过」幂等补齐。
+- **跨 runner 没有共享文件系统**：脚本里加 `flock` / 全局锁对三个并行 workflow 无效；
+  跨 runner 的串行只能靠 workflow 拓扑（`needs` / 单一 publish job），
+  且**不要**用跨 workflow 的 `concurrency` 组——每组只允许 1 运行 + 1 等待，
+  后到的等待者会顶掉前一个（静默丢一个平台的产物）。
+
+## 26. Release 流水线（构建并行 / GitHub 并行 / GitCode 串行）
+
+- **`.github/workflows/publish-gitcode.yml` 是 GitCode Release 的唯一发布者**。三个
+  `build-*.yml` 里那个 `Attach to GitCode release (manual only)` step 只在
+  `workflow_dispatch` 且填了 `gitcode_tag` 时跑（单路，无所谓串行）；tag 推送路径
+  一律交给 publish workflow。
+- **跨 workflow 没有 `needs`**，只能用 `workflow_run`。于是：它会被 3 个 build 各触发
+  一次 → 用 workflow 级 `concurrency` 组（key = tag）串行；**等待位只有 1 个，后到的
+  会顶掉先到的**，这在本设计里无害（每次运行都补齐"当时已就绪"的全部产物，最后一次
+  一定看到 3 个 artifact）。反之，**不要把 `concurrency` 用在三个 build workflow 上**，
+  那会真的丢产物。
+- **`workflow_run` 只认默认分支（main）上的 workflow 定义**：新增/改这条流水线后必须
+  合到 main 才生效，光推 tag 不生效。
+- **`gh run list --branch <tag>` 不可靠**：tag 触发的 run 用 branch 过滤常常查不到。
+  改成 `--limit 30 --json headBranch` 后按 `headBranch == TAG` 在 `--jq` 里筛。
+- **artifact 下载后是 `<artifact名>/<文件>` 两层**，且发布 workflow 里不能把产物解到
+  `dist/`（那目录装的是构建脚本，`dist/*` 会把 `.sh` 一起传上去）→ 解到 `_dl/`，
+  `find _dl -mindepth 2 -type f -exec mv -f {} out/` 展平，再传 `out/*`。

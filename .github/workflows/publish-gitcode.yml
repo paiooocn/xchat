@@ -1,0 +1,108 @@
+name: Publish GitCode Release
+
+# GitCode Release 的**唯一**发布者：把三个平台各自构建好（并行）、各自传到
+# GitHub Release（并行）之后，在这里串行地把全部产物发布到同一个 GitCode Release。
+#
+# 为什么要有这条 workflow：
+#   - 构建 / GitHub Release 保持三路并行（见 build-*.yml）；
+#   - GitCode 侧同一 tag 只允许一个进程在跑，避免三路并发创建 Release / 上传；
+#   - 跨 workflow 无法用 needs，所以用 workflow_run 在每次 build 结束后触发，
+#     由 concurrency 组把同一 tag 的运行串起来；每次运行都会把「当时已就绪」的
+#     全部产物补齐（脚本幂等），因此最后一个 build 触发的那次运行一定能凑齐三平台。
+
+on:
+  workflow_run:
+    workflows: ["Build Android (apk)", "Build Linux (deb)", "Build Windows"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（如 v0.7.5），留空则用当前分支名'
+        required: false
+        default: ''
+
+# 同一个 tag 的所有发布运行串行排队，不同 tag 互不影响。
+# 注意：等待队列只有一个位置，后到的等待者会顶掉前一个等待者 —— 这里无害，
+# 因为每次运行都会补齐当时已就绪的全部产物，落到最后那次即可凑齐。
+concurrency:
+  group: gitcode-release-${{ inputs.tag || github.event.workflow_run.head_branch || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    # tag 推送（head_branch = tag 名且以 v 开头、且构建成功）才发布；
+    # 手动 workflow_dispatch 也允许（此时发布当前默认分支各平台最近一次成功产物）。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          echo "tag=${{ inputs.tag || github.event.workflow_run.head_branch || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Collect artifacts from the three builds
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p out _dl
+          found=0
+          for wf in build-android-apk.yml build-linux-deb.yml build-windows.yml; do
+            # 不用 --branch 过滤（tag 触发的 run 在该过滤下不可靠），
+            # 直接取该 workflow 最近若干次运行里 headBranch == TAG 的成功那次。
+            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf" --limit 30 \
+                   --json databaseId,headBranch,conclusion \
+                   --jq "[.[] | select(.headBranch == \"$TAG\" and .conclusion == \"success\")][0].databaseId // empty" \
+                   || true)
+            if [ -z "$id" ]; then
+              echo "!! 未找到 $wf 在 $TAG 上的成功运行，跳过（稍后重跑本 workflow 可补齐）"
+              continue
+            fi
+            echo "==> 下载 $wf（run $id）"
+            if gh run download "$id" --repo "$GITHUB_REPOSITORY" --dir _dl; then
+              found=1
+            else
+              echo "!! 下载失败：$wf（run $id）"
+            fi
+          done
+          # artifact 下载后的结构是 <artifact名>/<文件>，展平到 out/
+          find _dl -mindepth 2 -type f -exec mv -f {} out/ \;
+          echo "--- 待发布产物 ---"
+          ls -l out || true
+          [ "$found" = "1" ] || { echo "!! 没有任何可用产物"; exit 1; }
+
+      - name: Publish to GitCode Release (serialized)
+        shell: bash
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_ACCESS_KEY }}
+          GITCODE_OWNER: ${{ vars.GITCODE_OWNER || 'yimopub' }}
+          GITCODE_REPO: ${{ vars.GITCODE_REPO || 'xchat' }}
+          TAG_NAME: ${{ steps.tag.outputs.tag }}
+          RELEASE_NAME: XChat ${{ steps.tag.outputs.tag }}
+          RELEASE_BODY: Automated release ${{ steps.tag.outputs.tag }}
+        run: |
+          # 整脚本重跑 3 轮：脚本幂等（已上传的附件会被跳过），
+          # 用于兜住进程内重试救不回来的抖动（release 创建竞态、token 瞬时失效等）
+          for round in 1 2 3; do
+            if bash dist/gitcode_release.sh out/*; then
+              exit 0
+            fi
+            if [ "$round" -lt 3 ]; then
+              echo "!! 第 ${round} 轮 GitCode 发布未完成，30s 后整脚本重跑"
+              sleep 30
+            fi
+          done
+          echo "!! GitCode 发布连续 3 轮未完成"
+          exit 1

@@ -3,6 +3,115 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-04 · release: v0.7.6（GitCode 发布流水线重构）
+
+- 版本号 `0.7.5+1` → **`0.7.6+1`**（`pubspec.yaml` 与 `lib/core/app_version.dart` 同步）。
+- 一次性提交本轮全部改动（脚本重试/核验 + 串行 publish workflow + workflow 收紧
+  + `.memory/` 索引），提交信息 `release: v0.7.6 — …`，**已打标签 `v0.7.6` 并推送
+  `origin main` + tag**（GitCode 侧由 `sync-gitcode` 自动镜像）。
+- 未跑 `flutter analyze` / `flutter test`（按用户要求）。
+- 发版后待核对：三个 build 全绿 → `publish-gitcode` 最后一次运行传齐 6 个文件。
+
+---
+
+## 2026-11-04 · Release 流水线：构建并行 / GitHub 并行 / **GitCode 串行**
+
+**做了什么**（按用户定的理想效果）
+
+- 新增 **`.github/workflows/publish-gitcode.yml`**：GitCode Release 的**唯一**发布者。
+  - 触发：`workflow_run`（三个 build workflow `completed`）+ `workflow_dispatch`（可选
+    `tag` 输入，留空用当前分支名）。
+  - 串行：**workflow 级** `concurrency.group = gitcode-release-<tag>`
+    （`cancel-in-progress: false`）。等待位只有 1 个、后到顶掉先到这个特性本设计里
+    无害——每次运行都补齐"当时已就绪"的全部产物，最后一个 build 触发的那次必然齐。
+  - 收集产物：对 `build-android-apk.yml` / `build-linux-deb.yml` / `build-windows.yml`
+    各取 `headBranch == TAG` 的最近一次成功 run（**不用 `--branch` 过滤**，tag 触发的
+    run 查不到），`gh run download -D _dl` 后 `find _dl -mindepth 2 -type f -exec mv`
+    展平到 `out/`（**不能解到 `dist/`**，那是构建脚本目录）。
+  - 发布：`bash dist/gitcode_release.sh out/*`，外面仍套 3 轮整脚本重跑。
+  - 条件：`workflow_dispatch`，或（`conclusion == success` 且 `headBranch` 以 `v` 开头）。
+- 三个 `build-*.yml`：GitCode 那步改名 `Attach to GitCode release (manual only)`，
+  `if` 收紧为 `github.event_name == 'workflow_dispatch' && inputs.gitcode_tag != ''`
+  —— tag 推送的发布全部交给 publish workflow；**GitHub Release 上传保持各 build 并行**，
+  构建本身仍是三路并行（未动）。
+- `.memory/GOTCHAS.md` 新增 §25（脚本重试）与 §26（流水线拓扑 / workflow_run 的坑）。
+
+**改了什么文件**
+
+- 新增：`.github/workflows/publish-gitcode.yml`
+- 改：`.github/workflows/build-android-apk.yml`、`build-linux-deb.yml`、`build-windows.yml`
+  （GitCode step 的 name / if）、`.memory/GOTCHAS.md`、`.memory/STATE.md`（本节）
+
+**怎么验证**（本轮已实际执行）
+
+- YAML 粗检：四个文件无 TAB、缩进无异常（`>-` 折叠块与 `run: |` 内的续行除外）。
+- 抽取 publish workflow 的三段 `run:` 块跑 `bash -n` → 全部 OK。
+- 用假目录模拟 artifact 结构（`_dl/<artifact名>/<文件>`）验证展平命令
+  → 4 个文件正确落到 `out/`。
+- 临时目录已删除；**未跑** `flutter analyze` / `flutter test`；**未在真实 CI 上跑过**。
+
+**下一步 / 遗留**
+
+- ⚠️ `workflow_run` **只认默认分支（main）上的 workflow 定义**：必须把这两个 commit
+  合到 main 之后才生效；此后打 tag 才会走到串行发布。
+- 手动单平台发布仍走 build workflow 里那个 manual step（单路，不涉及串行）。
+- 首次真实发版后建议核对一次：三个 build 都完成后，publish 的**最后**一次运行是否
+  传齐 6 个文件（中途被 concurrency 顶掉的运行属正常）。
+
+---
+
+## 2026-11-04 · GitCode Release 上传加「重试 + 核验」+ workflow 整脚本重跑
+
+**做了什么**（按上一轮的设计；未改 release 的串行收口，那步留待后续）
+
+- `dist/gitcode_release.sh` 重构（用法与 env 完全兼容，三个 workflow 不用改就能吃到收益）：
+  - 新增 `refresh_release()`：每次上传/核验前先 GET `releases/tags/:tag` 覆盖
+    `RELEASE_JSON`（原实现用脚本开头那份快照判「已存在」，重试时是陈旧的）。
+  - 拆 `upload_asset` → `upload_once`（取新签名 `upload_url` + PUT，记录
+    `LAST_CODE` / `LAST_ERR`）+ `upload_with_retry`（默认 4 轮，退避 2s/5s/10s；
+    **每轮重新取 `upload_url`**，因为预签名地址短时效）。
+  - 2xx 后再 `refresh_release` **核验** `.assets[].name` 是否真的出现，避免
+    「curl 退出码 0 但没落地」（OBS 回调超时的典型形态）。
+  - `is_retryable()`：401（token 无效）/ 404（路径打错）直接放弃，其余（含 5xx、
+    408、429、403、400、网络错误）都重试。
+  - 失败**不再中断**：`FAILED` 数组收集 + 结尾汇总，有失败则 `exit 1`；文件缺失也只记
+    一条不再立即退出。去掉 `curl -f`，改为显式看 `http_code`；加
+    `--connect-timeout`（默认 15s）与 `--max-time`（默认 1800s，可用
+    `UPLOAD_TIMEOUT` 覆盖），不再无限等。
+  - 新增 env：`UPLOAD_RETRIES`(4) / `UPLOAD_TIMEOUT`(1800) / `UPLOAD_CONNECT_TIMEOUT`(15)。
+- 三个 workflow 的 `Attach to GitCode release` step 由单行 `bash …` 改成
+  **整脚本重跑 3 轮**（失败之间 `sleep 30`，最后一轮不再 sleep），兜住进程内重试
+  救不回来的抖动（release 创建竞态、token 瞬时失效）；依靠脚本幂等保证不重复上传。
+- `.memory/GOTCHAS.md` 新增 §25（upload_url TTL / 快照不可判存在 / 退出码≠落地 /
+  `set -e` 中断 / 跨 workflow `concurrency` 会丢产物）。
+
+**改了什么文件**
+
+- 改：`dist/gitcode_release.sh`（重构）、`.github/workflows/build-android-apk.yml`、
+  `.github/workflows/build-linux-deb.yml`、`.github/workflows/build-windows.yml`、
+  `.memory/GOTCHAS.md`、`.memory/STATE.md`（本节）
+
+**怎么验证**（本轮已实际执行）
+
+- `bash -n dist/gitcode_release.sh` → 语法通过。
+- 用本地假 API（`http.server` 模拟 404→创建、`upload_url`、PUT 前 N 次回 502）
+  跑了三个场景，**均符合预期**：
+  1. 每个文件第 1 次 PUT 502 → 第 2 轮换新 URL 上传成功，`EXIT=0`；
+  2. 同一服务重跑 → 「release 已存在 / 附件已存在，跳过」，`EXIT=0`（幂等）；
+  3. PUT 永久 502、`UPLOAD_RETRIES=2` → 两个文件各试 2 轮、**互相不中断**，
+     结尾汇总「失败 2 个」+ `EXIT=1`。
+- 临时测试目录 `.tmp_test/` 已删除，工作区无残留。
+- **未跑** `flutter analyze` / `flutter test`（本轮不涉及 Dart 代码）。
+
+**下一步 / 遗留**
+
+- 若还要「严格串行」：把三个 build 收进一个 workflow + 单一 `needs` 收口的
+  publish job（一次下载全部 artifact → 一次 GitHub Release → 一次 GitCode Release），
+  详见上轮讨论；本轮**未做**。
+- 三个 workflow 仍是**并发**各自建 Release / 上传（脚本层重试已能兜住抖动）。
+
+---
+
 ## 2026-11-04 · release: v0.7.5（一次性提交 M4 + 外部 md 全部改动）
 
 - 把本轮全部未提交改动（M4 移动端/打磨、外部 md 文件 E0–E3、`-p` 打包开关、
