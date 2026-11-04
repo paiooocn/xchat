@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-04 10:33"
-  git_sha: "5f90ab8"
+  generated_at: "2026-11-04 15:19"
+  git_sha: "5100429"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 130
-  line_count: 33568
+  file_count: 133
+  line_count: 35409
 
 modules:
   - id: "agent"
@@ -107,12 +107,18 @@ modules:
         symbols: ["applyWindowSize"]
   - id: "data"
     path: "lib/data"
-    lines: 802
+    lines: 1018
     deps: ["core", "data.xml", "models"]
     files:
+      - path: "lib/data/atomic_file.dart"
+        lines: 26
+        symbols: ["writeAtomic"]
       - path: "lib/data/config_repository.dart"
         lines: 38
         symbols: ["ConfigRepository"]
+      - path: "lib/data/external_doc_repository.dart"
+        lines: 213
+        symbols: ["isTransientCopyPath", "ExternalDocRepository"]
       - path: "lib/data/index_repository.dart"
         lines: 295
         symbols: ["IndexRepository"]
@@ -123,7 +129,7 @@ modules:
         lines: 96
         symbols: ["loadBundledModelsDev", "ModelsDevRepository"]
       - path: "lib/data/note_repository.dart"
-        lines: 97
+        lines: 74
         symbols: ["NoteRepository"]
       - path: "lib/data/project_repository.dart"
         lines: 57
@@ -182,7 +188,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4141
+    lines: 4249
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -198,6 +204,10 @@ modules:
       - path: "lib/models/catalog_index.dart"
         lines: 348
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
+      - path: "lib/models/external_doc.dart"
+        lines: 108
+        doc: "外部 Markdown 文件（笔记目录之外、用户磁盘上的 `.md`）。"
+        symbols: ["ExternalMdEntry", "ExternalMdScan", "ExternalDoc"]
       - path: "lib/models/extract_script.dart"
         lines: 266
         symbols: ["UrlMatcher", "ExtractScript"]
@@ -379,18 +389,18 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1237
+    lines: 1379
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 1134
+        lines: 1276
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 9594
+    lines: 10521
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -403,10 +413,10 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3200
+        lines: 3569
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
-        lines: 594
+        lines: 1152
         symbols: ["NotesPanel"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
@@ -449,7 +459,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 4313
+    lines: 4761
     deps: ["core", "llm", "models", "pkg.llm_api", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -472,15 +482,15 @@ modules:
         lines: 230
         symbols: ["MessageBubble"]
       - path: "lib/ui/widgets/note_ai_panel.dart"
-        lines: 502
+        lines: 534
         symbols: ["NoteAiMessage", "NoteAiPanel"]
       - path: "lib/ui/widgets/note_diff_dialog.dart"
-        lines: 234
+        lines: 299
       - path: "lib/ui/widgets/note_editor.dart"
-        lines: 508
+        lines: 518
         symbols: ["NoteEditorController", "NoteEditor", "NoteSaveIntent", "NoteSaveShortcut", "NoteSummaryTile"]
       - path: "lib/ui/widgets/note_list.dart"
-        lines: 287
+        lines: 628
         symbols: ["NoteList"]
       - path: "lib/ui/widgets/project_dialog.dart"
         lines: 215
@@ -535,6 +545,12 @@ tests:
   - path: "test/compress_test.dart"
     lines: 113
     cases: 7
+  - path: "test/external_doc_test.dart"
+    lines: 264
+    cases: 19
+  - path: "test/external_doc_ui_test.dart"
+    lines: 233
+    cases: 8
   - path: "test/extract_script_test.dart"
     lines: 221
     cases: 21
@@ -583,6 +599,9 @@ tests:
   - path: "test/note_editor_test.dart"
     lines: 232
     cases: 7
+  - path: "test/note_mobile_test.dart"
+    lines: 264
+    cases: 8
   - path: "test/note_storage_test.dart"
     lines: 299
     cases: 15

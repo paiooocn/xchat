@@ -3,11 +3,18 @@ import 'package:flutter/services.dart';
 
 import '../../util/line_diff.dart';
 
+/// 窄于这个宽度时，diff 预览改为全屏路由（移动端）。
+const double kNoteDiffFullScreenWidth = 820;
+
 /// Shows the difference between [oldText] and [newText] and asks the user to
 /// accept or reject it.
 ///
 /// Returns `true` when the user accepted (the caller then applies the new
 /// text), `false` when rejected or dismissed.
+///
+/// Desktop: a centered dialog (720 wide). Mobile (`< 820`): a full-screen
+/// route (`fullscreenDialog: true`), so the AI bottom sheet underneath keeps
+/// its position when the preview is closed.
 ///
 /// Every AI change to a note goes through this dialog — there is no silent
 /// overwrite (see ARCHITECTURE invariant 18).
@@ -17,41 +24,99 @@ Future<bool> showNoteDiffDialog(
   required String newText,
   String title = 'AI 修改预览',
 }) async {
-  final result = await showDialog<bool>(
-    context: context,
-    builder: (context) => _NoteDiffDialog(
-      oldText: oldText,
-      newText: newText,
-      title: title,
-    ),
-  );
+  final fullScreen =
+      MediaQuery.sizeOf(context).width < kNoteDiffFullScreenWidth;
+  final result = fullScreen
+      ? await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            fullscreenDialog: true,
+            builder: (_) => _NoteDiffDialog(
+              oldText: oldText,
+              newText: newText,
+              title: title,
+              fullScreen: true,
+            ),
+          ),
+        )
+      : await showDialog<bool>(
+          context: context,
+          builder: (context) => _NoteDiffDialog(
+            oldText: oldText,
+            newText: newText,
+            title: title,
+          ),
+        );
   return result ?? false;
 }
 
-class _NoteDiffDialog extends StatefulWidget {
+class _NoteDiffDialog extends StatelessWidget {
   const _NoteDiffDialog({
     required this.oldText,
     required this.newText,
     required this.title,
+    this.fullScreen = false,
   });
 
   final String oldText;
   final String newText;
   final String title;
 
-  @override
-  State<_NoteDiffDialog> createState() => _NoteDiffDialogState();
-}
+  /// Renders as a full-screen route instead of a centered dialog.
+  final bool fullScreen;
 
-class _NoteDiffDialogState extends State<_NoteDiffDialog> {
   /// Unchanged runs longer than this are collapsed.
   static const _collapseAfter = 6;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lines = diffLines(widget.oldText, widget.newText);
+    final lines = diffLines(oldText, newText);
     final changes = diffChangeCount(lines);
+
+    final list = Container(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        children: _buildRows(context, theme, lines),
+      ),
+    );
+    final actions = _actions(context);
+
+    if (fullScreen) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: '拒绝并返回',
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(false),
+          ),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '$changes 处改动',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: list),
+              const Divider(height: 1),
+              actions,
+            ],
+          ),
+        ),
+      );
+    }
 
     return Dialog(
       child: ConstrainedBox(
@@ -64,7 +129,7 @@ class _NoteDiffDialogState extends State<_NoteDiffDialog> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
               child: Row(
                 children: [
-                  Text(widget.title, style: theme.textTheme.titleMedium),
+                  Text(title, style: theme.textTheme.titleMedium),
                   const SizedBox(width: 10),
                   Text(
                     '$changes 处改动',
@@ -80,45 +145,45 @@ class _NoteDiffDialogState extends State<_NoteDiffDialog> {
               child: Container(
                 width: double.infinity,
                 constraints: const BoxConstraints(maxHeight: 420),
-                color: theme.colorScheme.surfaceContainerLow,
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  children: _buildRows(context, theme, lines),
-                ),
+                child: list,
               ),
             ),
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
-                children: [
-                  TextButton.icon(
-                    icon: const Icon(Icons.copy_all_outlined, size: 18),
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: widget.newText));
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已复制结果')),
-                        );
-                      }
-                    },
-                    label: const Text('复制结果'),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('拒绝'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('接受并应用'),
-                  ),
-                ],
-              ),
-            ),
+            actions,
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _actions(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Row(
+        children: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_all_outlined, size: 18),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: newText));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已复制结果')),
+                );
+              }
+            },
+            label: const Text('复制结果'),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('拒绝'),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('接受并应用'),
+          ),
+        ],
       ),
     );
   }

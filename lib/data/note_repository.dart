@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../core/app_paths.dart';
 import '../models/note.dart';
+import 'atomic_file.dart';
 import 'index_repository.dart';
 import 'xml/note_md.dart';
 
@@ -50,7 +51,7 @@ class NoteRepository {
   Future<void> write(Note note) async {
     final dir = _dir;
     if (!await dir.exists()) await dir.create(recursive: true);
-    await _writeAtomic(paths.noteFile(note.id), encodeNote(note));
+    await writeAtomic(paths.noteFile(note.id), encodeNote(note));
     await indexRepository.upsertNote(note);
   }
 
@@ -69,29 +70,5 @@ class NoteRepository {
     final file = File(paths.noteFile(id));
     if (!await file.exists()) return null;
     return (await file.stat()).modified;
-  }
-
-  /// Writes via a `.tmp` file + rename so a crash can't truncate a note.
-  ///
-  /// `rename` over an existing file fails on some targets (Windows, some
-  /// Android storage backends) — fall back to dropping the old file first,
-  /// then to a direct write.
-  static Future<void> _writeAtomic(String path, String content) async {
-    final target = File(path);
-    final tmp = File('$path.tmp');
-    await tmp.writeAsString(content, flush: true);
-    try {
-      await tmp.rename(target.path);
-    } on FileSystemException {
-      if (await target.exists()) await target.delete();
-      try {
-        await tmp.rename(target.path);
-      } on FileSystemException {
-        await tmp.copy(target.path);
-        await tmp.delete();
-      }
-    } finally {
-      if (await tmp.exists()) await tmp.delete();
-    }
   }
 }

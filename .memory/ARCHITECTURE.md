@@ -125,4 +125,17 @@ UI 发消息
     模式切换；唯一的可调量是下区高度（三档 40/20/0，分隔条拖动吸附，**全局**
     存 `SharedPreferences`，不做 per-note 覆盖）。预览**必须**走
     `markdownView()`，不要另写渲染器。
-
+20. **移动端只有底部 Tab 一个工作区入口**：窄屏（`< 820`）由 `HomePage` 的
+    `bottomNavigationBar`（`会话｜笔记`）切换工作区，`_Sidebar(compact: true)`
+    **不再渲染内部分段 Tab**（不做双入口）。笔记内部是栈：列表 →
+    `_MobileNotePage`（`NotesPanel(mobile: true)`）→ AI 底部抽屉；
+    `NotesPanel.mobile` 时**不渲染右侧 AI 边栏**，AI 走 `showModalBottomSheet`。
+21. **窄窗口 AI 边栏强制竖轨**：窗口宽度 `< kNoteAiAutoCollapseWidth`（1080）时
+    `NotesPanel` 传 `collapsed: true, locked: true`，展开按钮置灰 —— 避免
+    侧栏 + 主区 + 320px AI 边栏在 820–1080 区间放不下。
+22. **外部 md 文件只读、不写头、不进索引**：用户磁盘上的 `.md` 由
+    `lib/data/external_doc_repository.dart` 读写 —— **不写 front-matter**、不进
+    `index.json`，正文逐字读写（BOM / CRLF 按字节判断并原样还原）。默认**只读**，
+    必须在 UI 上「开启编辑」（每文件每会话确认一次）后才允许写回原文件；
+    保存前比对 mtime。`<root>/notes/` 内的文件一律按内部笔记打开
+    （`AppState.internalNoteIdForPath`），避免同一文件两个真相。

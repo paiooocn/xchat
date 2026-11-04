@@ -303,3 +303,39 @@ data for current backend (SkSL). Found stages: Vulkan
 - widget test 里断言「编辑区没了」要用
   `find.descendant(of: find.byKey(Key('note-editor')), matching: find.byType(TextField))`
   —— AI 边栏里也有 `TextField`，直接 `find.byType(TextField)` 会多匹配。
+
+## 23. 移动端笔记（底部 Tab / AI 抽屉 / 全屏 diff）
+
+- **`DraggableScrollableSheet` 的"上拉"只挂在滚动视图上**：它给 builder 的
+  `scrollController` 必须真的传给里面的 `ListView`，否则拖拽完全没反应。
+  → `NoteAiPanel` 加了可选 `scrollController`，抽屉把 sheet 的控制器透传给对话流
+  （`_listScroll`）。头部的拖拽条只是视觉提示，不承担手势。
+- **`showModalBottomSheet` 里的 `context` 是 sheet 自己的路由上下文**：抽屉内的
+  `Navigator.of(context).pop()` 关的是抽屉（不会关掉编辑页）—— 关闭按钮就是靠这个。
+- **AI 面板在抽屉里要 `sheet: true`**：展开态宽度是硬编码 320，不撑满会在窄屏留白；
+  同时要换掉「收起」按钮（抽屉的收起 = 关闭），否则语义重复。
+- **按 `MediaQuery` 宽度分叉的弹层，widget test 默认会走窄屏分支**：测试默认
+  逻辑尺寸是 800×600，`showNoteDiffDialog` 的阈值是 `< 820` → 断言里不能再指望
+  `find.byType(Dialog)`；要覆盖桌面分支需自己把 `tester.view.physicalSize` 调大。
+- **窄屏 `_Sidebar` 必须 `compact: true`**：否则侧栏内分段 Tab 与底部 Tab 同时存在
+  （双入口，违反 D9），测试里 `find.text('会话')` 会 `findsNWidgets(2)`。
+- **AI 强制竖轨只用于桌面**：`NotesPanel.mobile` 分支直接不渲染边栏，别把
+  `< 1080 → locked` 的判断套到移动端（移动端整页才 400dp 宽，会永远是竖轨）。
+
+## 24. 外部 md 文件（只读 / 写回 / 平台）
+
+- **UTF-8 解码器会自己吃掉 BOM**：`utf8.decode` 返回的字符串里**没有** U+FEFF，
+  所以「`text.codeUnitAt(0) == 0xFEFF`」永远为假。BOM 只能按**字节**判断
+  （`EF BB BF` 前缀），写回时再补回去。CRLF 同理：读时统一成 `\n`（否则 TextField
+  会把 `\r` 当普通字符显示），写回时按原文件的 `crlf` 标记换回去。
+- **`file_picker` 在 Android / iOS 常返回缓存目录里的副本**（`getTemporaryDirectory()`
+  下），往那儿写回去不会影响用户的原始文件。`ExternalDocRepository.read` 用
+  `isTransientCopyPath` 标记 `writable = false`，UI 必须禁用「开启编辑」。
+  单元测试里注入 `ExternalDocRepository(cacheDir: '')` 以免依赖 path_provider 插件。
+- **侧栏品牌行很挤**：280px 宽的侧栏里塞 4 个 `IconButton` 会
+  `RenderFlex overflowed`（图标按钮默认最小 48px）。新按钮要么用
+  `PopupMenuButton(child: SizedBox(30,30,…))`（child 版不套 IconButton），
+  要么显式给 `constraints: BoxConstraints.tightFor(width: 32, height: 32)`。
+- **笔记列表的空态不能整列替换**：外部文件区在列表最上方，用 `Center` 空态卡片替换
+  整列会让「打开 md 文件 / 打开文件夹」入口一起消失。空态改成列表内的软提示
+  （`_emptyHint`）。

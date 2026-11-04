@@ -39,7 +39,20 @@ class NoteAiPanel extends StatefulWidget {
     required this.title,
     required this.onApply,
     required this.onBusyChanged,
+    this.sheet = false,
+    this.locked = false,
+    this.scrollController,
   });
+
+  /// Renders as the content of the mobile bottom sheet: fills the width,
+  /// shows a close button instead of the collapse button.
+  final bool sheet;
+
+  /// The AI panel is pinned to the rail (window too narrow to expand it).
+  final bool locked;
+
+  /// Scroll controller handed in by the bottom sheet (drag to resize).
+  final ScrollController? scrollController;
 
   /// Whether the panel is collapsed to the rail.
   final bool collapsed;
@@ -89,10 +102,14 @@ class _NoteAiPanelState extends State<NoteAiPanel> {
 
   bool get _hasSelection => widget.selection.trim().isNotEmpty;
 
+  /// The list's scroll controller (the sheet's one while inside the sheet).
+  ScrollController get _listScroll => widget.scrollController ?? _scroll;
+
   void _scrollToEnd() {
-    if (!_scroll.hasClients) return;
-    _scroll.animateTo(
-      _scroll.position.maxScrollExtent,
+    final scroll = _listScroll;
+    if (!scroll.hasClients) return;
+    scroll.animateTo(
+      scroll.position.maxScrollExtent,
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
@@ -226,10 +243,10 @@ class _NoteAiPanelState extends State<NoteAiPanel> {
             clipBehavior: Clip.none,
             children: [
               IconButton(
-                tooltip: '展开 AI 助手',
+                tooltip: widget.locked ? '窗口太窄，AI 边栏已收起' : '展开 AI 助手',
                 iconSize: 20,
                 icon: const Icon(Icons.auto_awesome_outlined),
-                onPressed: widget.onToggleCollapsed,
+                onPressed: widget.locked ? null : widget.onToggleCollapsed,
               ),
               if (_busy)
                 Positioned(
@@ -269,7 +286,7 @@ class _NoteAiPanelState extends State<NoteAiPanel> {
     final state = context.watch<AppState>();
     final (provider, model) = state.appFeatureTarget;
     return Container(
-      width: 320,
+      width: widget.sheet ? double.infinity : 320,
       color: theme.colorScheme.surfaceContainerLow,
       child: Column(
         children: [
@@ -295,13 +312,22 @@ class _NoteAiPanelState extends State<NoteAiPanel> {
                     MaterialPageRoute(builder: (_) => const ProvidersPage()),
                   ),
                 ),
-                IconButton(
-                  tooltip: _busy ? '生成中，不能收起' : '收起 AI 助手',
-                  iconSize: 18,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.keyboard_double_arrow_right),
-                  onPressed: _busy ? null : widget.onToggleCollapsed,
-                ),
+                if (widget.sheet)
+                  IconButton(
+                    tooltip: '关闭 AI 助手',
+                    iconSize: 18,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close),
+                    onPressed: widget.onToggleCollapsed,
+                  )
+                else
+                  IconButton(
+                    tooltip: _busy ? '生成中，不能收起' : '收起 AI 助手',
+                    iconSize: 18,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.keyboard_double_arrow_right),
+                    onPressed: _busy ? null : widget.onToggleCollapsed,
+                  ),
               ],
             ),
           ),
@@ -362,7 +388,7 @@ class _NoteAiPanelState extends State<NoteAiPanel> {
                     ),
                   )
                 : ListView.builder(
-                    controller: _scroll,
+                    controller: _listScroll,
                     padding: const EdgeInsets.all(8),
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {

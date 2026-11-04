@@ -11,6 +11,7 @@ import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
 import '../../core/ids.dart';
+import '../../models/external_doc.dart';
 import '../../models/project.dart';
 import '../../models/note.dart';
 import '../../models/session.dart';
@@ -72,6 +73,9 @@ class _HomePageState extends State<HomePage> {
   /// 当前打开的笔记（笔记 Tab）。
   String? _selectedNoteId;
 
+  /// 当前打开的外部 md 文件（笔记 Tab；与 [_selectedNoteId] 互斥）。
+  String? _selectedExternalPath;
+
   /// 任务式会话中当前打开的任务项（空 = 显示任务列表）。
   String? _activeTaskId;
 
@@ -108,6 +112,11 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadGlobalExpanded();
     _approvalCenter = context.read<AppState>().approvalCenter;
+    // 恢复上次打开的外部目录（扫描可能慢，放到首帧之后）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppState>().loadExternalState();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Approvals can arrive from any session at any time (including one whose
@@ -234,7 +243,9 @@ class _HomePageState extends State<HomePage> {
     if (_refreshingSessions) return;
     setState(() => _refreshingSessions = true);
     try {
-      await context.read<AppState>().refreshNotes();
+      final state = context.read<AppState>();
+      await state.refreshNotes();
+      await state.refreshExternalRoot();
     } finally {
       if (mounted) setState(() => _refreshingSessions = false);
     }
@@ -245,10 +256,202 @@ class _HomePageState extends State<HomePage> {
     final state = context.read<AppState>();
     final note = await state.createNote();
     if (!mounted) return;
+    _openNote(note.id);
+  }
+
+  /// 打开一篇笔记：宽屏进主区；窄屏压栈进编辑页（列表 → 编辑 → AI 抽屉）。
+  void _openNote(String id) {
     setState(() {
       _tab = _WorkspaceTab.note;
-      _selectedNoteId = note.id;
+      _selectedNoteId = id;
+      _selectedExternalPath = null;
     });
+    if (MediaQuery.sizeOf(context).width < 820) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => _MobileNotePage(noteId: id)),
+      );
+    }
+  }
+
+  // ------------------------------------------------------------ 外部 md
+
+  /// 打开一个外部 md 文件：宽屏进主区；窄屏压栈进编辑页。
+  ///
+  /// 若这个文件其实是本机笔记（`<root>/notes/`），改走内部笔记视图 ——
+  /// 同一个文件不能有两个真相。
+  Future<void> _openExternal(String path) async {
+    final state = context.read<AppState>();
+    final noteId = state.internalNoteIdForPath(path);
+    if (noteId != null) {
+      _openNote(noteId);
+      return;
+    }
+    await state.openExternalFile(path);
+    if (!mounted) return;
+    final target = state.externalFile ?? path;
+    setState(() {
+      _tab = _WorkspaceTab.note;
+      _selectedNoteId = null;
+      _selectedExternalPath = target;
+    });
+    if (MediaQuery.sizeOf(context).width < 820) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _MobileNotePage(externalPath: target),
+        ),
+      );
+    }
+  }
+
+  /// 「打开 md 文件…」：系统文件选择器。
+  Future<void> _pickExternalFile() async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>['md', 'markdown'],
+        dialogTitle: '打开 Markdown 文件',
+      );
+      if (files.isEmpty) return;
+      final path = files.first.path;
+      if (path == null || path.trim().isEmpty) {
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('拿不到文件路径，请用「手动输入路径」')),
+        );
+        return;
+      }
+      await _openExternal(path.trim());
+    } catch (error) {
+      messenger?.showSnackBar(SnackBar(content: Text('打开文件失败：$error')));
+    }
+  }
+
+  /// 「打开文件夹…」：选择目录后把它目录内的 md 列进侧栏。
+  Future<void> _pickExternalDirectory() async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final picked = await FilePicker.getDirectoryPath(
+        dialogTitle: '选择包含 Markdown 的文件夹',
+      );
+      if (picked == null || picked.trim().isEmpty) return;
+      await _openExternalRoot(picked.trim());
+    } catch (error) {
+      messenger?.showSnackBar(
+        SnackBar(content: Text('选择文件夹失败：$error（可用「手动输入路径」）')),
+      );
+    }
+  }
+
+  Future<void> _openExternalRoot(String dir) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final state = context.read<AppState>();
+    await state.openExternalRoot(dir);
+    if (!mounted) return;
+    setState(() => _tab = _WorkspaceTab.note);
+    final error = state.externalScan?.error;
+    if (error != null) {
+      messenger?.showSnackBar(SnackBar(content: Text('打开目录失败：$error')));
+    }
+  }
+
+  /// 「手动输入路径…」：跨平台兜底（Android 的 SAF 常拿不到真实目录）。
+  Future<void> _askExternalPath({required bool directory}) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(directory ? '输入文件夹路径' : '输入 Markdown 文件路径'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: directory
+                ? '例如 /storage/emulated/0/Documents/docs'
+                : '例如 /storage/emulated/0/Documents/docs/README.md',
+          ),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || result.trim().isEmpty || !mounted) return;
+    if (directory) {
+      await _openExternalRoot(result.trim());
+    } else {
+      await _openExternal(result.trim());
+    }
+  }
+
+  /// 顶行「打开外部 Markdown」菜单的动作分发。
+  Future<void> _onExternalMenu(String action) async {
+    switch (action) {
+      case 'file':
+        await _pickExternalFile();
+      case 'dir':
+        await _pickExternalDirectory();
+      case 'inputFile':
+        await _askExternalPath(directory: false);
+      case 'inputDir':
+        await _askExternalPath(directory: true);
+      case 'refresh':
+        await context.read<AppState>().refreshExternalRoot();
+      case 'close':
+        await _closeExternalRoot();
+    }
+  }
+
+  Future<void> _closeExternalRoot() async {
+    await context.read<AppState>().closeExternalRoot();
+  }
+
+  Future<void> _closeExternalFile() async {
+    final state = context.read<AppState>();
+    await state.closeExternalFile();
+    if (!mounted) return;
+    if (_selectedExternalPath != null) {
+      setState(() => _selectedExternalPath = null);
+    }
+  }
+
+  /// 窄屏底部 Tab（会话｜笔记）—— 唯一的工作区切换入口。
+  Widget _mobileTabBar(ThemeData theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+      ),
+      child: NavigationBar(
+        height: 58,
+        backgroundColor: Colors.transparent,
+        indicatorColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+        selectedIndex: _tab == _WorkspaceTab.session ? 0 : 1,
+        onDestinationSelected: (index) => setState(() {
+          _tab = index == 0 ? _WorkspaceTab.session : _WorkspaceTab.note;
+        }),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: '会话',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.description_outlined),
+            selectedIcon: Icon(Icons.description),
+            label: '笔记',
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _newSession(BuildContext context, {String? projectId}) async {
@@ -337,6 +540,8 @@ class _HomePageState extends State<HomePage> {
         final scheme = Theme.of(context).colorScheme;
 
         return Scaffold(
+          // 窄屏：底部 Tab 是唯一的工作区切换入口（D9）。
+          bottomNavigationBar: wide ? null : _mobileTabBar(Theme.of(context)),
           body: wide
               ? Row(
                   children: [
@@ -349,8 +554,21 @@ class _HomePageState extends State<HomePage> {
                         notes: state.notes,
                         archivedNotes: state.archivedNotes,
                         selectedNoteId: _selectedNoteId,
-                        onSelectNote: (id) => setState(() => _selectedNoteId = id),
+                        onSelectNote: (id) => _openNote(id),
                         onNewNote: () => _newNote(context),
+                        externalRoot: state.externalRoot,
+                        externalFiles: state.externalFiles,
+                        externalTruncated: state.externalScan?.truncated ?? false,
+                        externalError: state.externalScan?.error,
+                        externalFilePath: state.externalFile,
+                        selectedExternalPath: _selectedExternalPath,
+                        onOpenExternal: _openExternal,
+                        onCloseExternalFile: _closeExternalFile,
+                        onPickExternalFile: _pickExternalFile,
+                        onPickExternalDirectory: _pickExternalDirectory,
+                        onRefreshExternal: () =>
+                            context.read<AppState>().refreshExternalRoot(),
+                        onCloseExternalRoot: _closeExternalRoot,
                         sessions: sessions,
                         projects: projects,
                         selectedId: _selectedId,
@@ -364,6 +582,8 @@ class _HomePageState extends State<HomePage> {
                         },
                         onRefreshSessions: _refreshSessions,
                         onRefreshNotes: _refreshNotes,
+                        onExternalMenu: _onExternalMenu,
+                        externalRootOpen: state.externalRoot != null,
                         refreshingSessions: _refreshingSessions,
                         onSelect: (id) => _openSession(context, id),
                         onNewSession: (projectId) =>
@@ -376,7 +596,10 @@ class _HomePageState extends State<HomePage> {
                     VerticalDivider(width: 1, color: scheme.outlineVariant),
                     Expanded(
                       child: _tab == _WorkspaceTab.note
-                          ? NotesPanel(noteId: _selectedNoteId)
+                          ? NotesPanel(
+                              noteId: _selectedNoteId,
+                              externalPath: _selectedExternalPath,
+                            )
                           : selected == null
                               ? _WelcomeView(
                               onSend: (text, attachments,
@@ -397,13 +620,27 @@ class _HomePageState extends State<HomePage> {
                 )
               : _Sidebar(
                   toolbarActions: _sidebarToolbar(context),
+                  compact: true,
                   tab: _tab,
                   onTabChanged: (tab) => setState(() => _tab = tab),
                   notes: state.notes,
                   archivedNotes: state.archivedNotes,
                   selectedNoteId: _selectedNoteId,
-                  onSelectNote: (id) => setState(() => _selectedNoteId = id),
+                  onSelectNote: (id) => _openNote(id),
                   onNewNote: () => _newNote(context),
+                  externalRoot: state.externalRoot,
+                  externalFiles: state.externalFiles,
+                  externalTruncated: state.externalScan?.truncated ?? false,
+                  externalError: state.externalScan?.error,
+                  externalFilePath: state.externalFile,
+                  selectedExternalPath: _selectedExternalPath,
+                  onOpenExternal: _openExternal,
+                  onCloseExternalFile: _closeExternalFile,
+                  onPickExternalFile: _pickExternalFile,
+                  onPickExternalDirectory: _pickExternalDirectory,
+                  onRefreshExternal: () =>
+                      context.read<AppState>().refreshExternalRoot(),
+                  onCloseExternalRoot: _closeExternalRoot,
                   sessions: sessions,
                   projects: projects,
                   selectedId: _selectedId,
@@ -417,6 +654,8 @@ class _HomePageState extends State<HomePage> {
                   },
                   onRefreshSessions: _refreshSessions,
                   onRefreshNotes: _refreshNotes,
+                  onExternalMenu: _onExternalMenu,
+                  externalRootOpen: state.externalRoot != null,
                   refreshingSessions: _refreshingSessions,
                   // 底部工具条已固定在侧栏底部，列表不再需要为悬浮按钮留白。
                   bottomInset: 8,
@@ -996,6 +1235,29 @@ class _WelcomeViewState extends State<_WelcomeView> {
   }
 }
 
+/// 窄屏笔记编辑页：列表 → 编辑（上预览 / 下编辑，与桌面同一套）→ AI 底部抽屉。
+class _MobileNotePage extends StatelessWidget {
+  const _MobileNotePage({this.noteId, this.externalPath});
+
+  final String? noteId;
+
+  /// 外部 md 文件路径（与 [noteId] 互斥，优先）。
+  final String? externalPath;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: NotesPanel(
+          noteId: noteId,
+          externalPath: externalPath,
+          mobile: true,
+        ),
+      ),
+    );
+  }
+}
+
 /// Mobile chat page that resolves the session from the store by id.
 class _MobileChatPage extends StatefulWidget {
   const _MobileChatPage({required this.sessionId});
@@ -1097,10 +1359,25 @@ class _Sidebar extends StatelessWidget {
     required this.onSelectNote,
     required this.onNewNote,
     this.onRefreshNotes,
+    this.onExternalMenu,
+    this.externalRootOpen = false,
+    this.externalRoot,
+    this.externalFiles = const <ExternalMdEntry>[],
+    this.externalTruncated = false,
+    this.externalError,
+    this.externalFilePath,
+    this.selectedExternalPath,
+    this.onOpenExternal,
+    this.onCloseExternalFile,
+    this.onPickExternalFile,
+    this.onPickExternalDirectory,
+    this.onRefreshExternal,
+    this.onCloseExternalRoot,
     this.bottomInset = 0,
     this.onEditProject,
     this.onGoHome,
     this.toolbarActions = const [],
+    this.compact = false,
   });
 
   final List<Session> sessions;
@@ -1122,6 +1399,28 @@ class _Sidebar extends StatelessWidget {
 
   /// Re-lists notes from disk (the same button, note tab).
   final VoidCallback? onRefreshNotes;
+
+  /// 笔记 Tab 顶行「打开外部 Markdown」菜单的动作：
+  /// `file` / `dir` / `inputFile` / `inputDir` / `refresh` / `close`。
+  final void Function(String action)? onExternalMenu;
+
+  /// 当前是否打开了外部目录（决定菜单里是否显示刷新/关闭）。
+  final bool externalRootOpen;
+
+  // ---- 外部 md 文件区（转交给 [NoteList]）--------------------------------
+
+  final String? externalRoot;
+  final List<ExternalMdEntry> externalFiles;
+  final bool externalTruncated;
+  final String? externalError;
+  final String? externalFilePath;
+  final String? selectedExternalPath;
+  final ValueChanged<String>? onOpenExternal;
+  final VoidCallback? onCloseExternalFile;
+  final VoidCallback? onPickExternalFile;
+  final VoidCallback? onPickExternalDirectory;
+  final VoidCallback? onRefreshExternal;
+  final VoidCallback? onCloseExternalRoot;
 
   /// Whether the refresh is running — swaps the icon for a spinner.
   final bool refreshingSessions;
@@ -1158,6 +1457,10 @@ class _Sidebar extends StatelessWidget {
   /// 侧栏底部右侧的工具图标栏（审批 / 模板 / 更多）。
   final List<Widget> toolbarActions;
 
+  /// 窄屏（移动端）：工作区由底部 Tab 切换，侧栏内部的分段 Tab 不再显示
+  /// —— 底部 Tab 是唯一入口（D9）。
+  final bool compact;
+
   bool _matchesFilter(Session session) =>
       tagFilter.isEmpty || session.tags.any(tagFilter.contains);
 
@@ -1173,7 +1476,7 @@ class _Sidebar extends StatelessWidget {
       child: Column(
         children: [
           _brandRow(context, theme),
-          _tabRow(context, theme),
+          if (!compact) _tabRow(context, theme),
           Divider(height: 1, color: scheme.outlineVariant),
           Expanded(
             child: tab == _WorkspaceTab.session
@@ -1314,6 +1617,18 @@ class _Sidebar extends StatelessWidget {
       archivedNotes: archivedNotes,
       selectedId: selectedNoteId,
       onSelect: onSelectNote,
+      externalRoot: externalRoot,
+      externalFiles: externalFiles,
+      externalTruncated: externalTruncated,
+      externalError: externalError,
+      externalFilePath: externalFilePath,
+      selectedExternalPath: selectedExternalPath,
+      onOpenExternal: onOpenExternal,
+      onCloseExternalFile: onCloseExternalFile,
+      onPickExternalFile: onPickExternalFile,
+      onPickExternalDirectory: onPickExternalDirectory,
+      onRefreshExternal: onRefreshExternal,
+      onCloseExternalRoot: onCloseExternalRoot,
     );
   }
   /// 品牌行：徽标 + 应用名 + 刷新 / 新建 / 回到首页。
@@ -1323,11 +1638,11 @@ class _Sidebar extends StatelessWidget {
   Widget _brandRow(BuildContext context, ThemeData theme) {
     final isNote = tab == _WorkspaceTab.note;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+      padding: const EdgeInsets.fromLTRB(12, 14, 4, 10),
       child: Row(
         children: [
           const BrandMark.solid(size: 26),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Text(
             kAppBrandName,
             style: theme.textTheme.titleMedium?.copyWith(
@@ -1335,10 +1650,55 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          if (isNote)
+            PopupMenuButton<String>(
+              tooltip: '打开外部 Markdown',
+              padding: EdgeInsets.zero,
+              onSelected: (value) => onExternalMenu?.call(value),
+              // child 版按钮：尺寸就是 30×30（icon 版会套一个 48px 的 IconButton，
+              // 在 280px 的侧栏里会和品牌名一起溢出）。
+              child: const SizedBox(
+                width: 30,
+                height: 30,
+                child: Icon(Icons.folder_open_outlined, size: 18),
+              ),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'file',
+                  child: Text('打开 md 文件…'),
+                ),
+                const PopupMenuItem(
+                  value: 'dir',
+                  child: Text('打开文件夹…'),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'inputFile',
+                  child: Text('输入文件路径…'),
+                ),
+                const PopupMenuItem(
+                  value: 'inputDir',
+                  child: Text('输入文件夹路径…'),
+                ),
+                if (externalRootOpen) ...[
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'refresh',
+                    child: Text('重新扫描目录'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'close',
+                    child: Text('关闭目录'),
+                  ),
+                ],
+              ],
+            ),
           IconButton(
             tooltip: isNote ? '刷新笔记列表' : '刷新会话列表',
-            iconSize: 20,
+            iconSize: 19,
             visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            padding: EdgeInsets.zero,
             icon: refreshingSessions
                 ? const SizedBox(
                     width: 16,
@@ -1368,6 +1728,10 @@ class _Sidebar extends StatelessWidget {
           ),
           IconButton(
             tooltip: '回到首页',
+            iconSize: 20,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            padding: EdgeInsets.zero,
             icon: const Icon(Icons.home_outlined),
             onPressed: onGoHome,
           ),

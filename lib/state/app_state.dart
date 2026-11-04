@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:llm_api/llm_api.dart' as llm;
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_paths.dart';
 import '../core/ids.dart';
 import '../core/prompt_utils.dart';
 import '../data/config_repository.dart';
+import '../data/external_doc_repository.dart';
 import '../data/index_repository.dart';
 import '../data/memory_repository.dart';
 import '../data/models_dev_repository.dart';
@@ -20,6 +22,7 @@ import '../llm/session_namer.dart';
 import '../models/agent_mode.dart';
 import '../models/app_config.dart';
 import '../models/archive_group.dart';
+import '../models/external_doc.dart';
 import '../models/memory_status.dart';
 import '../models/models_dev.dart';
 import '../models/note.dart';
@@ -49,10 +52,13 @@ class AppState extends ChangeNotifier {
     IndexRepository? indexRepository,
     MemoryRepository? memoryRepository,
     NoteRepository? noteRepository,
+    ExternalDocRepository? externalDocRepository,
   }) : memoryRepository = memoryRepository ?? const MemoryRepository() {
     this.indexRepository = indexRepository ?? IndexRepository(paths);
     this.noteRepository =
         noteRepository ?? NoteRepository(paths, this.indexRepository);
+    this.externalDocRepository =
+        externalDocRepository ?? ExternalDocRepository();
   }
 
   final AppPaths paths;
@@ -66,6 +72,9 @@ class AppState extends ChangeNotifier {
 
   /// Markdown notes (`<root>/notes/<id>.md`).
   late final NoteRepository noteRepository;
+
+  /// 用户磁盘上的外部 Markdown 文件（不写 front-matter、不进索引）。
+  late final ExternalDocRepository externalDocRepository;
 
   /// Reads/initialises the `.memory/` index inside a project sandbox.
   final MemoryRepository memoryRepository;
@@ -82,6 +91,22 @@ class AppState extends ChangeNotifier {
 
   /// Archived notes (metadata + preview only).
   List<NoteSummary> archivedNotes = <NoteSummary>[];
+
+  /// 当前打开的外部目录（侧栏「外部文件」区的来源；null = 未打开）。
+  String? externalRoot;
+
+  /// 最近一次目录扫描结果。
+  ExternalMdScan? externalScan;
+
+  /// 单独打开的外部文件路径（null = 无）。
+  String? externalFile;
+
+  static const _externalRootPrefsKey = 'notes_external_root';
+  static const _externalFilePrefsKey = 'notes_external_file';
+
+  /// 侧栏外部区要列的文件（扫描结果的快捷方式）。
+  List<ExternalMdEntry> get externalFiles =>
+      externalScan?.files ?? const <ExternalMdEntry>[];
 
   /// Sessions whose full conversation (messages) has been loaded in memory.
   final Map<String, Session> _sessionCache = <String, Session>{};
@@ -334,6 +359,123 @@ class AppState extends ChangeNotifier {
   ///
   /// The UI uses it to notice edits made outside the app.
   Future<DateTime?> noteModifiedAt(String id) => noteRepository.modifiedAt(id);
+
+  // ------------------------------------------------------ external docs
+
+  /// 恢复上次打开的外部目录并扫描（单文件只记路径、不自动打开，避免启动即报错）。
+  Future<void> loadExternalState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final root = prefs.getString(_externalRootPrefsKey);
+      externalFile = prefs.getString(_externalFilePrefsKey);
+      if (root != null && root.trim().isNotEmpty) externalRoot = root;
+    } catch (_) {
+      // 读不到偏好就用默认值（没有外部目录）。
+    }
+    if (externalRoot != null) {
+      externalScan = await externalDocRepository.scanDirectory(
+        externalRoot!,
+        notesDir: paths.notesDir,
+      );
+      externalRoot = externalScan!.root;
+    }
+    notifyListeners();
+  }
+
+  /// 打开一个目录：扫描其中的 Markdown 文件并列进侧栏。
+  Future<void> openExternalRoot(String dir) async {
+    final scan = await externalDocRepository.scanDirectory(
+      dir,
+      notesDir: paths.notesDir,
+    );
+    externalRoot = scan.root;
+    externalScan = scan;
+    await _saveExternalPrefs();
+    notifyListeners();
+  }
+
+  /// 重新扫描当前目录（刷新按钮 / 换过文件之后）。
+  Future<void> refreshExternalRoot() async {
+    final root = externalRoot;
+    if (root == null) return;
+    externalScan = await externalDocRepository.scanDirectory(
+      root,
+      notesDir: paths.notesDir,
+    );
+    externalRoot = externalScan!.root;
+    notifyListeners();
+  }
+
+  Future<void> closeExternalRoot() async {
+    externalRoot = null;
+    externalScan = null;
+    await _saveExternalPrefs();
+    notifyListeners();
+  }
+
+  /// 记住单独打开的那个外部文件（用于侧栏「单独打开」与下次启动的提示）。
+  Future<void> openExternalFile(String path) async {
+    externalFile = p.normalize(p.absolute(path));
+    await _saveExternalPrefs();
+    notifyListeners();
+  }
+
+  Future<void> closeExternalFile() async {
+    externalFile = null;
+    await _saveExternalPrefs();
+    notifyListeners();
+  }
+
+  Future<void> _saveExternalPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (externalRoot == null) {
+        await prefs.remove(_externalRootPrefsKey);
+      } else {
+        await prefs.setString(_externalRootPrefsKey, externalRoot!);
+      }
+      if (externalFile == null) {
+        await prefs.remove(_externalFilePrefsKey);
+      } else {
+        await prefs.setString(_externalFilePrefsKey, externalFile!);
+      }
+    } catch (_) {
+      // 存不住不影响本次使用。
+    }
+  }
+
+  Future<ExternalDoc> readExternalDoc(String path) =>
+      externalDocRepository.read(path);
+
+  /// 写回外部文件（无 front-matter）。返回 false 表示写失败（权限 / 文件没了）。
+  Future<bool> saveExternalDoc(ExternalDoc doc, String body) async {
+    try {
+      await externalDocRepository.write(doc, body);
+      return true;
+    } on FileSystemException {
+      return false;
+    }
+  }
+
+  Future<DateTime?> externalDocModifiedAt(String path) =>
+      externalDocRepository.modifiedAt(path);
+
+  Future<bool> externalDocExists(String path) =>
+      externalDocRepository.exists(path);
+
+  /// 若 [path] 其实是本机内部笔记（`<root>/notes/<id>.md`），返回它的 id。
+  ///
+  /// 同一个文件不能有两个真相：外部打开时一律转成内部笔记视图。
+  String? internalNoteIdForPath(String path) {
+    final normalized = p.normalize(p.absolute(path));
+    final notesDir = p.normalize(p.absolute(paths.notesDir));
+    if (!p.isWithin(notesDir, normalized)) return null;
+    if (p.extension(normalized).toLowerCase() != '.md') return null;
+    final id = p.basenameWithoutExtension(normalized);
+    final known = notes.any((n) => n.id == id) ||
+        archivedNotes.any((n) => n.id == id);
+    return known ? id : null;
+  }
 
   // ------------------------------------------------------------- archives
 

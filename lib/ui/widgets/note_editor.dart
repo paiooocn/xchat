@@ -90,6 +90,7 @@ class NoteEditor extends StatefulWidget {
     required this.splitRatio,
     required this.onSplitRatioChanged,
     this.controller,
+    this.readOnly = false,
     this.extraActions = const [],
   });
 
@@ -108,6 +109,9 @@ class NoteEditor extends StatefulWidget {
 
   /// Called when the splitter settles on a new height.
   final ValueChanged<double> onSplitRatioChanged;
+
+  /// 只读态（外部 md 文件未开启编辑时）：只渲染预览，不建输入框、不渲染工具栏。
+  final bool readOnly;
 
   /// Extra toolbar buttons (e.g. 「用编辑工具打开」).
   final List<Widget> extraActions;
@@ -268,6 +272,12 @@ class _NoteEditorState extends State<NoteEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // 只读：纯预览（没有编辑区、没有分隔条、没有工具栏）。
+    if (widget.readOnly) {
+      return Column(
+        children: [Expanded(child: _previewArea(theme))],
+      );
+    }
     final ratio = _ratio;
     return LayoutBuilder(
       builder: (context, constraints) {

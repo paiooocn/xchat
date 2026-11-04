@@ -3,6 +3,243 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-04 · release: v0.7.5（一次性提交 M4 + 外部 md 全部改动）
+
+- 把本轮全部未提交改动（M4 移动端/打磨、外部 md 文件 E0–E3、`-p` 打包开关、
+  版本号 0.7.5、记忆索引刷新）**一次性 commit**；按用户要求
+  **不打标签、不推送/不同步、未跑 analyze/test**。
+- 未改代码内容，仅提交。下一步：需要时打 `v0.7.5` 标签并推送（会连带触发三条
+  build workflow + `sync-gitcode`）。
+
+---
+
+## 2026-11-04 · release: v0.7.5（版本号）
+
+- `pubspec.yaml` `0.7.0+1` → **`0.7.5+1`**；`lib/core/app_version.dart`
+  `kAppVersion` → `'0.7.5'`（两处必须同值，`test/app_version_test.dart` 会校验）。
+- 版本号变更后 `flutter test test/app_version_test.dart` → 1/1 通过。
+- **未跑打包**（按需再执行 `dist/build_apk.sh -p` / `dist/build_deb.sh -p`）。
+
+---
+
+## 2026-11-04 · 外部 md 文件（已实现 E0–E3）：打开文件 / 打开目录并列在笔记侧栏
+
+**做了什么**（按 `docs/EXTERNAL_MD_DESIGN.md`；用户「全部接收」= D1–D7 全按默认取值）
+
+- 新增 `lib/models/external_doc.dart`：`ExternalMdEntry`（侧栏项，不读正文）/
+  `ExternalMdScan`（root + files + truncated + error）/ `ExternalDoc`（已打开的正文，
+  带 `readOnly / loadedMtime / crlf / bom / writable / loadError`）。**不复用 `Note`**。
+- 新增 `lib/data/external_doc_repository.dart`：
+  - `scanDirectory`：递归 ≤3 层、≤800 个、跳过 `.` 开头与符号链接、只 `stat`；
+    `notesDir` 给的目录内的文件标 `isInternalNote`；
+  - `read`：UTF-8 容错、**BOM 按字节判断**（`utf8.decode` 会吃掉 BOM）、CRLF 规范成 LF、
+    >4 MiB / 含 NUL 直接 `loadError`、缓存目录内的「临时副本」置 `writable=false`；
+  - `write`：逐字写回（无 front-matter），行尾与 BOM 还原，走原子写，写后回填 mtime。
+- 新增 `lib/data/atomic_file.dart`：`writeAtomic` 从 `NoteRepository._writeAtomic` 迁出共用。
+- `lib/state/app_state.dart`：`externalDocRepository` + `externalRoot / externalScan /
+  externalFile` + `loadExternalState / openExternalRoot / refreshExternalRoot /
+  closeExternalRoot / openExternalFile / closeExternalFile / readExternalDoc /
+  saveExternalDoc / externalDocModifiedAt / externalDocExists / internalNoteIdForPath`；
+  路径持久化 `SharedPreferences: notes_external_root / notes_external_file`。
+- `lib/ui/widgets/note_list.dart`：**列表最上方**新增「外部文件」区（可折叠）：
+  目录头行（名称 + N 个 md + 刷新 + 关闭）、逐条文件（相对目录作副标题）、
+  「单独打开」行、未开目录时的两行入口；搜索框同时过滤内外。
+  **空态改成列表内软提示 `_emptyHint`**（否则空态卡片会把外部区吃掉）。
+- `lib/ui/pages/home_page.dart`：`_selectedExternalPath`（与 `_selectedNoteId` 互斥）、
+  `_openExternal`（落在 `notes/` 内则转内部笔记）、文件/目录选择器 + 手动输入路径、
+  顶行「📂 打开 ▾」菜单（`PopupMenuButton(child:)`）、`↻` 刷新兼扫外部目录、
+  `_MobileNotePage` 支持 `externalPath`。
+- `lib/ui/pages/notes_panel.dart`（重写）：`externalPath` 分支 —— 只读态（纯预览、
+  无档位控件、`只读` 徽标、状态条路径可点复制、外部专属菜单）、「开启编辑」确认弹窗
+  （每文件每会话一次）、关闭编辑＝先保存、800ms 自动保存写回原文件、mtime 冲突弹窗、
+  文件消失时「另存为笔记」、读失败视图（文件过大/非文本 → 用外部编辑器打开）、
+  AI「应用」在只读态被拦下。
+- `lib/ui/widgets/note_editor.dart`：新增 `readOnly`（只渲染预览，不建 TextField、不渲染工具栏）。
+
+**改了什么文件**
+
+- 新增：`lib/models/external_doc.dart`、`lib/data/atomic_file.dart`、
+  `lib/data/external_doc_repository.dart`、`test/external_doc_test.dart`（19 例）、
+  `test/external_doc_ui_test.dart`（8 例）、`docs/EXTERNAL_MD_DESIGN.md`
+- 改：`lib/data/note_repository.dart`、`lib/state/app_state.dart`、
+  `lib/ui/pages/home_page.dart`、`lib/ui/pages/notes_panel.dart`、
+  `lib/ui/widgets/note_list.dart`、`lib/ui/widgets/note_editor.dart`、
+  `FEATURES.md`（§7.1 三行）、`.memory/ARCHITECTURE.md`（不变量 22）、
+  `.memory/GOTCHAS.md`（§24）、`.memory/STATE.md`（本节）
+- `.memory/MAP.yaml` 已用生成器刷新。
+
+**怎么验证**（本轮已实际执行，全绿）
+
+```sh
+flutter analyze lib test        # → No issues found
+flutter test test/external_doc_test.dart     # → 19/19
+flutter test test/external_doc_ui_test.dart  # → 8/8
+flutter test                    # → 425 passed, 1 skipped, 0 failed
+dart run tool/gen_memory_index.dart --check  # → OK
+```
+
+- 期间修掉 3 个自身问题：①`utf8.decode` 吃掉 BOM（改按字节判断）；
+  ②侧栏品牌行加第 4 个按钮后 `RenderFlex overflowed by 29px`
+  （`PopupMenuButton(child: 30×30)` + 刷新/首页按钮收紧到 32×32）；
+  ③笔记列表空态整列替换会把外部区入口吃掉（改列表内软提示）。
+
+**下一步 / 遗留**
+
+- Android 上目录选择走 SAF 失败 → 用顶行菜单的「输入文件夹路径…」兜底（已在菜单里）；
+  真正接 SAF 树 URI 需要额外依赖，未做。
+- 外部文件没有「另存为笔记」常驻入口（只在文件消失时兜底，按 D7 默认）；
+  也没有 `Ctrl+O`（按 D6 默认不做）。
+- 一次只支持一个外部目录（按 D3 默认）；重启恢复目录、不自动打开单文件（按 D5 默认）。
+
+---
+
+## 2026-11-04 · 设计（未实现 → 已被上节实现）：打开外部 md 文件 / 打开目录并列在笔记侧栏
+
+**做了什么**
+
+- 用户提两项新需求：① 打开外部 md 文件；② 打开文件目录后在内边栏列出目录内 md
+  文件、点击查看；③ 外部 md 文件**默认只读**，须开启编辑才能改内容。
+- 本轮**只出设计**（`docs/EXTERNAL_MD_DESIGN.md`），**零 Dart 代码改动**，等拍板。
+- 设计要点（都已核对现有源码后落笔）：
+  - 外部文件**不写 front-matter、不进 `index.json`**；正文逐字读写（BOM / CRLF 还原）。
+  - 新增 `lib/models/external_doc.dart`（`ExternalMdEntry` / `ExternalDoc`，不复用 `Note`）
+    与 `lib/data/external_doc_repository.dart`（`scanDirectory` 递归 ≤3 层 / ≤800 个、
+    只 stat 不读正文；`read` / `write` 原子写）；`NoteRepository._writeAtomic`
+    抽成 `lib/data/atomic_file.dart` 共用。
+  - `AppState` 加 `externalRoot / externalScan / externalFile` + 读写方法，
+    `SharedPreferences: notes_external_root` 恢复目录（单文件不自动打开）。
+  - 侧栏外部区放在笔记列表**最上方**、可折叠；**空态要改**（现在内部无笔记会整列
+    替换空态卡片，会把外部区吃掉）。
+  - 主区复用 `NotesPanel`（新增 `externalPath`），只读时**强制 0 档 + 隐藏档位控件**，
+    `NoteEditor` 加 `readOnly`；AI 改写「应用」在只读时被拦。
+  - 写回三道闸：默认只读 → 开启编辑确认（每文件每会话一次）→ 保存前 mtime 冲突弹窗；
+    `notes/` 内的文件一律走内部笔记（D7，双真相问题）。
+  - 平台限制：Android `file_picker` 可能返回**缓存副本**路径 → 副本不可写，强制只读；
+    目录选择在 Android 一期不提供，用「手动输入路径」兜底。
+- 待拍板项列在文档 §13（D1–D7：写不写 front-matter、递归深度、是否多目录、
+  确认频率、重启是否恢复、`Ctrl+O`、另存为内部笔记）。
+
+**改了什么文件**
+
+- 新增：`docs/EXTERNAL_MD_DESIGN.md`；改：`.memory/STATE.md`（本节）
+- **未改任何 `lib/` 代码**，未跑 `flutter analyze` / `flutter test`。
+
+**下一步**
+
+- 等用户拍板 §13 的 D1–D7 后，按文档 §10 的 E0→E3 分阶段实现
+  （E0 数据层 → E1 侧栏+入口 → E2 只读主区 → E3 开启编辑与写回）。
+
+---
+
+## 2026-11-04 · M4 移动端 + 打磨（已实现）
+
+**做了什么**（按 `docs/NOTES_IMPL_PLAN.md` §M4；用户逐条确认：复用 `NotesPanel`、
+档位控件压缩成 `40%｜20%｜0`、820–1080 **强制**竖轨、抽屉用 `DraggableScrollableSheet`
+0.7/0.4/1.0、遗留问题（临时换模型 / 问答插入附录 / 真 Ctrl+N）**不做**）
+
+- `lib/ui/pages/home_page.dart`
+  - `_Sidebar` 加 `compact`：窄屏时**不渲染**内部分段 Tab（底部 Tab 是唯一入口，D9）。
+  - 窄屏（`< 820`）的根 `Scaffold` 加 `bottomNavigationBar: _mobileTabBar(theme)`
+    —— `NavigationBar(会话｜笔记)`，高 58，与 `_tab` 双向同步。
+  - 新增 `_openNote(context, id)`：置 `_tab = note` + `_selectedNoteId`；窄屏时
+    **压栈**进 `_MobileNotePage`。`_newNote` 改走它（新建即在移动端进编辑页）。
+  - 新增 `_MobileNotePage`（`Scaffold(body: SafeArea(NotesPanel(noteId, mobile: true)))`）。
+  - 会话 Tab 行为不变：点会话仍 push `_MobileChatPage`。
+- `lib/ui/pages/notes_panel.dart`
+  - 新增 `mobile` 参数与常量 `kNoteAiAutoCollapseWidth = 1080`。
+  - `build` 拆成三态：①`mobile` → 只有主区（无右侧栏，AI 走抽屉）；②窗口 `< 1080`
+    → AI **强制竖轨**（`collapsed: keyed||locked`，`locked: true`）；③正常桌面。
+  - 新增 `_openAiSheet()`：`showModalBottomSheet(isScrollControlled, useSafeArea)` +
+    `DraggableScrollableSheet(0.7/0.4/1.0)`，带拖拽条，内嵌 `NoteAiPanel(sheet: true)`，
+    关闭按钮 pop 抽屉。
+  - 顶栏：移动端左侧返回箭头（紧凑 34×34）、AI 按钮改为开抽屉（生成中也允许开）、
+    档位标签窄屏压成 `40%｜20%｜0`；无笔记时移动端文案「这篇笔记不存在或已删除」。
+- `lib/ui/widgets/note_ai_panel.dart`
+  - 新增 `sheet` / `locked` / `scrollController`：展开态宽度 `sheet ? ∞ : 320`；
+    抽屉里「收起」换成「关闭」；竖轨在 `locked` 时按钮置灰 + tooltip
+    「窗口太窄，AI 边栏已收起」；对话流用外部传入的滚动控制器（抽屉上拉全屏靠它）。
+- `lib/ui/widgets/note_diff_dialog.dart`
+  - 宽度 `< kNoteDiffFullScreenWidth`（820）→ **全屏路由**（`fullscreenDialog: true`，
+    AppBar 左侧关闭 = 拒绝，标题带「N 处改动」，底部动作条不变）；
+    桌面仍为 720 居中弹层。内容抽成同一份，`_NoteDiffDialog` 由 StatefulWidget 改
+    StatelessWidget。
+- `lib/ui/widgets/note_list.dart`：空态升级（图标 + 主文案 + 提示）：
+  「还没有笔记 / 点右上角 ＋ 新建一篇」、「没有匹配的笔记 / 换个关键词，或清掉标签筛选」。
+- 深色走查：diff 用 `errorContainer/tertiaryContainer` + 0.45 alpha、竖轨/抽屉用
+  `surfaceContainerLow`、代码块沿用 `markdownView()` 的深色预设 —— 无硬编码色值新增。
+
+**改了什么文件**
+
+- 改：`lib/ui/pages/home_page.dart`、`lib/ui/pages/notes_panel.dart`、
+  `lib/ui/widgets/note_ai_panel.dart`、`lib/ui/widgets/note_diff_dialog.dart`、
+  `lib/ui/widgets/note_list.dart`、`test/sidebar_tab_test.dart`（空态文案改为「还没有笔记」）、
+  `FEATURES.md`（§7.1 界面/移动端/窄窗口降级/空态、§9.1 笔记行）、
+  `.memory/ARCHITECTURE.md`（不变量 20、21）、`.memory/GOTCHAS.md`（§23）、
+  `.memory/STATE.md`（本节）
+- 新增：`test/note_mobile_test.dart`（8 个用例）
+
+**怎么验证**（本轮已实际执行，全绿）
+
+```sh
+flutter analyze lib test      # → No issues found
+flutter test test/note_mobile_test.dart   # → 8/8 全绿
+flutter test                  # → 398 passed, 1 skipped, 0 failed
+dart run tool/gen_memory_index.dart --check   # → OK
+```
+
+- `test/note_mobile_test.dart` 覆盖：窄屏只剩一组「会话/笔记」（底部 Tab）、
+  笔记 Tab 空态、新建笔记压栈进编辑页（有返回按钮）、AI 按钮唤起抽屉（含关闭）、
+  900 宽强制竖轨、1400 宽默认展开、窄屏 diff 全屏路由（接受/关闭=拒绝）。
+- 期间修掉两处自身问题：`ProjectRepository` 构造需 `(paths, index)` 两参；
+  `_openNote` 改吃 `State.context`（原写法触发 `use_build_context_synchronously`）。
+- 手工：窄屏 → 底部切「笔记」→ ＋新建 → 写 → AI 抽屉 → 预览差异（全屏）→ 接受 →
+  返回；桌面把窗口拖到 900 宽看 AI 自动竖轨。（未做真机走查）
+
+**下一步**
+
+- 需要时：M3 的三条遗留（AI 临时换模型下拉、问答结果一键插入附录、真 `Ctrl+N` /
+  `Ctrl+Shift+N`）—— 本轮按拍板**未做**。
+- 发版时同步 `pubspec.yaml` 与 `lib/core/app_version.dart`。
+
+**遗留问题**
+
+- 移动端 AI 抽屉打开时 `body` / `selection` 是**打开那一刻**的快照（抽屉是模态的，
+  正常操作不会在开着的时候改正文）；写回仍读实时缓冲，不影响正确性。
+- 移动端编辑页没有「用编辑工具打开」的替代入口（桌面工具栏里的那个按钮仍在工具栏
+  末尾，窄屏需横向滚动才能看到）。
+- 820–1080 是**强制**竖轨，用户在该区间无法临时展开 AI 边栏（按拍板）。
+
+---
+
+## 2026-11-04 · 打包脚本加 `-p`：只打正式版（xchat-v*）
+
+**做了什么**
+
+- `dist/build_apk.sh` / `dist/build_deb.sh` 增加参数解析：`-p`（`--primary`）
+  = **只打正式版**，产物仅 `dist/xchat-v*.{apk,deb}`，不打改名版（SixChat）。
+  `-h/--help` 打印脚本头注释；未知参数报错退出码 2。
+- 实现：解析出 `PRIMARY_ONLY`，再由
+  `BUILD_VARIANT`（默认 1；`BUILD_BRAND_VARIANT=0` 或 `-p` → 0）统一控制
+  改名版的两处分支（构建 + prune），不再散落判断环境变量。`-p` **优先于**
+  `BRAND_VARIANT_NAME` / `BUILD_BRAND_VARIANT`。
+- `docs/BRANDING.md` 补 `-p` 用法，并注明 `build_windows.ps1` 仍用
+  `BUILD_BRAND_VARIANT=0`（本轮未给 ps1 加 `-p`）。
+
+**改了什么文件**
+
+- `dist/build_apk.sh`、`dist/build_deb.sh`、`docs/BRANDING.md`、`.memory/STATE.md`
+
+**怎么验证**
+
+- `bash -n` 两个脚本 → 语法通过；`--help` / `-h` 打印用法；`-x` → 退出码 2。
+- **未跑实际打包**（用户要求改完不测）。
+
+**下一步**
+
+- 需要时给 `dist/build_windows.ps1` 加同样的 `-p` 开关。
+
+---
+
 ## 2026-11-04 · release: v0.7.0 — 笔记功能 M1–M3 提交
 
 **做了什么**

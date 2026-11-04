@@ -83,7 +83,7 @@ void main() {
     // 主区：笔记面板占位。
     expect(find.text('选择或新建一篇笔记'), findsOneWidget);
     // 左栏：笔记列表占位（空态）。
-    expect(find.text('暂无笔记'), findsOneWidget);
+    expect(find.text('还没有笔记'), findsOneWidget);
     // 会话树不再显示。
     expect(find.text('全局会话'), findsNothing);
   });

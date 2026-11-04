@@ -22,6 +22,16 @@ CI（Android / Linux / Windows 三个工作流）跑的就是这几个脚本，�
 BRAND_VARIANT_NAME=MyChat BUILD_BRAND_VARIANT=0 bash dist/build_apk.sh
 ```
 
+只要正式版时更短的写法是加 `-p`（`--primary`，优先于上面的环境变量）：
+
+```sh
+bash dist/build_apk.sh -p   # → 只出 dist/xchat-vX.Y.Z.apk
+bash dist/build_deb.sh -p   # → 只出 dist/xchat-vX.Y.Z.deb
+```
+
+> `-p` 目前只在 `build_apk.sh` / `build_deb.sh` 支持；`build_windows.ps1` 仍用
+> `BUILD_BRAND_VARIANT=0` 关掉改名版。
+
 ## 手工打单个改名版
 
 ```sh
