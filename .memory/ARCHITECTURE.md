@@ -71,6 +71,7 @@ UI 发消息
   config.json                 全局配置
   sessions/<uuid>.xml         会话（根元素 chat，sandbox 属性记录工作目录）
   templates/                  会话模板
+  notes/<id>.md               Markdown 笔记（front-matter + 正文）
   scripts/<id>.json           页面提取脚本
   projects/                   项目文件与工作目录
   logs/
@@ -111,4 +112,17 @@ UI 发消息
     数据目录一律不变（改名版与正式版是同一个应用）。原生侧（Android 启动器
     label、桌面窗口标题）不读 Dart 常量，各平台有各自的注入通道
     （Gradle `resValue` / CMake 编译宏），三处必须同值。
+16. **笔记是左栏 Tab，不是独立路由**：笔记页是 `HomePage` 左栏「会话 | 笔记」的
+    另一个 Tab，主区随 Tab 切换；**不新增路由**。笔记列表挂在 `AppState`
+    （`notes` / `archivedNotes`，只存摘要，正文按需读取）。
+17. **笔记用 Markdown 文件，不是 XML**：一篇笔记 = `<root>/notes/<id>.md`
+    （front-matter + 正文），front-matter 的拼装/拆解只写在
+    `lib/data/xml/note_md.dart`；正文**逐字保留**（写回时只重写 front-matter 块），
+    未知 front-matter key 原样保留（不丢用户/外部工具写的数据）。
+18. **AI 写回必过 diff**：任何 AI 对笔记正文的修改都要先进 diff 预览（接受/拒绝），
+    接受后**先进编辑器缓冲**（可 Ctrl+Z），再走自动保存落盘 —— 不存在静默覆盖。
+19. **笔记中间栏只有一套布局**：固定「上预览 / 下编辑」，没有「编辑/分屏/预览」
+    模式切换；唯一的可调量是下区高度（三档 40/20/0，分隔条拖动吸附，**全局**
+    存 `SharedPreferences`，不做 per-note 覆盖）。预览**必须**走
+    `markdownView()`，不要另写渲染器。
 

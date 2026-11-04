@@ -12,6 +12,7 @@ import 'package:xchat/data/session_repository.dart';
 import 'package:xchat/data/template_repository.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/pages/archive_page.dart';
+import 'helpers/test_theme.dart';
 
 /// Builds an app state on a temporary data root.
 ///
@@ -58,7 +59,7 @@ Future<void> pumpArchive(WidgetTester tester, AppState state) async {
   await tester.pumpWidget(
     ChangeNotifierProvider<AppState>.value(
       value: state,
-      child: const MaterialApp(home: ArchivePage()),
+      child: MaterialApp(theme: testTheme(), home: ArchivePage()),
     ),
   );
   await tester.pump(const Duration(milliseconds: 50));

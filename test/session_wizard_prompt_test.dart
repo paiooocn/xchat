@@ -12,6 +12,7 @@ import 'package:xchat/data/session_repository.dart';
 import 'package:xchat/data/template_repository.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/pages/session_wizard_page.dart';
+import 'helpers/test_theme.dart';
 
 /// 新建会话页的提示词三段式：会话提示词 / 项目提示词 / 新增提示词，
 /// 段间用 `\n---\n` 分隔；项目提示词由开关控制。
@@ -48,7 +49,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<AppState>.value(
         value: state,
-        child: MaterialApp(home: SessionWizardPage(initialProjectId: projectId)),
+        child: MaterialApp(theme: testTheme(), home: SessionWizardPage(initialProjectId: projectId)),
       ),
     );
     await tester.pump(const Duration(milliseconds: 50));

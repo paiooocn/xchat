@@ -1,5 +1,6 @@
 import '../core/json_utils.dart';
 import 'agent_mode.dart';
+import 'note.dart';
 import 'project.dart';
 import 'session.dart';
 import 'session_message.dart';
@@ -267,10 +268,12 @@ class CatalogIndex {
     List<ProjectIndexEntry>? projects,
     List<SessionIndexEntry>? archivedSessions,
     List<ProjectIndexEntry>? archivedProjects,
+    List<NoteIndexEntry>? notes,
   })  : sessions = sessions ?? <SessionIndexEntry>[],
         projects = projects ?? <ProjectIndexEntry>[],
         archivedSessions = archivedSessions ?? <SessionIndexEntry>[],
-        archivedProjects = archivedProjects ?? <ProjectIndexEntry>[];
+        archivedProjects = archivedProjects ?? <ProjectIndexEntry>[],
+        notes = notes ?? <NoteIndexEntry>[];
 
   /// Bumped to 2 when project entries gained `system_prompt`: older index
   /// files lack the field, so they are discarded and rebuilt from the project
@@ -283,12 +286,18 @@ class CatalogIndex {
   /// Bumped to 4 when session entries gained `kind` / task counters — an index
   /// without them would present every task-style session as a normal one (the
   /// task list would never open).
-  static const int version = 4;
+  ///
+  /// Bumped to 5 when the `notes` bucket was added — an index without it would
+  /// hide every note until the next rebuild.
+  static const int version = 5;
 
   List<SessionIndexEntry> sessions;
   List<ProjectIndexEntry> projects;
   List<SessionIndexEntry> archivedSessions;
   List<ProjectIndexEntry> archivedProjects;
+
+  /// Markdown notes (archived ones included — `archived_at` tells them apart).
+  List<NoteIndexEntry> notes;
 
   Iterable<String> get allSessionIds sync* {
     for (final e in sessions) {
@@ -308,12 +317,20 @@ class CatalogIndex {
     }
   }
 
+  /// All note ids (active + archived live in the same bucket).
+  Iterable<String> get allNoteIds sync* {
+    for (final e in notes) {
+      yield e.id;
+    }
+  }
+
   Map<String, Object?> toJson() => <String, Object?>{
         'version': version,
         'sessions': sessions.map((e) => e.toJson()).toList(),
         'projects': projects.map((e) => e.toJson()).toList(),
         'archived_sessions': archivedSessions.map((e) => e.toJson()).toList(),
         'archived_projects': archivedProjects.map((e) => e.toJson()).toList(),
+        'notes': notes.map((e) => e.toJson()).toList(),
       };
 
   factory CatalogIndex.fromJson(Object? value) {
@@ -325,6 +342,7 @@ class CatalogIndex {
           asList(json['archived_sessions']).map(SessionIndexEntry.fromJson).toList(),
       archivedProjects:
           asList(json['archived_projects']).map(ProjectIndexEntry.fromJson).toList(),
+      notes: asList(json['notes']).map(NoteIndexEntry.fromJson).toList(),
     );
   }
 }

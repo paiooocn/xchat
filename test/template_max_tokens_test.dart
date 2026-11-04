@@ -15,6 +15,7 @@ import 'package:xchat/models/session_params.dart';
 import 'package:xchat/models/session_template.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/pages/templates_page.dart';
+import 'helpers/test_theme.dart';
 
 /// A state backed by a throw-away data directory.
 Future<AppState> _buildState() async {
@@ -86,7 +87,7 @@ void main() {
       await tester.pumpWidget(
         ChangeNotifierProvider<AppState>.value(
           value: state,
-          child: const MaterialApp(home: TemplatesPage()),
+          child: MaterialApp(theme: testTheme(), home: TemplatesPage()),
         ),
       );
       await tester.pumpAndSettle();
@@ -107,10 +108,10 @@ void main() {
       await tester.pump();
       // 保存走真实文件 I/O（写盘 → 重新读盘）：真实事件循环（runAsync）与假
       // 时钟（pump）必须交替让行，异步链才会真正走完。
-      for (var i = 0; i < 30; i++) {
+      for (var i = 0; i < 80; i++) {
         await tester.pump();
         await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
         );
         if (state.templates.any((t) => t.params.maxTokens == 4096)) break;
       }

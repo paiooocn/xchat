@@ -11,6 +11,7 @@ import '../data/config_repository.dart';
 import '../data/index_repository.dart';
 import '../data/memory_repository.dart';
 import '../data/models_dev_repository.dart';
+import '../data/note_repository.dart';
 import '../data/project_repository.dart';
 import '../data/session_repository.dart';
 import '../data/template_repository.dart';
@@ -21,6 +22,7 @@ import '../models/app_config.dart';
 import '../models/archive_group.dart';
 import '../models/memory_status.dart';
 import '../models/models_dev.dart';
+import '../models/note.dart';
 import '../models/project.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
@@ -46,15 +48,24 @@ class AppState extends ChangeNotifier {
     required this.projectRepository,
     IndexRepository? indexRepository,
     MemoryRepository? memoryRepository,
-  }) : indexRepository = indexRepository ?? IndexRepository(paths),
-       memoryRepository = memoryRepository ?? const MemoryRepository();
+    NoteRepository? noteRepository,
+  }) : memoryRepository = memoryRepository ?? const MemoryRepository() {
+    this.indexRepository = indexRepository ?? IndexRepository(paths);
+    this.noteRepository =
+        noteRepository ?? NoteRepository(paths, this.indexRepository);
+  }
 
   final AppPaths paths;
   final ConfigRepository configRepository;
   final SessionRepository sessionRepository;
   final TemplateRepository templateRepository;
   final ProjectRepository projectRepository;
-  final IndexRepository indexRepository;
+
+  /// The catalog index (sessions, projects, notes).
+  late final IndexRepository indexRepository;
+
+  /// Markdown notes (`<root>/notes/<id>.md`).
+  late final NoteRepository noteRepository;
 
   /// Reads/initialises the `.memory/` index inside a project sandbox.
   final MemoryRepository memoryRepository;
@@ -65,6 +76,12 @@ class AppState extends ChangeNotifier {
   List<SessionTemplate> templates = <SessionTemplate>[];
   List<Project> projects = <Project>[];
   List<Project> archivedProjects = <Project>[];
+
+  /// Markdown notes (metadata + preview only; the body is read on demand).
+  List<NoteSummary> notes = <NoteSummary>[];
+
+  /// Archived notes (metadata + preview only).
+  List<NoteSummary> archivedNotes = <NoteSummary>[];
 
   /// Sessions whose full conversation (messages) has been loaded in memory.
   final Map<String, Session> _sessionCache = <String, Session>{};
@@ -170,6 +187,7 @@ class AppState extends ChangeNotifier {
     await refreshTemplates();
     await refreshProjects();
     await refreshArchivedProjects();
+    await refreshNotes();
     // A project whose `.memory/` was removed by hand gets it back on start.
     await healProjectMemory();
   }
@@ -228,6 +246,94 @@ class AppState extends ChangeNotifier {
     archivedProjects = await projectRepository.listArchived();
     notifyListeners();
   }
+
+  // --------------------------------------------------------------- notes
+
+  /// Reloads the note lists (active + archived) from the catalog index.
+  Future<void> refreshNotes() async {
+    final all = await noteRepository.list();
+    notes = all.where((n) => !n.archived).toList();
+    archivedNotes = all.where((n) => n.archived).toList();
+    notifyListeners();
+  }
+
+  /// Creates an empty note and returns it (already written to disk).
+  Future<Note> createNote({String title = ''}) async {
+    final now = DateTime.now().toUtc();
+    final note = Note(
+      id: newId(),
+      title: title,
+      createdAt: now,
+      updatedAt: now,
+      body: title.isEmpty ? '' : '# $title\n',
+    );
+    await noteRepository.write(note);
+    await refreshNotes();
+    return note;
+  }
+
+  /// Reads a note (with its body) from disk.
+  Future<Note?> readNote(String id) async {
+    try {
+      return await noteRepository.read(id);
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// Writes a note and refreshes the note lists.
+  Future<void> saveNote(Note note) async {
+    note.updatedAt = DateTime.now().toUtc();
+    await noteRepository.write(note);
+    await refreshNotes();
+  }
+
+  /// Archives (or restores) a note.
+  Future<void> setNoteArchived(String id, bool archived) async {
+    final note = await readNote(id);
+    if (note == null) return;
+    note.archivedAt = archived ? DateTime.now().toUtc() : null;
+    await saveNote(note);
+  }
+
+  /// Deletes a note (file + index entry).
+  Future<void> deleteNote(String id) async {
+    await noteRepository.delete(id);
+    await refreshNotes();
+  }
+
+  /// Renames a note.
+  Future<void> renameNote(String id, String title) async {
+    final note = await readNote(id);
+    if (note == null) return;
+    note.title = title.trim();
+    await saveNote(note);
+  }
+
+  /// Replaces a note's tags.
+  Future<void> setNoteTags(String id, List<String> tags) async {
+    final note = await readNote(id);
+    if (note == null) return;
+    note.tags = tags
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .toList();
+    await saveNote(note);
+  }
+
+  /// Pins (or unpins) a note.
+  Future<void> setNotePinned(String id, bool pinned) async {
+    final note = await readNote(id);
+    if (note == null) return;
+    note.pinned = pinned;
+    await saveNote(note);
+  }
+
+  /// Last modification time of a note file (null when missing).
+  ///
+  /// The UI uses it to notice edits made outside the app.
+  Future<DateTime?> noteModifiedAt(String id) => noteRepository.modifiedAt(id);
 
   // ------------------------------------------------------------- archives
 

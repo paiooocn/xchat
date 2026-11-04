@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchat/ui/widgets/markdown_view.dart';
+import 'helpers/test_theme.dart';
 
 void main() {
   testWidgets('copying a rendered message keeps its line breaks', (tester) async {
@@ -23,6 +24,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: testTheme(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -93,6 +95,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: testTheme(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,

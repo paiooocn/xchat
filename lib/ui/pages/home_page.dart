@@ -12,6 +12,7 @@ import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
 import '../../core/ids.dart';
 import '../../models/project.dart';
+import '../../models/note.dart';
 import '../../models/session.dart';
 import '../../models/agent_mode.dart';
 import '../../models/message_attachment.dart';
@@ -34,6 +35,8 @@ import '../widgets/session_info_dialog.dart';
 import '../widgets/task_session_view.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
+import '../widgets/note_list.dart';
+import 'notes_panel.dart';
 import 'pip_packages_page.dart';
 import '../widgets/usage_badge.dart';
 import '../theme/app_fonts.dart';
@@ -55,8 +58,19 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+/// 工作区 Tab：会话 / 笔记。
+///
+/// 笔记**不是独立路由** —— 它是左栏的一个 Tab，主区随 Tab 切换。
+enum _WorkspaceTab { session, note }
+
 class _HomePageState extends State<HomePage> {
   String? _selectedId;
+
+  /// 当前工作区 Tab（会话 / 笔记）。
+  _WorkspaceTab _tab = _WorkspaceTab.session;
+
+  /// 当前打开的笔记（笔记 Tab）。
+  String? _selectedNoteId;
 
   /// 任务式会话中当前打开的任务项（空 = 显示任务列表）。
   String? _activeTaskId;
@@ -214,6 +228,29 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Re-reads the note index from disk (picks up notes created, deleted or
+  /// archived by another app instance) and rebuilds the note lists.
+  Future<void> _refreshNotes() async {
+    if (_refreshingSessions) return;
+    setState(() => _refreshingSessions = true);
+    try {
+      await context.read<AppState>().refreshNotes();
+    } finally {
+      if (mounted) setState(() => _refreshingSessions = false);
+    }
+  }
+
+  /// Creates a note and opens it in the main area.
+  Future<void> _newNote(BuildContext context) async {
+    final state = context.read<AppState>();
+    final note = await state.createNote();
+    if (!mounted) return;
+    setState(() {
+      _tab = _WorkspaceTab.note;
+      _selectedNoteId = note.id;
+    });
+  }
+
   Future<void> _newSession(BuildContext context, {String? projectId}) async {
     final state = context.read<AppState>();
     final created = await Navigator.of(context).push<Session>(
@@ -307,6 +344,13 @@ class _HomePageState extends State<HomePage> {
                       width: AppTheme.sidebarWidth,
                       child: _Sidebar(
                         toolbarActions: _sidebarToolbar(context),
+                        tab: _tab,
+                        onTabChanged: (tab) => setState(() => _tab = tab),
+                        notes: state.notes,
+                        archivedNotes: state.archivedNotes,
+                        selectedNoteId: _selectedNoteId,
+                        onSelectNote: (id) => setState(() => _selectedNoteId = id),
+                        onNewNote: () => _newNote(context),
                         sessions: sessions,
                         projects: projects,
                         selectedId: _selectedId,
@@ -319,20 +363,22 @@ class _HomePageState extends State<HomePage> {
                           _saveGlobalExpanded(expanded);
                         },
                         onRefreshSessions: _refreshSessions,
+                        onRefreshNotes: _refreshNotes,
                         refreshingSessions: _refreshingSessions,
                         onSelect: (id) => _openSession(context, id),
                         onNewSession: (projectId) =>
                             _newSession(context, projectId: projectId),
                         onNewProject: () => _newProject(context),
                         onEditProject: (p) => _editProject(context, p),
-                        onNavigate: (id) => _navigate(context, id),
                         onGoHome: _goHome,
                       ),
                     ),
                     VerticalDivider(width: 1, color: scheme.outlineVariant),
                     Expanded(
-                      child: selected == null
-                          ? _WelcomeView(
+                      child: _tab == _WorkspaceTab.note
+                          ? NotesPanel(noteId: _selectedNoteId)
+                          : selected == null
+                              ? _WelcomeView(
                               onSend: (text, attachments,
                                       {SessionTemplate? template,
                                       required AgentMode mode,
@@ -351,6 +397,13 @@ class _HomePageState extends State<HomePage> {
                 )
               : _Sidebar(
                   toolbarActions: _sidebarToolbar(context),
+                  tab: _tab,
+                  onTabChanged: (tab) => setState(() => _tab = tab),
+                  notes: state.notes,
+                  archivedNotes: state.archivedNotes,
+                  selectedNoteId: _selectedNoteId,
+                  onSelectNote: (id) => setState(() => _selectedNoteId = id),
+                  onNewNote: () => _newNote(context),
                   sessions: sessions,
                   projects: projects,
                   selectedId: _selectedId,
@@ -363,6 +416,7 @@ class _HomePageState extends State<HomePage> {
                     _saveGlobalExpanded(expanded);
                   },
                   onRefreshSessions: _refreshSessions,
+                  onRefreshNotes: _refreshNotes,
                   refreshingSessions: _refreshingSessions,
                   // 底部工具条已固定在侧栏底部，列表不再需要为悬浮按钮留白。
                   bottomInset: 8,
@@ -379,7 +433,6 @@ class _HomePageState extends State<HomePage> {
                       _newSession(context, projectId: projectId),
                   onNewProject: () => _newProject(context),
                   onEditProject: (p) => _editProject(context, p),
-                  onNavigate: (id) => _navigate(context, id),
                   onGoHome: _goHome,
                 ),
         );
@@ -539,8 +592,6 @@ class _HomePageState extends State<HomePage> {
   /// 侧边栏入口 / 溢出菜单的统一路由。
   void _navigate(BuildContext context, String destination) {
     switch (destination) {
-      case 'new':
-        _newSession(context);
       case 'search':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const SearchPage()),
@@ -1038,9 +1089,16 @@ class _Sidebar extends StatelessWidget {
     required this.onGlobalExpandedChanged,
     required this.onRefreshSessions,
     required this.refreshingSessions,
+    required this.tab,
+    required this.onTabChanged,
+    required this.notes,
+    required this.archivedNotes,
+    required this.selectedNoteId,
+    required this.onSelectNote,
+    required this.onNewNote,
+    this.onRefreshNotes,
     this.bottomInset = 0,
     this.onEditProject,
-    this.onNavigate,
     this.onGoHome,
     this.toolbarActions = const [],
   });
@@ -1062,33 +1120,43 @@ class _Sidebar extends StatelessWidget {
   /// Re-lists sessions from disk (manual refresh button in the header).
   final VoidCallback onRefreshSessions;
 
+  /// Re-lists notes from disk (the same button, note tab).
+  final VoidCallback? onRefreshNotes;
+
   /// Whether the refresh is running — swaps the icon for a spinner.
   final bool refreshingSessions;
+
+  /// Which workspace the sidebar shows (会话 / 笔记).
+  final _WorkspaceTab tab;
+
+  /// Switches the workspace tab (list **and** main area follow).
+  final ValueChanged<_WorkspaceTab> onTabChanged;
+
+  /// Note summaries (metadata only — the body is read on demand).
+  final List<NoteSummary> notes;
+
+  /// Archived notes (metadata only).
+  final List<NoteSummary> archivedNotes;
+
+  /// The note currently open in the main area.
+  final String? selectedNoteId;
+
+  /// Opens a note in the main area.
+  final ValueChanged<String> onSelectNote;
+
+  /// Creates a new note (top bar 「＋」 in the note tab).
+  final VoidCallback onNewNote;
 
   /// Extra space reserved at the end of the list so the floating
   /// 「新建会话」button never covers the last rows.
   final double bottomInset;
   final void Function(Project project)? onEditProject;
 
-  /// Sidebar quick entries (new / search / templates / tools / …).
-  final void Function(String destination)? onNavigate;
-
   /// Back to the welcome page (clears the selected session).
   final VoidCallback? onGoHome;
 
   /// 侧栏底部右侧的工具图标栏（审批 / 模板 / 更多）。
   final List<Widget> toolbarActions;
-
-  /// 侧栏快捷入口（其余页面入口在顶部工具条与「更多」菜单里）。
-  static const _navEntries =
-      <({IconData icon, String label, String? shortcut, String id})>[
-    (
-      icon: Icons.add_comment_outlined,
-      label: '新建会话',
-      shortcut: 'Ctrl+N',
-      id: 'new'
-    ),
-  ];
 
   bool _matchesFilter(Session session) =>
       tagFilter.isEmpty || session.tags.any(tagFilter.contains);
@@ -1097,13 +1165,6 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final visible = sessions.where(_matchesFilter).toList();
-    final global = visible.where((s) => s.projectId.isEmpty).toList();
-    final allTags = <String>{
-      for (final s in sessions) ...s.tags.where((t) => t.trim().isNotEmpty),
-    }.toList()
-      ..sort();
-
     // 用 Material 而不是 ColoredBox：ListTile / ExpansionTile 的选中底色与
     // 水波纹会画在最近的 Material 祖先上，中间夹一层 ColoredBox 会让它们
     // 被遮住（Flutter 会断言告警）。
@@ -1112,117 +1173,12 @@ class _Sidebar extends StatelessWidget {
       child: Column(
         children: [
           _brandRow(context, theme),
-          _navList(context, theme),
+          _tabRow(context, theme),
           Divider(height: 1, color: scheme.outlineVariant),
           Expanded(
-            child: ListView(
-              // Keep the trailing rows clear of the floating「新建会话」button.
-              padding: EdgeInsets.only(bottom: bottomInset),
-              children: [
-                // ---- 标签筛选 ------------------------------------------
-                if (allTags.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 2,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text('#', style: theme.textTheme.labelSmall),
-                        for (final tag in allTags)
-                          FilterChip(
-                            label: Text(tag, style: theme.textTheme.labelSmall),
-                            selected: tagFilter.contains(tag),
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            onSelected: (_) => onTagToggle(tag),
-                          ),
-                      ],
-                    ),
-                  ),
-                // ---- 全局会话 ------------------------------------------
-                ExpansionTile(
-                  initiallyExpanded: globalSessionsExpanded,
-                  onExpansionChanged: onGlobalExpandedChanged,
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                  childrenPadding: const EdgeInsets.only(left: 4),
-                  leading: const Icon(Icons.public_outlined, size: 20),
-                  title: const Text('全局会话'),
-                  children: [
-                    for (final session in global)
-                      _SessionTile(
-                        session: session,
-                        selected: session.id == selectedId,
-                        running: runningIds.contains(session.id),
-                        indent: 12,
-                        leading: const Icon(Icons.chat_bubble_outline, size: 20),
-                        onTap: () => onSelect(session.id),
-                      ),
-                    if (global.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
-                        child: Text(
-                          '暂无全局会话',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                  ],
-                ),
-                Divider(height: 1, color: scheme.outlineVariant),
-                // ---- 项目 ----------------------------------------------
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
-                  child: Row(
-                    children: [
-                      Text(
-                        '项目',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        tooltip: '新建项目',
-                        iconSize: 18,
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.create_new_folder_outlined),
-                        onPressed: onNewProject,
-                      ),
-                    ],
-                  ),
-                ),
-                for (final project in projects)
-                  _ProjectGroup(
-                    project: project,
-                    sessions:
-                        visible.where((s) => s.projectId == project.id).toList(),
-                    selectedId: selectedId,
-                    runningIds: runningIds,
-                    onSelect: onSelect,
-                    onNewSession: () => onNewSession(project.id),
-                    onEdit: () => onEditProject?.call(project),
-                    onArchive: () =>
-                        context.read<AppState>().setProjectArchived(project.id, true),
-                    onDelete: () async {
-                      final state = context.read<AppState>();
-                      final ok = await confirmDeleteProject(
-                        context,
-                        '项目「${project.name.isEmpty ? project.id : project.name}」',
-                        state.totalSessionsOfProject(project.id),
-                      );
-                      if (ok && context.mounted) {
-                        await state.deleteProject(project.id);
-                      }
-                    },
-                  ),
-                if (projects.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                    child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
-                  ),
-              ],
-            ),
+            child: tab == _WorkspaceTab.session
+                ? _sessionList(context, theme)
+                : _noteList(context, theme),
           ),
           Divider(height: 1, color: scheme.outlineVariant),
           _bottomRow(context, theme),
@@ -1231,8 +1187,141 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  /// 品牌行：徽标 + 应用名 + 新建会话。
+
+  /// 会话 Tab 的列表区（标签筛选 + 全局会话 + 项目）。
+  Widget _sessionList(BuildContext context, ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final visible = sessions.where(_matchesFilter).toList();
+    final global = visible.where((s) => s.projectId.isEmpty).toList();
+    final allTags = <String>{
+      for (final s in sessions) ...s.tags.where((t) => t.trim().isNotEmpty),
+    }.toList()
+      ..sort();
+    return ListView(
+                // Keep the trailing rows clear of the floating「新建会话」button.
+                padding: EdgeInsets.only(bottom: bottomInset),
+                children: [
+                  // ---- 标签筛选 ------------------------------------------
+                  if (allTags.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text('#', style: theme.textTheme.labelSmall),
+                          for (final tag in allTags)
+                            FilterChip(
+                              label: Text(tag, style: theme.textTheme.labelSmall),
+                              selected: tagFilter.contains(tag),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onSelected: (_) => onTagToggle(tag),
+                            ),
+                        ],
+                      ),
+                    ),
+                  // ---- 全局会话 ------------------------------------------
+                  ExpansionTile(
+                    initiallyExpanded: globalSessionsExpanded,
+                    onExpansionChanged: onGlobalExpandedChanged,
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                    childrenPadding: const EdgeInsets.only(left: 4),
+                    leading: const Icon(Icons.public_outlined, size: 20),
+                    title: const Text('全局会话'),
+                    children: [
+                      for (final session in global)
+                        _SessionTile(
+                          session: session,
+                          selected: session.id == selectedId,
+                          running: runningIds.contains(session.id),
+                          indent: 12,
+                          leading: const Icon(Icons.chat_bubble_outline, size: 20),
+                          onTap: () => onSelect(session.id),
+                        ),
+                      if (global.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
+                          child: Text(
+                            '暂无全局会话',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                    ],
+                  ),
+                  Divider(height: 1, color: scheme.outlineVariant),
+                  // ---- 项目 ----------------------------------------------
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+                    child: Row(
+                      children: [
+                        Text(
+                          '项目',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: '新建项目',
+                          iconSize: 18,
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.create_new_folder_outlined),
+                          onPressed: onNewProject,
+                        ),
+                      ],
+                    ),
+                  ),
+                  for (final project in projects)
+                    _ProjectGroup(
+                      project: project,
+                      sessions:
+                          visible.where((s) => s.projectId == project.id).toList(),
+                      selectedId: selectedId,
+                      runningIds: runningIds,
+                      onSelect: onSelect,
+                      onNewSession: () => onNewSession(project.id),
+                      onEdit: () => onEditProject?.call(project),
+                      onArchive: () =>
+                          context.read<AppState>().setProjectArchived(project.id, true),
+                      onDelete: () async {
+                        final state = context.read<AppState>();
+                        final ok = await confirmDeleteProject(
+                          context,
+                          '项目「${project.name.isEmpty ? project.id : project.name}」',
+                          state.totalSessionsOfProject(project.id),
+                        );
+                        if (ok && context.mounted) {
+                          await state.deleteProject(project.id);
+                        }
+                      },
+                    ),
+                  if (projects.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
+                    ),
+      ],
+    );
+  }
+
+  /// 笔记 Tab 的列表区（搜索 / 置顶 / 最近 / 标签 / 归档）。
+  Widget _noteList(BuildContext context, ThemeData theme) {
+    return NoteList(
+      notes: notes,
+      archivedNotes: archivedNotes,
+      selectedId: selectedNoteId,
+      onSelect: onSelectNote,
+    );
+  }
+  /// 品牌行：徽标 + 应用名 + 刷新 / 新建 / 回到首页。
+  ///
+  /// 「刷新」按钮在两个 Tab 之间**复用同一个 widget**，只换 tooltip 与行为；
+  /// 「＋ 新建」在会话 Tab 新建会话、在笔记 Tab 新建笔记。
   Widget _brandRow(BuildContext context, ThemeData theme) {
+    final isNote = tab == _WorkspaceTab.note;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
       child: Row(
@@ -1247,7 +1336,7 @@ class _Sidebar extends StatelessWidget {
           ),
           const Spacer(),
           IconButton(
-            tooltip: '刷新会话列表',
+            tooltip: isNote ? '刷新笔记列表' : '刷新会话列表',
             iconSize: 20,
             visualDensity: VisualDensity.compact,
             icon: refreshingSessions
@@ -1257,7 +1346,25 @@ class _Sidebar extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
-            onPressed: refreshingSessions ? null : onRefreshSessions,
+            onPressed: refreshingSessions
+                ? null
+                : (isNote ? (onRefreshNotes ?? onRefreshSessions) : onRefreshSessions),
+          ),
+          IconButton.filled(
+            tooltip: isNote ? '新建笔记' : '新建会话',
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              // 图标颜色必须显式给 onPrimary：应用的 iconTheme 把所有 IconButton
+              // 的前景色定成 onSurfaceVariant，而 filled 按钮的底色是 primary
+              // —— 深灰图标压在蓝底上几乎看不见（只剩一个蓝圆块）。
+              foregroundColor: theme.colorScheme.onPrimary,
+              backgroundColor: theme.colorScheme.primary,
+              minimumSize: const Size(30, 30),
+              padding: EdgeInsets.zero,
+            ),
+            icon: const Icon(Icons.add),
+            onPressed: isNote ? onNewNote : () => onNewSession(null),
           ),
           IconButton(
             tooltip: '回到首页',
@@ -1269,20 +1376,82 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  /// 快捷入口列表（新建会话；其余入口在顶部工具条与「更多」菜单里）。
-  Widget _navList(BuildContext context, ThemeData theme) {
+  /// 工作区 Tab（会话 | 笔记）：顶行下方、列表上方。
+  Widget _tabRow(BuildContext context, ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: Column(
-        children: [
-          for (final entry in _navEntries)
-            _NavRow(
-              icon: entry.icon,
-              label: entry.label,
-              shortcut: entry.shortcut,
-              onTap: () => onNavigate?.call(entry.id),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            _tabButton(
+              context,
+              theme,
+              _WorkspaceTab.session,
+              '会话',
+              Icons.chat_bubble_outline,
+              Icons.chat_bubble,
             ),
-        ],
+            _tabButton(
+              context,
+              theme,
+              _WorkspaceTab.note,
+              '笔记',
+              Icons.description_outlined,
+              Icons.description,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabButton(
+    BuildContext context,
+    ThemeData theme,
+    _WorkspaceTab value,
+    String label,
+    IconData icon,
+    IconData selectedIcon,
+  ) {
+    final selected = tab == value;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: () => onTabChanged(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? theme.colorScheme.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                selected ? selectedIcon : icon,
+                size: 16,
+                color: selected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w600 : null,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1305,57 +1474,6 @@ class _Sidebar extends StatelessWidget {
           const Spacer(),
           ...toolbarActions,
         ],
-      ),
-    );
-  }
-}
-
-/// 侧边栏里的一行快捷入口：图标 + 名称（+ 快捷键提示）。
-class _NavRow extends StatelessWidget {
-  const _NavRow({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.shortcut,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final String? shortcut;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          hoverColor: scheme.onSurface.withValues(alpha: 0.05),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 10),
-                Text(label, style: theme.textTheme.bodyMedium),
-                const Spacer(),
-                if (shortcut != null)
-                  Text(
-                    shortcut!,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

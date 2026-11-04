@@ -13,6 +13,9 @@ const kWindowSizes = <String>['1280x720', '1280x850', '1280x960'];
 /// Default window size (matches the native runner default).
 const kDefaultWindowSize = '1280x720';
 
+/// Default character budget for one note when building an AI prompt.
+const int kDefaultNotesContextCharLimit = 12000;
+
 /// Parses a `宽x高` window-size string; returns `null` when malformed.
 ({int width, int height})? parseWindowSize(String value) {
   final parts = value.split('x');
@@ -89,6 +92,7 @@ class AppConfig {
     List<String>? pipIndexUrls,
     this.pythonTimeoutSeconds = 300,
     this.defaultTemplateId = '',
+    this.notesContextCharLimit = kDefaultNotesContextCharLimit,
   })  : providers = providers ?? defaultProviders(),
         defaultParams = defaultParams ?? SessionParams(),
         defaultTools = defaultTools ?? <String>[],
@@ -177,6 +181,10 @@ class AppConfig {
   /// 默认会话模板 ID（首页未指定模板时按它建会话）；空 = 未配置。
   String defaultTemplateId;
 
+  /// AI 助手里单篇笔记的上下文字符上限；正文超过它就降级为「标题 + 大纲 +
+  /// 选区 + 命中段落」，并在界面上提示已裁剪。
+  int notesContextCharLimit;
+
   /// Enabled engines in configured order.
   List<SearchEngineConfig> get enabledSearchEngines =>
       searchEngines.where((e) => e.enabled).toList(growable: false);
@@ -233,6 +241,7 @@ class AppConfig {
         'pip_index_urls': pipIndexUrls,
         'python_timeout_seconds': pythonTimeoutSeconds,
         'default_template_id': defaultTemplateId,
+        'notes_context_char_limit': notesContextCharLimit,
       };
 
   factory AppConfig.fromJson(Object? value) {
@@ -284,6 +293,9 @@ class AppConfig {
       pythonTimeoutSeconds:
           (asInt(json['python_timeout_seconds']) ?? 300).clamp(30, 3600),
       defaultTemplateId: asString(json['default_template_id']) ?? '',
+      notesContextCharLimit: (asInt(json['notes_context_char_limit']) ??
+              kDefaultNotesContextCharLimit)
+          .clamp(1000, 200000),
     );
     if (config.currentProviderId.isEmpty && config.providers.isNotEmpty) {
       config.currentProviderId = config.providers.first.id;

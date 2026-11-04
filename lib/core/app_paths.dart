@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   config.json
 ///   sessions/                 default sandbox for session files (<uuid>.xml)
 ///   templates/                session templates
+///   notes/                    Markdown notes (<id>.md, front-matter + body)
 ///   scripts/                  webview page-extraction scripts (<id>.json)
 ///   logs/
 ///   sandboxs/                 per-session working dirs
@@ -143,6 +144,9 @@ class AppPaths {
   /// Base directory for projects (`projects/{project_id}.xml` + dirs).
   String get projectsDir => p.join(root, 'projects');
 
+  /// Base directory for Markdown notes (`notes/{id}.md`).
+  String get notesDir => p.join(root, 'notes');
+
   /// Runtime area for the bundled Python (packages, pip cache) — kept out of
   /// the app bundle so upgrades never drop user-installed libraries.
   String get runtimeDir => p.join(root, 'runtime');
@@ -163,6 +167,9 @@ class AppPaths {
   String sessionFile(String id) => p.join(sessionsDir, '$id.xml');
   String templateFile(String id) => p.join(templatesDir, '$id.xml');
   String projectFile(String id) => p.join(projectsDir, '$id.xml');
+
+  /// On-disk path of a Markdown note.
+  String noteFile(String id) => p.join(notesDir, '$id.md');
 
   /// On-disk path of a page-extraction script.
   String scriptFile(String id) => p.join(scriptsDir, '$id.json');
@@ -193,6 +200,7 @@ class AppPaths {
       logsDir,
       sandboxesDir,
       projectsDir,
+      notesDir,
     ]) {
       final d = Directory(dir);
       if (!await d.exists()) {

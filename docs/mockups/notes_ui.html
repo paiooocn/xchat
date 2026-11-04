@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XChat · 笔记（带 AI 助手） UI 设计图</title>
+<style>
+  /* ============================================================
+     设计令牌 —— 与 lib/ui/theme/app_theme.dart 保持一致
+     ============================================================ */
+  :root{
+    --seed:#5B6CFF;
+    --primary:#5B6CFF;
+    --on-primary:#FFFFFF;
+    --primary-soft:rgba(91,108,255,.10);
+    --primary-soft-2:rgba(91,108,255,.16);
+
+    --surface:#FFFFFF;
+    --surface-lowest:#FFFFFF;
+    --surface-low:#F7F8FA;
+    --surface-container:#F1F2F6;
+    --surface-high:#EAEBF0;
+    --surface-highest:#E2E4EA;
+    --on-surface:#17181D;
+    --on-surface-variant:#5A5F6D;
+    --outline:#C9CCD6;
+    --outline-variant:#E4E6EC;
+
+    --code-bg:#eff1f3;
+    --code-fg:#24292F;
+    --del-bg:#FDEBEC; --del-fg:#8A1C22; --del-bar:#D64A52;
+    --add-bg:#E9F7EE; --add-fg:#135C2A; --add-bar:#2F9E58;
+
+    --r-s:8px; --r-m:12px; --r-l:16px; --r-xl:20px;
+    --sidebar:288px;
+
+    --font-sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:"JetBrains Mono","SFMono-Regular",Consolas,"Noto Sans SC",monospace;
+
+    --shadow-1:0 1px 2px rgba(16,18,27,.06),0 1px 3px rgba(16,18,27,.05);
+    --shadow-2:0 8px 28px rgba(16,18,27,.14);
+  }
+  html[data-theme="dark"]{
+    --primary:#8B97FF;
+    --on-primary:#0E0F13;
+    --primary-soft:rgba(139,151,255,.16);
+    --primary-soft-2:rgba(139,151,255,.24);
+
+    --surface:#121317;
+    --surface-lowest:#0E0F13;
+    --surface-low:#17181D;
+    --surface-container:#1D1F25;
+    --surface-high:#24262E;
+    --surface-highest:#2C2F38;
+    --on-surface:#E9EAEE;
+    --on-surface-variant:#9EA2AE;
+    --outline:#3A3D47;
+    --outline-variant:#262830;
+
+    --code-bg:#3A3F4B;
+    --code-fg:#E6E6E6;
+    --del-bg:#3A1F22; --del-fg:#FFB4B4; --del-bar:#E06A72;
+    --add-bg:#16301F; --add-fg:#9BE3B4; --add-bar:#3FBF6A;
+
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 10px 32px rgba(0,0,0,.55);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;background:var(--surface-low);color:var(--on-surface);
+    font-family:var(--font-sans);font-size:14px;line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1560px;margin:0 auto;padding:28px 28px 80px;}
+
+  /* ---------- 文档头 ---------- */
+  .doc-head{display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap;margin-bottom:8px;}
+  .doc-head h1{margin:0 0 6px;font-size:24px;font-weight:600;letter-spacing:-.2px;}
+  .doc-head p{margin:0;color:var(--on-surface-variant);max-width:760px;font-size:13px;}
+  .doc-actions{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .btn{
+    border:1px solid var(--outline-variant);background:var(--surface);
+    color:var(--on-surface);border-radius:var(--r-m);padding:7px 14px;
+    font-family:var(--font-sans);font-size:13px;cursor:pointer;
+  }
+  .btn:hover{background:var(--surface-low);}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary);}
+  .btn.primary:hover{filter:brightness(1.05);}
+
+  .swatches{display:flex;gap:8px;margin:18px 0 6px;flex-wrap:wrap;}
+  .sw{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--on-surface-variant);
+      background:var(--surface);border:1px solid var(--outline-variant);border-radius:999px;padding:4px 10px;}
+  .sw i{width:12px;height:12px;border-radius:4px;display:block;}
+
+
+  /* ---------- 侧栏 Tab（会话 | 笔记） ---------- */
+  .side-tabs{
+    display:flex;gap:3px;margin:0 12px 10px;padding:3px;
+    background:var(--surface-container);border-radius:var(--r-m);
+  }
+  .side-tabs span{
+    flex:1;text-align:center;padding:6px 0;border-radius:9px;font-size:12.5px;
+    color:var(--on-surface-variant);cursor:default;display:flex;align-items:center;
+    justify-content:center;gap:6px;
+  }
+  .side-tabs span svg{width:14px;height:14px;fill:none;stroke:currentColor;
+    stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;}
+  .side-tabs span.on{background:var(--surface);color:var(--on-surface);font-weight:600;box-shadow:var(--shadow-1);}
+  .side-tabs span.on svg{color:var(--primary);}
+
+  /* ---------- 顶行图标按钮 ---------- */
+  .icon-btn.primary{
+    background:var(--primary);color:var(--on-primary);
+  }
+  .icon-btn.primary:hover{filter:brightness(1.06);}
+
+  /* ---------- 会话主区 ---------- */
+  .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface);}
+  .chat-head{
+    height:56px;flex:0 0 56px;display:flex;align-items:center;gap:10px;padding:0 16px;
+    border-bottom:1px solid var(--outline-variant);
+  }
+  .chat-head h3{margin:0;font-size:14.5px;font-weight:600;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chat-scroll{flex:1;overflow:auto;padding:18px 22px;display:flex;flex-direction:column;gap:14px;}
+  .chat-turn{display:flex;flex-direction:column;gap:8px;max-width:760px;}
+  .chat-turn.me{align-self:flex-end;align-items:flex-end;}
+  .chat-turn .who{font-size:11px;color:var(--on-surface-variant);}
+  .chat-user{
+    background:var(--primary-soft);color:var(--on-surface);border-radius:var(--r-l);
+    border-bottom-right-radius:6px;padding:9px 12px;font-size:13px;max-width:560px;
+  }
+  .chat-bot{
+    background:var(--surface-low);border:1px solid var(--outline-variant);
+    border-radius:var(--r-l);border-bottom-left-radius:6px;padding:10px 13px;font-size:13px;
+  }
+  .think{
+    font-size:11.5px;color:var(--on-surface-variant);display:flex;align-items:center;gap:6px;
+    border-left:2px solid var(--outline-variant);padding-left:9px;
+  }
+  .toolblk{
+    font-family:var(--font-mono);font-size:11.5px;color:var(--on-surface-variant);
+    background:var(--surface-container);border-radius:var(--r-s);padding:7px 10px;
+  }
+
+  /* ---------- 输入区 ---------- */
+  .composer{
+    border-top:1px solid var(--outline-variant);padding:10px 14px 12px;background:var(--surface);
+  }
+  .composer .box{
+    border:1px solid var(--outline);border-radius:var(--r-m);padding:9px 11px;
+    color:var(--on-surface-variant);font-size:13px;background:var(--surface-lowest);
+  }
+  .composer .row{
+    display:flex;align-items:center;gap:6px;margin-top:9px;
+  }
+  .composer .row .sp{flex:1;}
+  .send-btn{
+    width:30px;height:30px;border-radius:9px;background:var(--primary);color:var(--on-primary);
+    display:grid;place-items:center;
+  }
+  .send-btn svg{width:13px;height:13px;fill:currentColor;}
+
+  /* ---------- 画板 ---------- */
+  .board{margin-top:34px;}
+  .board-title{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;}
+  .board-title h2{margin:0;font-size:16px;font-weight:600;}
+  .board-title span{font-size:12px;color:var(--on-surface-variant);}
+  .board-title code{
+    font-family:var(--font-mono);font-size:11px;background:var(--surface-container);
+    border-radius:6px;padding:2px 7px;color:var(--on-surface-variant);
+  }
+  .frame{
+    background:var(--surface);border:1px solid var(--outline-variant);
+    border-radius:var(--r-l);overflow:hidden;box-shadow:var(--shadow-1);
+  }
+
+  /* ============================================================
+     应用外壳（复刻 HomePage 侧栏）
+     ============================================================ */
+  .app{display:flex;min-height:600px;}
+  .side{
+    width:var(--sidebar);flex:0 0 var(--sidebar);background:var(--surface-low);
+    border-right:1px solid var(--outline-variant);display:flex;flex-direction:column;
+  }
+  .side-brand{display:flex;align-items:center;gap:9px;padding:12px 10px 10px 16px;font-weight:600;font-size:14px;}
+  .side-brand .sp{flex:1;}
+  .side-brand .icon-btn{width:30px;height:30px;}
+  .logo{
+    width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+    background:var(--primary);color:var(--on-primary);font-weight:700;font-size:13px;
+  }
+  .side-new{
+    margin:4px 12px 10px;padding:8px 12px;border-radius:var(--r-m);
+    border:1px dashed var(--outline);color:var(--on-surface-variant);
+    font-size:12.5px;display:flex;align-items:center;gap:8px;
+  }
+  .side-scroll{flex:1;overflow:auto;padding:0 8px 8px;}
+  .grp{margin-bottom:12px;}
+  .grp-h{
+    display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:11.5px;
+    color:var(--on-surface-variant);font-weight:600;letter-spacing:.3px;
+  }
+  .grp-h .chev{font-size:9px;opacity:.7;}
+  .tile{
+    display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--r-m);
+    color:var(--on-surface);font-size:13px;cursor:default;
+  }
+  .tile:hover{background:var(--surface-container);}
+  .tile.active{background:var(--primary-soft);color:var(--primary);font-weight:500;}
+  .tile .dot{width:6px;height:6px;border-radius:50%;background:var(--outline);flex:0 0 6px;}
+  .tile .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tile .cnt{font-size:11px;color:var(--on-surface-variant);background:var(--surface-container);
+    border-radius:999px;padding:1px 7px;}
+  .side-tools{
+    border-top:1px solid var(--outline-variant);padding:8px 12px;
+    display:flex;align-items:center;gap:6px;
+  }
+  .icon-btn{
+    width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    color:var(--on-surface-variant);border:1px solid transparent;background:transparent;
+  }
+  .icon-btn:hover{background:var(--surface-container);}
+  .icon-btn.on{background:var(--primary-soft);color:var(--primary);}
+  .side-tools .sp{flex:1;}
+
+  /* ============================================================
+     笔记页
+     ============================================================ */
+  .notes{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface);}
+  .notes-appbar{
+    height:56px;flex:0 0 56px;display:flex;align-items:center;gap:12px;
+    padding:0 16px;border-bottom:1px solid var(--outline-variant);background:var(--surface);
+  }
+  .notes-appbar h3{margin:0;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .search{
+    flex:1;max-width:280px;display:flex;align-items:center;gap:8px;
+    background:var(--surface-low);border:1px solid var(--outline-variant);
+    border-radius:var(--r-m);padding:7px 11px;color:var(--on-surface-variant);font-size:13px;
+  }
+  .seg{display:flex;background:var(--surface-container);border-radius:var(--r-m);padding:3px;gap:2px;}
+  .seg span{
+    padding:5px 12px;border-radius:9px;font-size:12.5px;color:var(--on-surface-variant);cursor:default;
+  }
+  .seg span.on{background:var(--surface);color:var(--on-surface);font-weight:500;box-shadow:var(--shadow-1);}
+  .notes-body{flex:1;display:flex;min-height:0;}
+
+  /* ---------- 笔记列表 ---------- */
+  .nlist{
+    width:240px;flex:0 0 240px;border-right:1px solid var(--outline-variant);
+    background:var(--surface-low);display:flex;flex-direction:column;min-height:0;
+  }
+  .nlist-head{padding:10px 12px;border-bottom:1px solid var(--outline-variant);}
+  /* 笔记列表托管在主侧栏内时（Tab 切换），不再自带列宽与分隔线 */
+  .side-notes{width:auto;flex:1;border-right:0;background:transparent;}
+  .nlist-scroll{flex:1;overflow:auto;padding:8px 8px 16px;}
+  .nsec{margin-bottom:10px;}
+  .nsec-h{
+    display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    color:var(--on-surface-variant);padding:5px 8px;
+  }
+  .nsec-h .sp{flex:1;}
+  .nitem{
+    padding:8px 9px;border-radius:var(--r-m);margin-bottom:2px;cursor:default;
+    border:1px solid transparent;
+  }
+  .nitem:hover{background:var(--surface-container);}
+  .nitem.active{background:var(--primary-soft);border-color:rgba(91,108,255,.22);}
+  .nitem .nt{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .nitem.active .nt{color:var(--primary);}
+  .nitem .np{
+    font-size:11.5px;color:var(--on-surface-variant);margin-top:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .nitem .nmeta{display:flex;align-items:center;gap:6px;margin-top:5px;}
+  .chip{
+    font-size:10.5px;padding:1px 7px;border-radius:999px;
+    background:var(--surface-container);color:var(--on-surface-variant);
+    border:1px solid var(--outline-variant);white-space:nowrap;
+  }
+  .chip.pri{background:var(--primary-soft-2);color:var(--primary);border-color:transparent;}
+  .nitem .time{margin-left:auto;font-size:10.5px;color:var(--on-surface-variant);}
+
+  /* ---------- 编辑区 ---------- */
+  .editor{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .ed-toolbar{
+    height:40px;flex:0 0 40px;display:flex;align-items:center;gap:3px;padding:0 12px;
+    border-bottom:1px solid var(--outline-variant);background:var(--surface);overflow:auto;
+  }
+  .tb{
+    min-width:28px;height:28px;padding:0 7px;border-radius:8px;display:grid;place-items:center;
+    color:var(--on-surface-variant);font-size:12px;font-family:var(--font-mono);
+  }
+  .tb svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.3;
+       stroke-linecap:round;stroke-linejoin:round;}
+  .tb:hover{background:var(--surface-container);color:var(--on-surface);}
+  .tbsep{width:1px;height:16px;background:var(--outline-variant);border-radius:1px;
+         margin:0 8px;flex:0 0 1px;}
+  .ico{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;
+       stroke-linecap:round;stroke-linejoin:round;display:block;}
+  .search svg{width:14px;height:14px;flex:0 0 14px;}
+  /* 上下分屏：上区=预览，下区=编辑；下区高度由 --ed-h 控制（40% / 20% / 0%） */
+  .ed-prev{flex:1 1 auto;min-height:0;overflow:auto;padding:18px 22px;background:var(--surface);}
+  .ed-splitter{
+    height:7px;flex:0 0 7px;background:var(--surface-low);cursor:row-resize;position:relative;
+    border-top:1px solid var(--outline-variant);border-bottom:1px solid var(--outline-variant);
+  }
+  .ed-splitter::after{
+    content:"";position:absolute;left:50%;top:2px;width:38px;height:3px;margin-left:-19px;
+    border-radius:2px;background:var(--outline);
+  }
+  .ed-splitter:hover::after{background:var(--primary);}
+  .ed-src{
+    flex:0 0 var(--ed-h,40%);min-height:0;display:flex;flex-direction:column;
+    background:var(--surface-lowest);overflow:hidden;
+  }
+  .editor{--ed-h:40%;}
+  .editor.h20{--ed-h:20%;}
+  .editor.h0{--ed-h:0%;}
+  .editor.h0 .ed-src,.editor.h0 .ed-splitter{display:none;}
+  .pane{flex:1;min-width:0;overflow:auto;padding:18px 22px;}
+  .pane.src{
+    background:var(--surface-lowest);padding:14px 16px;
+    font-family:var(--font-mono);font-size:12.5px;line-height:1.75;white-space:pre-wrap;
+  }
+  .pane.src .ln{color:var(--outline);user-select:none;display:inline-block;width:26px;}
+  .pane.src .k{color:var(--primary);font-weight:600;}
+  .pane.src .em{color:#B4405A;}
+  .pane.src .st{color:#2F9E58;}
+  .pane.prev{background:var(--surface);}
+
+  /* 预览里的 Markdown 元素 */
+  .md h1{font-size:22px;margin:0 0 10px;font-weight:600;}
+  .md h2{font-size:17px;margin:20px 0 8px;font-weight:600;}
+  .md h3{font-size:14.5px;margin:16px 0 6px;font-weight:600;}
+  .md p{margin:8px 0;}
+  .md ul{margin:8px 0;padding-left:22px;}
+  .md li{margin:3px 0;}
+  .md code{font-family:var(--font-mono);font-size:12px;background:var(--code-bg);color:var(--code-fg);
+    padding:1px 5px;border-radius:5px;}
+  .md pre{background:var(--code-bg);border-radius:var(--r-s);padding:12px 14px;overflow:auto;margin:10px 0;}
+  .md pre code{background:none;padding:0;color:var(--code-fg);}
+  .md blockquote{
+    margin:10px 0;padding:2px 12px;border-left:3px solid var(--outline);
+    color:var(--on-surface-variant);font-style:italic;
+  }
+  .md table{border-collapse:collapse;margin:10px 0;font-size:12.5px;width:100%;}
+  .md th,.md td{border:1px solid var(--outline-variant);padding:6px 10px;text-align:left;}
+  .md th{background:var(--surface-container);font-weight:600;}
+  .md .task{list-style:none;margin-left:-18px;}
+  .md .task input{margin-right:6px;accent-color:var(--primary);}
+  .md .math{font-family:var(--font-mono);background:var(--primary-soft);color:var(--primary);
+    padding:1px 6px;border-radius:5px;font-size:12px;}
+  .copy-code{float:right;font-size:10.5px;color:var(--on-surface-variant);
+    background:var(--surface);border:1px solid var(--outline-variant);border-radius:6px;padding:1px 6px;}
+
+  .ed-status{
+    height:30px;flex:0 0 30px;border-top:1px solid var(--outline-variant);
+    display:flex;align-items:center;gap:12px;padding:0 14px;
+    font-size:11.5px;color:var(--on-surface-variant);background:var(--surface);
+  }
+  .ed-status .sp{flex:1;}
+  .ok{color:#2F9E58;} html[data-theme="dark"] .ok{color:#6FDD97;}
+
+  /* ---------- AI 侧栏 ---------- */
+  .ai{
+    width:320px;flex:0 0 320px;border-left:1px solid var(--outline-variant);
+    display:flex;flex-direction:column;background:var(--surface-low);min-height:0;
+  }
+  /* 收起态：折叠成 44px 竖条，只留图标与角标 */
+  .ai.collapsed{width:44px;flex:0 0 44px;align-items:center;padding-top:10px;gap:10px;}
+  .ai.collapsed .ai-head,.ai.collapsed .ai-scroll,.ai.collapsed .ai-input{display:none;}
+  .ai-rail{display:none;flex-direction:column;align-items:center;gap:10px;}
+  .ai.collapsed .ai-rail{display:flex;}
+  .ai-rail .rail-btn{
+    width:32px;height:32px;border-radius:10px;display:grid;place-items:center;
+    background:var(--primary-soft);color:var(--primary);position:relative;
+  }
+  .ai-rail .rail-btn .dot{
+    position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;
+    background:var(--primary);border:2px solid var(--surface-low);
+  }
+  .ai-rail .rail-txt{
+    writing-mode:vertical-rl;text-orientation:upright;font-size:10px;
+    color:var(--on-surface-variant);letter-spacing:1px;white-space:nowrap;
+  }
+  .ai-head{padding:10px 12px;border-bottom:1px solid var(--outline-variant);}
+  .ai-tabs{display:flex;gap:4px;margin-bottom:10px;}
+  .ai-tabs span{
+    flex:1;text-align:center;padding:6px 0;font-size:12.5px;border-radius:var(--r-m);
+    color:var(--on-surface-variant);background:var(--surface-container);cursor:default;
+  }
+  .ai-tabs span.on{background:var(--primary-soft);color:var(--primary);font-weight:600;}
+  .ai-model{
+    display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--on-surface-variant);
+    white-space:nowrap;
+  }
+  .ai-model > span:first-child{flex:0 0 auto;}
+  .ai-model select{
+    font-family:var(--font-sans);font-size:11.5px;color:var(--on-surface);
+    background:var(--surface);border:1px solid var(--outline-variant);
+    border-radius:8px;padding:3px 6px;flex:1 1 auto;min-width:0;
+    max-width:190px;text-overflow:ellipsis;
+  }
+  .ai-scroll{flex:1;overflow:auto;padding:12px;}
+  .bubble{
+    max-width:88%;padding:9px 12px;border-radius:var(--r-l);font-size:12.5px;
+    margin-bottom:10px;line-height:1.6;
+  }
+  .bubble.user{
+    margin-left:auto;background:var(--primary);color:var(--on-primary);border-bottom-right-radius:6px;
+  }
+  .bubble.bot{
+    background:var(--surface);border:1px solid var(--outline-variant);
+    border-bottom-left-radius:6px;
+  }
+  .bubble.bot .md p{margin:4px 0;}
+  .bubble .act{
+    display:flex;gap:6px;margin-top:9px;padding-top:8px;border-top:1px dashed var(--outline-variant);
+  }
+  .bubble .act span{
+    font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--outline-variant);
+    background:var(--surface-low);color:var(--on-surface-variant);cursor:default;
+  }
+  .bubble .act span.pri{background:var(--primary-soft);color:var(--primary);border-color:transparent;font-weight:600;}
+  .typing{display:inline-flex;gap:3px;align-items:center;}
+  .typing i{width:5px;height:5px;border-radius:50%;background:var(--on-surface-variant);opacity:.5;}
+  .ai-input{
+    border-top:1px solid var(--outline-variant);padding:10px 12px;background:var(--surface);
+  }
+  .ai-input .ctx{
+    display:flex;align-items:center;gap:6px;font-size:11px;color:var(--on-surface-variant);margin-bottom:7px;
+  }
+  .switch{width:26px;height:15px;border-radius:999px;background:var(--primary);position:relative;flex:0 0 26px;}
+  .switch::after{content:"";position:absolute;top:2px;left:13px;width:11px;height:11px;
+    border-radius:50%;background:#fff;}
+  .ai-box{
+    display:flex;align-items:flex-end;gap:8px;background:var(--surface-low);
+    border:1px solid var(--outline-variant);border-radius:var(--r-m);padding:8px 10px;
+    font-size:12.5px;color:var(--on-surface-variant);
+  }
+  .ai-box .send{
+    width:26px;height:26px;border-radius:8px;background:var(--primary);color:var(--on-primary);
+    display:grid;place-items:center;font-size:12px;flex:0 0 26px;
+  }
+
+  /* ============================================================
+     弹层：AI diff 预览
+     ============================================================ */
+  .overlay{
+    position:relative;background:rgba(10,12,18,.45);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .dialog{
+    width:720px;max-width:100%;background:var(--surface);border-radius:var(--r-l);
+    box-shadow:var(--shadow-2);border:1px solid var(--outline-variant);overflow:hidden;
+  }
+  .dlg-head{
+    display:flex;align-items:center;gap:10px;padding:14px 18px;
+    border-bottom:1px solid var(--outline-variant);
+  }
+  .dlg-head h4{margin:0;font-size:14.5px;font-weight:600;}
+  .dlg-head .sp{flex:1;}
+  .dlg-head .meta{font-size:11px;color:var(--on-surface-variant);}
+  .dlg-body{padding:14px 18px;max-height:340px;overflow:auto;background:var(--surface-low);}
+  .diff-line{
+    font-family:var(--font-mono);font-size:12px;line-height:1.75;padding:0 10px;
+    display:flex;gap:8px;border-left:3px solid transparent;white-space:pre-wrap;
+  }
+  .diff-line .sg{width:10px;flex:0 0 10px;color:var(--on-surface-variant);opacity:.8;}
+  .diff-line.del{background:var(--del-bg);color:var(--del-fg);border-left-color:var(--del-bar);}
+  .diff-line.add{background:var(--add-bg);color:var(--add-fg);border-left-color:var(--add-bar);}
+  .diff-line.ctx{color:var(--on-surface-variant);}
+  .diff-line.gap{color:var(--on-surface-variant);opacity:.7;font-style:italic;background:var(--surface-container);}
+  .dlg-foot{
+    display:flex;align-items:center;gap:10px;padding:12px 18px;
+    border-top:1px solid var(--outline-variant);
+  }
+  .dlg-foot .sp{flex:1;}
+
+  /* ============================================================
+     移动端
+     ============================================================ */
+  .mobile-wrap{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;}
+  .phone{
+    width:330px;height:660px;border:1px solid var(--outline-variant);border-radius:26px;
+    background:var(--surface);overflow:hidden;display:flex;flex-direction:column;
+    box-shadow:var(--shadow-2);position:relative;
+  }
+  .phone-bar{
+    height:30px;flex:0 0 30px;background:var(--surface-low);display:flex;align-items:center;
+    justify-content:center;font-size:10px;color:var(--on-surface-variant);
+  }
+  .phone-app{
+    height:48px;flex:0 0 48px;display:flex;align-items:center;gap:10px;padding:0 14px;
+    border-bottom:1px solid var(--outline-variant);
+  }
+  .phone-app h4{margin:0;font-size:14.5px;font-weight:600;flex:1;
+             display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;}
+  .phone-body{flex:1;min-height:0;display:flex;flex-direction:column;}
+  .phone-app .seg{padding:2px;}
+  .phone-app .seg span{padding:3px 7px;font-size:11px;border-radius:7px;}
+  .phone-tabs{
+    display:flex;border-top:1px solid var(--outline-variant);background:var(--surface);
+  }
+  .phone-tabs span{
+    flex:1;text-align:center;padding:10px 0;font-size:11.5px;color:var(--on-surface-variant);
+    border-top:2px solid transparent;
+  }
+  .phone-tabs span.on{color:var(--primary);border-top-color:var(--primary);font-weight:600;}
+  .fab{
+    position:absolute;right:16px;bottom:62px;width:46px;height:46px;border-radius:16px;
+    background:var(--primary);color:var(--on-primary);display:grid;place-items:center;font-size:22px;
+    box-shadow:var(--shadow-2);
+  }
+  .sheet{
+    position:absolute;left:0;right:0;bottom:0;height:74%;background:var(--surface);
+    border-radius:20px 20px 0 0;box-shadow:var(--shadow-2);display:flex;flex-direction:column;
+    border-top:1px solid var(--outline-variant);
+  }
+  .sheet-h{padding:8px 0 10px;display:grid;place-items:center;}
+  .sheet-h i{width:38px;height:4px;border-radius:999px;background:var(--outline);display:block;}
+
+  /* ---------- 标注 ---------- */
+  .anno{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  .anno-item{
+    flex:1;min-width:250px;background:var(--surface);border:1px solid var(--outline-variant);
+    border-radius:var(--r-m);padding:12px 14px;
+  }
+  .anno-item h5{margin:0 0 5px;font-size:12.5px;font-weight:600;display:flex;gap:7px;align-items:center;}
+  .anno-item h5 b{
+    background:var(--primary);color:var(--on-primary);border-radius:6px;font-size:10.5px;
+    width:18px;height:18px;display:grid;place-items:center;font-weight:700;
+  }
+  .anno-item p{margin:0;font-size:12px;color:var(--on-surface-variant);line-height:1.6;}
+  .legend{
+    display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--on-surface-variant);
+    margin-top:12px;
+  }
+  .legend span{display:flex;align-items:center;gap:6px;}
+  .legend i{width:12px;height:12px;border-radius:4px;display:block;border:1px solid var(--outline-variant);}
+  hr.sep{border:0;border-top:1px solid var(--outline-variant);margin:26px 0;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-head">
+    <div>
+      <h1>XChat · 笔记（带 AI 助手）</h1>
+      <p>UI 设计图 —— <strong>会话栏与笔记栏合并</strong>（侧栏一行「会话 | 笔记」Tab 切换，
+         顶行「＋」新建按钮）+ 笔记主区<strong>上预览·下编辑</strong> + 下区高度三档 +
+         AI 边栏收起态 + AI 修改 diff 弹层 + 移动端形态。
+         笔记不新增路由，是 <code>HomePage</code> 左栏的一个 Tab；笔记主区只有一套布局
+         （不再做「编辑/分屏/预览」模式切换），只切换两个状态量：
+         下区高度（40% / 20% / 0%）与 AI 边栏（展开 / 收起）。
+         配色、圆角、字号沿用 <code>lib/ui/theme/app_theme.dart</code>；预览区沿用
+         <code>markdown_view.dart</code> 的渲染结果（代码高亮 / 公式 / 表格 / 引用 / 任务列表）。</p>
+    </div>
+    <div class="doc-actions">
+      <button class="btn" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">切换深色 / 浅色</button>
+      <button class="btn primary" onclick="window.print()">导出 PDF</button>
+    </div>
+  </div>
+
+  <div class="swatches">
+    <span class="sw"><i style="background:#5B6CFF"></i>primary / seed #5B6CFF</span>
+    <span class="sw"><i style="background:#F7F8FA"></i>surface-low #F7F8FA</span>
+    <span class="sw"><i style="background:#F1F2F6"></i>surface-container</span>
+    <span class="sw"><i style="background:#E4E6EC"></i>outline-variant</span>
+    <span class="sw"><i style="background:#17181D"></i>on-surface</span>
+    <span class="sw"><i style="background:#5A5F6D"></i>on-surface-variant</span>
+    <span class="sw"><i style="background:#eff1f3"></i>code bg</span>
+    <span class="sw"><i style="background:#FDEBEC;border-color:#D64A52"></i>diff 删除</span>
+    <span class="sw"><i style="background:#E9F7EE;border-color:#2F9E58"></i>diff 新增</span>
+  </div>
+
+    <!-- ==========================================================
+       画板 1：合并工作区（会话 Tab / 笔记 Tab）
+       ========================================================== -->
+  <div class="board">
+    <div class="board-title">
+      <h2>① 合并后的工作区 · 侧栏 Tab 切换</h2>
+      <code>HomePage</code>
+      <span>左栏只有一条：会话 Tab 显示会话树，笔记 Tab 显示笔记列表；主区随之切换</span>
+    </div>
+
+    <!-- ---------- 态 A：会话 Tab ---------- -->
+    <div style="display:flex;align-items:center;gap:8px;margin:6px 0 8px">
+      <span class="chip pri">态 A</span>
+      <span style="font-size:12px;color:var(--on-surface-variant)">会话 Tab 激活 · 左栏是会话树，主区是聊天</span>
+    </div>
+    <div class="frame">
+    <div class="app" style="min-height:600px">
+      <aside class="side">
+        <div class="side-brand"><span class="logo">X</span> XChat
+          <span class="sp"></span>
+          <div class="icon-btn" title="刷新会话列表"><svg class="ico" viewBox="0 0 16 16"><path d="M13.4 8a5.4 5.4 0 11-1.6-3.8"/><path d="M13.6 2.4v3.2h-3.2"/></svg></div>
+          <div class="icon-btn primary" title="新建会话"><svg class="ico" viewBox="0 0 16 16"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg></div>
+          <div class="icon-btn" title="回到首页"><svg class="ico" viewBox="0 0 16 16"><path d="M2.6 7.2L8 2.8l5.4 4.4V13a.6.6 0 01-.6.6H3.2a.6.6 0 01-.6-.6z"/></svg></div>
+        </div>
+        <div class="side-tabs">
+          <span class="on"><svg viewBox="0 0 16 16"><path d="M13.4 8a5.4 5.4 0 11-1.6-3.8"/><path d="M13.6 2.4v3.2h-3.2"/></svg>会话</span>
+          <span><svg viewBox="0 0 16 16"><path d="M3.5 2.5h9a1 1 0 011 1v9a1 1 0 01-1 1h-9a1 1 0 01-1-1v-9a1 1 0 011-1z"/><path d="M5.2 5.5h5.6M5.2 8h5.6M5.2 10.5h3.4"/></svg>笔记</span>
+        </div>
+        <div class="side-scroll">
+          <div class="grp">
+            <div class="grp-h"><span class="chev">▼</span> 项目</div>
+            <div class="tile"><span class="dot"></span><span class="t">项目 A</span></div>
+            <div class="tile"><span class="dot"></span><span class="t">项目 B</span></div>
+          </div>
+          <div class="grp">
+            <div class="grp-h"><span class="chev">▼</span> 全局会话</div>
+            <div class="tile active"><span class="dot"></span><span class="t">接口联调记录</span></div>
+            <div class="tile"><span class="dot"></span><span class="t">周报草稿</span></div>
+            <div class="tile"><span class="dot"></span><span class="t">竞品调研</span></div>
+            <div class="tile"><span class="dot"></span><span class="t">会议纪要整理</span></div>
+          </div>
+        </div>
+        <div class="side-tools">
+          <div class="icon-btn" title="工具审批"><svg class="ico" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3.2L13 5"/></svg></div>
+          <div class="icon-btn" title="模板"><svg class="ico" viewBox="0 0 16 16"><rect x="2" y="2.5" width="5" height="5" rx="1"/><rect x="9" y="2.5" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></div>
+          <div class="icon-btn" title="更多"><svg class="ico" viewBox="0 0 16 16"><circle cx="3.4" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.6" cy="8" r=".9" fill="currentColor" stroke="none"/></svg></div>
+          <div class="sp"></div>
+          <div class="icon-btn" title="主题"><svg class="ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.4"/><path d="M8 2.6a5.4 5.4 0 010 10.8z" fill="currentColor" stroke="none"/></svg></div>
+        </div>
+      </aside>
+
+      <section class="chat-main">
+        <div class="chat-head">
+          <h3>接口联调记录</h3>
+          <span class="chip">deepseek-chat</span>
+          <span class="chip">自动</span>
+          <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><circle cx="3.4" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.6" cy="8" r=".9" fill="currentColor" stroke="none"/></svg></span>
+        </div>
+        <div class="chat-scroll">
+          <div class="chat-turn me">
+            <div class="chat-user">帮我看下 <code>lib/llm/llm_factory.dart</code> 里 max_tokens 的优先级。</div>
+          </div>
+          <div class="chat-turn">
+            <div class="who">助手</div>
+            <div class="think">思考中… 已读取 2 个文件</div>
+            <div class="chat-bot">
+              <div class="md">
+                <p>优先级链是：<strong>会话显式 <code>max_tokens</code> &gt; 服务按档位算出的值 &gt; 服务固定值</strong>。</p>
+                <ul><li>会话参数在请求体里直接覆盖服务级上限</li>
+                <li>档位表只在会话设置了思考档位时生效</li></ul>
+              </div>
+            </div>
+            <div class="toolblk">read_file · lib/llm/llm_factory.dart</div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="box">Enter 发送，Ctrl+Enter 换行</div>
+          <div class="row">
+            <div class="icon-btn" title="附件"><svg class="ico" viewBox="0 0 16 16"><path d="M11.5 7.4l-4.2 4.2a2.4 2.4 0 01-3.4-3.4l4.6-4.6a1.6 1.6 0 012.3 2.3l-4.7 4.6a.8.8 0 01-1.1-1.1l4.2-4.2"/></svg></div>
+            <div class="icon-btn" title="模式"><svg class="ico" viewBox="0 0 16 16"><path d="M8 2.6l5.4 9.4H2.6z"/></svg></div>
+            <div class="icon-btn" title="联网搜索"><svg class="ico" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4L14 14"/></svg></div>
+            <span class="sp"></span>
+            <div class="send-btn"><svg viewBox="0 0 16 16"><path d="M3 2.4l11 5.6-11 5.6 2.2-5.6z"/></svg></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    </div>
+
+    <!-- ---------- 态 B：笔记 Tab ---------- -->
+    <div style="display:flex;align-items:center;gap:8px;margin:20px 0 8px">
+      <span class="chip pri">态 B</span>
+      <span style="font-size:12px;color:var(--on-surface-variant)">笔记 Tab 激活 · 左栏换成笔记列表，主区是笔记编辑区</span>
+    </div>
+    <div class="frame">
+    <div class="app" style="min-height:600px">
+      <aside class="side">
+        <div class="side-brand"><span class="logo">X</span> XChat
+          <span class="sp"></span>
+          <div class="icon-btn" title="刷新笔记列表"><svg class="ico" viewBox="0 0 16 16"><path d="M13.4 8a5.4 5.4 0 11-1.6-3.8"/><path d="M13.6 2.4v3.2h-3.2"/></svg></div>
+          <div class="icon-btn primary" title="新建笔记"><svg class="ico" viewBox="0 0 16 16"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg></div>
+          <div class="icon-btn" title="回到首页"><svg class="ico" viewBox="0 0 16 16"><path d="M2.6 7.2L8 2.8l5.4 4.4V13a.6.6 0 01-.6.6H3.2a.6.6 0 01-.6-.6z"/></svg></div>
+        </div>
+        <div class="side-tabs">
+          <span><svg viewBox="0 0 16 16"><path d="M13.4 8a5.4 5.4 0 11-1.6-3.8"/><path d="M13.6 2.4v3.2h-3.2"/></svg>会话</span>
+          <span class="on"><svg viewBox="0 0 16 16"><path d="M3.5 2.5h9a1 1 0 011 1v9a1 1 0 01-1 1h-9a1 1 0 01-1-1v-9a1 1 0 011-1z"/><path d="M5.2 5.5h5.6M5.2 8h5.6M5.2 10.5h3.4"/></svg>笔记</span>
+        </div>
+        <div class="side-scroll">
+          <div style="padding:0 8px 8px">
+            <div class="search" style="max-width:none;background:var(--surface)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4L14 14"/></svg> 搜索笔记…</div>
+          </div>
+          <div class="nsec">
+            <div class="nsec-h"><span class="chev">▼</span> 置顶<span class="sp"></span><span class="cnt">2</span></div>
+            <div class="nitem"><div class="nt">产品路线图 v3</div>
+              <div class="np">Q4 三个里程碑与验收口径…</div>
+              <div class="nmeta"><span class="chip">规划</span><span class="time">昨天</span></div></div>
+          </div>
+          <div class="nsec">
+            <div class="nsec-h"><span class="chev">▼</span> 最近</div>
+            <div class="nitem active"><div class="nt">会议纪要 · 2026-11-04</div>
+              <div class="np">就改期问题达成一致，负责人：王工…</div>
+              <div class="nmeta"><span class="chip">会议</span><span class="chip">项目A</span><span class="time">刚刚</span></div></div>
+            <div class="nitem"><div class="nt">技术选型对比：向量库</div>
+              <div class="np">Milvus / Qdrant / pgvector…</div>
+              <div class="nmeta"><span class="chip">调研</span><span class="time">2 小时前</span></div></div>
+            <div class="nitem"><div class="nt">周报 · 第 45 周</div>
+              <div class="np">本周进展 / 下周计划…</div>
+              <div class="nmeta"><span class="chip">周报</span><span class="time">昨天</span></div></div>
+          </div>
+          <div class="nsec">
+            <div class="nsec-h"><span class="chev">▼</span> 标签</div>
+            <div class="tile" style="padding:6px 9px"><span class="t"># 会议</span><span class="cnt">3</span></div>
+            <div class="tile" style="padding:6px 9px"><span class="t"># 调研</span><span class="cnt">5</span></div>
+            <div class="tile" style="padding:6px 9px"><span class="t"># 项目A</span><span class="cnt">7</span></div>
+          </div>
+          <div class="nsec">
+            <div class="nsec-h"><span class="chev">▶</span> 归档<span class="sp"></span><span class="cnt">5</span></div>
+          </div>
+        </div>
+        <div class="side-tools">
+          <div class="icon-btn" title="工具审批"><svg class="ico" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3.2L13 5"/></svg></div>
+          <div class="icon-btn" title="模板"><svg class="ico" viewBox="0 0 16 16"><rect x="2" y="2.5" width="5" height="5" rx="1"/><rect x="9" y="2.5" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></div>
+          <div class="icon-btn" title="更多"><svg class="ico" viewBox="0 0 16 16"><circle cx="3.4" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.6" cy="8" r=".9" fill="currentColor" stroke="none"/></svg></div>
+          <div class="sp"></div>
+          <div class="icon-btn" title="主题"><svg class="ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.4"/><path d="M8 2.6a5.4 5.4 0 010 10.8z" fill="currentColor" stroke="none"/></svg></div>
+        </div>
+      </aside>
+
+      <section class="notes">
+        <div class="notes-appbar">
+          <h3><svg class="ico" viewBox="0 0 16 16" style="width:18px;height:18px"><path d="M3.5 2.5h9a1 1 0 011 1v9a1 1 0 01-1 1h-9a1 1 0 01-1-1v-9a1 1 0 011-1z"/><path d="M5.2 5.5h5.6M5.2 8h5.6M5.2 10.5h3.4"/></svg> 会议纪要 · 2026-11-04</h3>
+          <div style="flex:1"></div>
+          <div class="seg" title="编辑区（下区）高度占笔记区视窗的比例">
+            <span class="on">40%</span><span>20%</span><span>收起</span>
+          </div>
+          <div class="icon-btn" title="收起 AI 助手"><svg class="ico" viewBox="0 0 16 16"><path d="M6.5 3.5L10 8l-3.5 4.5"/></svg></div>
+          <div class="icon-btn" title="更多"><svg class="ico" viewBox="0 0 16 16"><circle cx="3.4" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.6" cy="8" r=".9" fill="currentColor" stroke="none"/></svg></div>
+        </div>
+
+        <div class="notes-body">
+            <!-- ---- 编辑区：上预览 / 下编辑（上下分屏） ---- -->
+            <div class="editor h40">
+              <div class="ed-prev">
+                <div class="md-wrap">
+                  <div class="md">
+                    <h1>会议纪要 · 2026-11-04</h1>
+                    <h2>议题</h2>
+                    <ul>
+                      <li>讨论了改期的相关问题</li>
+                      <li><strong>结论：下周三前交付初稿</strong></li>
+                    </ul>
+                    <h2>公式与公式</h2>
+                    <p>交付偏差约为 <span class="math">Δ = √(v² − (vt)²)</span></p>
+                    <h2>待办</h2>
+                    <ul>
+                      <li class="task"><input type="checkbox" checked>同步日程变更</li>
+                      <li class="task"><input type="checkbox">补充验收用例</li>
+                    </ul>
+                    <blockquote>结论已同步给项目 A 的全部成员。</blockquote>
+                  </div>
+                </div>
+              </div>
+              <div class="ed-splitter" title="拖动调整编辑区高度"></div>
+              <div class="ed-src">
+                <div class="ed-toolbar">
+                <span class="tb">B</span><span class="tb" style="font-style:italic">I</span>
+                <span class="tb">H1</span><span class="tb">H2</span><span class="tb">H3</span>
+                <span class="tbsep"></span>
+                <span class="tb" title="无序列表"><svg viewBox="0 0 16 16"><circle cx="3" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1.2" fill="currentColor" stroke="none"/><path d="M6.5 4h8M6.5 8h8M6.5 12h8"/></svg></span>
+                <span class="tb" title="任务列表"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="5" height="5" rx="1.2"/><rect x="1.5" y="8.5" width="5" height="5" rx="1.2"/><path d="M2.6 4.8l1 1 1.7-2"/><path d="M8.5 4h6M8.5 10h6"/></svg></span>
+                <span class="tb" title="有序列表"><svg viewBox="0 0 16 16"><path d="M1.9 2.4h2.2v2.6M1.7 8.2c.4-.9 2.4-.8 2.4.3 0 .9-2.4 1-2.4 2.3h2.6M1.7 12.6h2.4l-1.3 1.2h1.5"/><path d="M7.5 4h7M7.5 8h7M7.5 12h7"/></svg></span>
+                <span class="tbsep"></span>
+                <span class="tb" title="代码块"><svg viewBox="0 0 16 16"><path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12"/></svg></span>
+                <span class="tb" title="行内代码"><svg viewBox="0 0 16 16"><path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12"/></svg></span>
+                <span class="tb" title="链接"><svg viewBox="0 0 16 16"><path d="M6.6 9.4a2.6 2.6 0 003.7 0l2-2a2.6 2.6 0 00-3.7-3.7l-.9.9"/><path d="M9.4 6.6a2.6 2.6 0 00-3.7 0l-2 2a2.6 2.6 0 003.7 3.7l.9-.9"/></svg></span>
+                <span class="tbsep"></span>
+                <span class="tb" title="表格"><svg viewBox="0 0 16 16"><rect x="1.8" y="3" width="12.4" height="10" rx="1.6"/><path d="M1.8 6.6h12.4M6.3 6.6V13"/></svg></span>
+                <span class="tb" title="引用"><svg viewBox="0 0 16 16"><path d="M2.5 3.5h11v9h-11z"/><path d="M5 7h6M5 9.5h4"/></svg></span>
+                <span class="tb" title="公式"><svg viewBox="0 0 16 16"><path d="M9 2.5H4l3 5.5-3 5.5h5"/></svg></span>
+                <span class="tb" title="图片"><svg viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.6"/><circle cx="5.8" cy="6.6" r="1.1"/><path d="M2.6 11l3.2-3 2.6 2.4L11 7.6l2.4 2.6"/></svg></span>
+                <span class="tbsep"></span>
+                <span class="tb" title="用编辑工具打开"><svg viewBox="0 0 16 16"><path d="M11.2 2.4l2.4 2.4-7.3 7.3-3 .6.6-3z"/></svg></span>
+                </div>
+                <div class="pane src">
+<span class="ln">1</span><span class="k"># 会议纪要 · 2026-11-04</span>
+<span class="ln">2</span>
+<span class="ln">3</span><span class="st">## 议题</span>
+<span class="ln">4</span>
+<span class="ln">5</span>- 讨论了改期的相关问题
+<span class="ln">6</span>- <span class="em">**结论：下周三前交付初稿**</span>
+<span class="ln">7</span>
+<span class="ln">8</span><span class="st">## 公式与公式</span>
+<span class="ln">9</span>
+<span class="ln">10</span>交付偏差约为 <span class="em">$\Delta = \sqrt{v^2 - (vt)^2}$</span>
+<span class="ln">11</span>
+<span class="ln">12</span><span class="st">## 待办</span>
+<span class="ln">13</span>
+<span class="ln">14</span>- [x] 同步日程变更
+<span class="ln">15</span>- [ ] 补充验收用例
+                </div>
+              </div>
+              <div class="ed-status">
+                <span class="ok">● 已保存</span>
+                <span>1,204 字</span><span>3 标签</span>
+                <span class="sp"></span>
+                <span>front-matter：tags=[会议, 项目A]</span>
+              </div>
+            </div>
+
+
+            <!-- ---- AI 侧栏（可展开 / 收起） ---- -->
+            <aside class="ai">
+              <div class="ai-rail">
+                <div class="rail-btn" title="展开 AI 助手">
+                  <svg class="ico" viewBox="0 0 16 16"><path d="M8 1.8l1.5 4.2 4.2 1.5-4.2 1.5L8 13.2 6.5 9 2.3 7.5 6.5 6z"/><path d="M12.6 11.2l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></svg>
+                  <span class="dot"></span>
+                </div>
+                <div class="rail-txt">AI 助手</div>
+              </div>
+              <div class="ai-head">
+                <div class="ai-tabs"><span class="on">改写</span><span>生成</span><span>问答</span></div>
+                <div class="ai-model">
+                  <span>模型</span>
+                  <select><option>deepseek-chat（应用功能调用模型）</option><option>gpt-4o-mini</option></select>
+                  <span style="flex:1"></span>
+                  <span class="icon-btn" title="收起 AI 助手" style="width:26px;height:26px"><svg class="ico" viewBox="0 0 16 16"><path d="M9.5 3.5L6 8l3.5 4.5"/></svg></span>
+                </div>
+              </div>
+              <div class="ai-scroll">
+                <div class="bubble user">把「议题」下面第一条改得更正式一些，并补上负责人和截止时间。</div>
+                <div class="bubble bot">
+                  <div class="md">
+                    <p>已改写该条，并补全了负责人与截止时间（依据正文里的约定，未引入外部信息）：</p>
+                    <ul>
+                      <li>就改期问题达成一致，负责人：王工，截止 11 月 15 日。</li>
+                    </ul>
+                  </div>
+                  <div class="act">
+                    <span class="pri">在编辑器中预览差异</span>
+                    <span>插入到光标处</span>
+                    <span>替换选区</span>
+                  </div>
+                </div>
+                <div class="bubble user">再给我 3 个候选标题。</div>
+                <div class="bubble bot">
+                  <div class="md">
+                    <ol>
+                      <li>改期议题决议纪要（2026-11-04）</li>
+                      <li>项目 A 改期评审会纪要</li>
+                      <li>11-04 改期方案与负责人</li>
+                    </ol>
+                  </div>
+                  <div class="act"><span>插入到标题行</span><span>复制</span></div>
+                </div>
+                <div class="bubble bot">
+                  <span class="typing"><i></i><i></i><i></i></span>
+                  <span style="margin-left:8px;color:var(--on-surface-variant)">正在生成…</span>
+                  <div class="act"><span>停止</span></div>
+                </div>
+              </div>
+              <div class="ai-input">
+                <div class="ctx"><span class="switch"></span> 包含全文（关闭则只发送选区）</div>
+                <div class="ai-box">
+                  <span style="flex:1">问点什么…</span>
+                  <span class="send"><svg viewBox="0 0 16 16" fill="currentColor" style="width:12px;height:12px"><path d="M3 2.4l11 5.6-11 5.6 2.2-5.6z"/></svg></span>
+                </div>
+              </div>
+            </aside>
+
+
+        </div>
+      </section>
+    </div>
+    </div>
+
+    <div class="anno">
+      <div class="anno-item"><h5><b>1</b>侧栏 Tab</h5><p>左栏只有一条：顶行下方是「会话 / 笔记」Tab。会话 Tab 显示项目与会话树；笔记 Tab 换成笔记列表（置顶 / 最近 / 标签 / 归档 + 搜索）。切换 Tab 时主区同步切换（聊天 ↔ 笔记编辑区）。</p></div>
+      <div class="anno-item"><h5><b>2</b>顶行按钮</h5><p>「新建会话」那一行被移除，改为顶行的一枚图标按钮，紧挨「刷新会话列表」右侧（主色实心）。笔记 Tab 下同一位置变为「新建笔记」。</p></div>
+      <div class="anno-item"><h5><b>3</b>主区</h5><p>会话 Tab → 聊天区（消息流 + 输入区）；笔记 Tab → 上预览 / 下编辑的上下分屏 + 右侧可收起的 AI 边栏。底部工具条（审批 / 模板 / 更多 / 主题）两态共用。</p></div>
+      <div class="anno-item"><h5><b>4</b>状态保持</h5><p>切换 Tab 不丢上下文：笔记的选中项、编辑区高度档位、AI 边栏开合状态各自保留，回来时原样恢复。</p></div>
+    </div>
+  </div>
+
+  <hr class="sep">
+
+  <!-- ==========================================================
+       画板 2：下区高度三档 + AI 收起态
+       ========================================================== -->
+  <div class="board">
+    <div class="board-title">
+      <h2>② 下区高度三档 &amp; AI 边栏收起态</h2>
+      <code>EditorPaneHeight · AiPanelCollapsed</code>
+      <span>同一套布局，只切换两个状态量：下区高度（40% / 20% / 0%）与 AI 边栏（展开 / 收起）</span>
+    </div>
+    <div class="frame" style="padding:20px 22px;display:flex;flex-direction:column;gap:18px;">
+
+      <div>
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:9px">下区（编辑）高度 —— 相对笔记区可用高度</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+
+          <div>
+            <div class="frame" style="box-shadow:none">
+              <div class="editor h40" style="height:320px;border-top:1px solid var(--outline-variant)">
+                <div class="ed-prev"><div class="md" style="padding:0">
+                  <h1 style="font-size:17px;margin-bottom:4px">会议纪要 · 2026-11-04</h1>
+                  <h2 style="font-size:14px;margin:10px 0 4px">议题</h2>
+                  <ul><li>就改期问题达成一致，负责人：王工…</li></ul>
+                </div></div>
+                <div class="ed-splitter"></div>
+                <div class="ed-src">
+                  <div class="ed-toolbar" style="height:26px;flex:0 0 26px;padding:0 8px"><span class="tb">B</span><span class="tb">H1</span><span class="tb">•</span><span class="tb">∑</span></div>
+                  <div class="pane src" style="padding:10px 12px;font-size:11.5px">
+<span class="ln">1</span><span class="k"># 会议纪要 · 2026-11-04</span>
+<span class="ln">2</span>
+<span class="ln">3</span><span class="st">## 议题</span>
+<span class="ln">4</span>
+<span class="ln">5</span>- 就改期问题达成一致…
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">
+              <span class="chip pri">40%</span><span style="color:var(--on-surface-variant)">默认档：写作时看得见源码</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="frame" style="box-shadow:none">
+              <div class="editor h20" style="height:320px;border-top:1px solid var(--outline-variant)">
+                <div class="ed-prev"><div class="md" style="padding:0">
+                  <h1 style="font-size:17px;margin-bottom:4px">会议纪要 · 2026-11-04</h1>
+                  <h2 style="font-size:14px;margin:10px 0 4px">议题</h2>
+                  <ul><li>就改期问题达成一致，负责人：王工…</li></ul>
+                  <h2 style="font-size:14px;margin:12px 0 4px">待办</h2>
+                  <ul class="task"><li><input type="checkbox" checked>同步日程变更</li></ul>
+                </div></div>
+                <div class="ed-splitter"></div>
+                <div class="ed-src">
+                  <div class="ed-toolbar" style="height:26px;flex:0 0 26px;padding:0 8px"><span class="tb">B</span><span class="tb">H1</span><span class="tb">•</span><span class="tb">∑</span></div>
+                  <div class="pane src" style="padding:10px 12px;font-size:11.5px">
+<span class="ln">3</span><span class="st">## 议题</span>
+<span class="ln">5</span>- 就改期问题达成一致…
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">
+              <span class="chip pri">20%</span><span style="color:var(--on-surface-variant)">审阅档：以预览为主，源码只留几行</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="frame" style="box-shadow:none">
+              <div class="editor h0" style="height:320px;border-top:1px solid var(--outline-variant)">
+                <div class="ed-prev"><div class="md" style="padding:0">
+                  <h1 style="font-size:17px;margin-bottom:4px">会议纪要 · 2026-11-04</h1>
+                  <h2 style="font-size:14px;margin:10px 0 4px">议题</h2>
+                  <ul><li>就改期问题达成一致，负责人：王工…</li></ul>
+                  <h2 style="font-size:14px;margin:12px 0 4px">待办</h2>
+                  <ul class="task"><li><input type="checkbox" checked>同步日程变更</li></ul>
+                  <blockquote style="font-size:12px;margin-top:10px">结论已同步给项目 A 的全部成员。</blockquote>
+                </div></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">
+              <span class="chip pri">0%</span><span style="color:var(--on-surface-variant)">阅读档：全宽预览；点工具栏「编辑」回到 40%</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:9px">AI 边栏 —— 展开 / 收起</div>
+        <div style="display:grid;grid-template-columns:1fr 220px;gap:14px;">
+          <div>
+            <div class="frame" style="box-shadow:none;display:flex;height:190px;overflow:hidden">
+              <div style="flex:1;background:var(--surface);padding:14px 18px;font-size:12px;color:var(--on-surface-variant)">
+                笔记区（上预览 / 下编辑）继续占满剩余宽度
+              </div>
+              <div class="ai" style="height:190px">
+                <div class="ai-head">
+                  <div class="ai-tabs"><span class="on">改写</span><span>生成</span><span>问答</span></div>
+                  <div class="ai-model"><span>模型</span>
+                    <select><option>deepseek-chat</option></select>
+                    <span style="flex:1"></span>
+                    <span class="icon-btn" style="width:26px;height:26px" title="收起 AI 助手"><svg class="ico" viewBox="0 0 16 16"><path d="M9.5 3.5L6 8l3.5 4.5"/></svg></span>
+                  </div>
+                </div>
+                <div class="ai-scroll">
+                  <div class="bubble user" style="font-size:12px">把「议题」第一条改正式些。</div>
+                  <div class="bubble bot" style="font-size:12px">
+                    <div class="md"><p>已改写并补全负责人与截止时间。</p></div>
+                    <div class="act"><span class="pri">预览差异</span><span>插入光标处</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">
+              <span class="chip pri">展开 320px</span><span style="color:var(--on-surface-variant)">默认态；收起按钮在面板头部右上角</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="frame" style="box-shadow:none;display:flex;height:190px;overflow:hidden">
+              <div style="flex:1;background:var(--surface);padding:14px 18px;font-size:12px;color:var(--on-surface-variant)">
+                笔记区扩展到原 AI 面板的位置
+              </div>
+              <div class="ai collapsed" style="height:190px">
+                <div class="ai-rail">
+                  <div class="rail-btn" title="展开 AI 助手">
+                    <svg class="ico" viewBox="0 0 16 16"><path d="M8 1.8l1.5 4.2 4.2 1.5-4.2 1.5L8 13.2 6.5 9 2.3 7.5 6.5 6z"/><path d="M12.6 11.2l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></svg>
+                    <span class="dot"></span>
+                  </div>
+                  <div class="rail-txt">AI 助手</div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">
+              <span class="chip pri">收起 44px</span><span style="color:var(--on-surface-variant)">竖条保留图标与「生成中」角标</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="sep">
+
+  <!-- ==========================================================
+       画板 3：diff 弹层
+       ========================================================== -->
+  <div class="board">
+    <div class="board-title">
+      <h2>③ AI 修改 diff 预览弹层</h2>
+      <code>NoteDiffDialog</code>
+      <span>任何 AI 写回正文都必须先经过这一步；接受后进入编辑器缓冲，仍可 Ctrl+Z 撤销</span>
+    </div>
+    <div class="frame overlay">
+      <div class="dialog">
+        <div class="dlg-head">
+          <h4>AI 修改预览</h4>
+          <span class="meta">deepseek-chat · 改写「议题」第 1 条</span>
+          <span class="sp"></span>
+          <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>
+        </div>
+        <div class="dlg-body">
+          <div class="diff-line ctx"><span class="sg">·</span>## 议题</div>
+          <div class="diff-line ctx"><span class="sg">·</span></div>
+          <div class="diff-line del"><span class="sg">−</span>- 讨论了改期的相关问题</div>
+          <div class="diff-line add"><span class="sg">+</span>- 就改期问题达成一致，负责人：王工，截止 11 月 15 日。</div>
+          <div class="diff-line ctx"><span class="sg">·</span>- **结论：下周三前交付初稿**</div>
+          <div class="diff-line gap"><span class="sg">⋯</span>省略 6 行未改动内容</div>
+        </div>
+        <div class="dlg-foot">
+          <span style="font-size:11.5px;color:var(--on-surface-variant)">+1 行 / −1 行</span>
+          <span class="sp"></span>
+          <button class="btn">复制结果</button>
+          <button class="btn">拒绝</button>
+          <button class="btn primary">接受并应用</button>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--del-bg);border-color:var(--del-bar)"></i>删除行</span>
+      <span><i style="background:var(--add-bg);border-color:var(--add-bar)"></i>新增行</span>
+      <span><i style="background:var(--surface-container)"></i>折叠的未改动行</span>
+      <span>行级 LCS diff，未改动行默认折叠为「省略 N 行」</span>
+    </div>
+  </div>
+
+  <hr class="sep">
+
+  <!-- ==========================================================
+       画板 4：移动端
+       ========================================================== -->
+  <div class="board">
+    <div class="board-title">
+      <h2>④ 移动端形态</h2>
+      <code>&lt;1080px</code>
+      <span>底部 Tab 与桌面侧栏对齐：会话 / 笔记；笔记内部是列表 → 编辑 → AI 抽屉的栈，编辑页与桌面同一套上下分屏</span>
+    </div>
+    <div class="mobile-wrap">
+      <div class="frame" style="padding:0;border-radius:26px;">
+        <div class="phone">
+          <div class="phone-bar">9:41</div>
+          <div class="phone-app">
+            <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg></span>
+            <h4><svg class="ico" viewBox="0 0 16 16"><path d="M3.5 2.5h9a1 1 0 011 1v9a1 1 0 01-1 1h-9a1 1 0 01-1-1v-9a1 1 0 011-1z"/><path d="M5.2 5.5h5.6M5.2 8h5.6M5.2 10.5h3.4"/></svg> 笔记</h4>
+            <span class="icon-btn primary" style="width:28px;height:28px" title="新建笔记"><svg class="ico" viewBox="0 0 16 16"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg></span>
+          </div>
+          <div class="phone-body">
+            <div style="padding:10px 12px;border-bottom:1px solid var(--outline-variant)">
+              <div class="search" style="max-width:none;background:var(--surface-low)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4L14 14"/></svg> 搜索笔记…</div>
+            </div>
+            <div class="nlist-scroll" style="padding:10px 12px">
+              <div class="nsec-h" style="padding:4px 0">置顶</div>
+              <div class="nitem active">
+                <div class="nt">会议纪要 · 2026-11-04</div>
+                <div class="np">改期问题达成一致，负责人：王工…</div>
+                <div class="nmeta"><span class="chip">会议</span><span class="time">刚刚</span></div>
+              </div>
+              <div class="nitem">
+                <div class="nt">产品路线图 v3</div>
+                <div class="np">Q4 三个里程碑与验收口径…</div>
+                <div class="nmeta"><span class="chip">规划</span><span class="time">昨天</span></div>
+              </div>
+              <div class="nsec-h" style="padding:8px 0 4px">最近</div>
+              <div class="nitem">
+                <div class="nt">技术选型对比：向量库</div>
+                <div class="np">Milvus / Qdrant / pgvector…</div>
+                <div class="nmeta"><span class="chip">调研</span><span class="time">2 小时前</span></div>
+              </div>
+              <div class="nitem">
+                <div class="nt">周报 · 第 45 周</div>
+                <div class="np">本周进展 / 下周计划…</div>
+                <div class="nmeta"><span class="chip">周报</span><span class="time">昨天</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-tabs"><span>会话</span><span class="on">笔记</span></div>
+        </div>
+      </div>
+
+      <div class="frame" style="padding:0;border-radius:26px;">
+        <div class="phone">
+          <div class="phone-bar">9:41</div>
+          <div class="phone-app">
+            <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></span>
+            <h4>会议纪要 · 2026-11-04</h4>
+            <span class="icon-btn" title="编辑区高度：40% / 20% / 收起"><svg class="ico" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.6"/><path d="M2 8.4h12"/></svg></span>
+            <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><circle cx="3.4" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.6" cy="8" r=".9" fill="currentColor" stroke="none"/></svg></span>
+          </div>
+          <div class="phone-body">
+            <div class="editor h40" style="flex:1;min-height:0">
+              <div class="ed-prev" style="padding:14px 16px">
+                <div class="md">
+                  <h1 style="font-size:19px">会议纪要 · 2026-11-04</h1>
+                  <h2 style="font-size:15px">议题</h2>
+                  <ul>
+                    <li>就改期问题达成一致，负责人：王工，截止 11 月 15 日。</li>
+                    <li><strong>结论：下周三前交付初稿</strong></li>
+                  </ul>
+                  <h2 style="font-size:15px">待办</h2>
+                  <ul>
+                    <li class="task"><input type="checkbox" checked>同步日程变更</li>
+                    <li class="task"><input type="checkbox">补充验收用例</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="ed-splitter"></div>
+              <div class="ed-src">
+                <div class="ed-toolbar" style="height:34px;flex:0 0 34px;overflow:auto">
+                  <span class="tb">B</span><span class="tb">H1</span>
+                  <span class="tb" title="无序列表"><svg viewBox="0 0 16 16"><circle cx="3" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1.2" fill="currentColor" stroke="none"/><path d="M6.5 4h8M6.5 8h8M6.5 12h8"/></svg></span>
+                  <span class="tbsep"></span>
+                  <span class="tb" title="代码块"><svg viewBox="0 0 16 16"><path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12"/></svg></span>
+                  <span class="tb" title="公式"><svg viewBox="0 0 16 16"><path d="M9 2.5H4l3 5.5-3 5.5h5"/></svg></span>
+                  <span class="tb" title="链接"><svg viewBox="0 0 16 16"><path d="M6.6 9.4a2.6 2.6 0 003.7 0l2-2a2.6 2.6 0 00-3.7-3.7l-.9.9"/><path d="M9.4 6.6a2.6 2.6 0 00-3.7 0l-2 2a2.6 2.6 0 003.7 3.7l.9-.9"/></svg></span>
+                </div>
+                <div class="pane src" style="padding:10px 12px;font-size:11.5px">
+<span class="ln">1</span><span class="k"># 会议纪要 · 2026-11-04</span>
+<span class="ln">2</span>
+<span class="ln">3</span><span class="st">## 议题</span>
+<span class="ln">4</span>
+<span class="ln">5</span>- 就改期问题达成一致…
+<span class="ln">6</span>- <span class="em">**结论：下周三前交付初稿**</span>
+                </div>
+              </div>
+            </div>
+            <div class="ed-status"><span class="ok">● 已保存</span><span class="sp"></span><span>编辑区 40%</span><span>1,204 字</span></div>
+          </div>
+          <div class="phone-tabs"><span>会话</span><span class="on">笔记</span></div>
+        </div>
+      </div>
+
+      <div class="frame" style="padding:0;border-radius:26px;">
+        <div class="phone">
+          <div class="phone-bar">9:41</div>
+          <div class="phone-app">
+            <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></span>
+            <h4>AI 助手</h4>
+            <span class="icon-btn"><svg class="ico" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>
+          </div>
+          <div class="phone-body" style="background:var(--surface-low)">
+            <div class="sheet" style="position:relative;height:auto;flex:1;border-radius:0;border:0;box-shadow:none">
+              <div class="sheet-h"><i></i></div>
+              <div class="ai-head" style="padding-top:0">
+                <div class="ai-tabs"><span class="on">改写</span><span>生成</span><span>问答</span></div>
+              </div>
+              <div class="ai-scroll" style="padding:12px 14px">
+                <div class="bubble user">把「议题」第一条改得更正式，并补上负责人和截止时间。</div>
+                <div class="bubble bot">
+                  <div class="md"><p>已改写并补全：</p></div>
+                  <div class="act"><span class="pri">预览差异</span><span>插入光标处</span></div>
+                </div>
+              </div>
+              <div class="ai-input">
+                <div class="ctx"><span class="switch"></span> 包含全文</div>
+                <div class="ai-box"><span style="flex:1">问点什么…</span><span class="send"><svg viewBox="0 0 16 16" fill="currentColor" style="width:12px;height:12px"><path d="M3 2.4l11 5.6-11 5.6 2.2-5.6z"/></svg></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-tabs"><span>会话</span><span class="on">笔记</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="anno">
+      <div class="anno-item"><h5><b>1</b>底部 Tab</h5><p>底部只有两个 Tab：<strong>会话 / 笔记</strong>，与桌面侧栏的 Tab 是同一套语义（移动端把侧栏收进抽屉，Tab 提到底部）。</p></div>
+      <div class="anno-item"><h5><b>2</b>笔记列表页</h5><p>笔记 Tab 的首页是列表（搜索 + 置顶 / 最近 / 标签 / 归档）；顶行右侧是「新建笔记」图标按钮 —— 对应桌面顶行按钮位。</p></div>
+      <div class="anno-item"><h5><b>3</b>编辑页</h5><p>点条目进编辑页：与桌面同一套上下分屏（上预览 / 下编辑），下区高度同样 40% / 20% / 收起；AI 从底部抽屉唤起，「预览差异」在抽屉内以全屏路由打开。</p></div>
+    </div>
+  </div>
+
+  <hr class="sep">
+
+  <div class="board">
+    <div class="board-title"><h2>⑤ 交互流程</h2><span>核心闭环</span></div>
+    <div class="frame" style="padding:22px 26px;">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12.5px">
+        <span class="chip pri" style="font-size:12px;padding:6px 12px">① 新建 / 打开笔记</span><span>→</span>
+        <span class="chip" style="font-size:12px;padding:6px 12px">② 上预览 / 下编辑（40%·20%·收起）</span><span>→</span>
+        <span class="chip" style="font-size:12px;padding:6px 12px">③ 选中一段 → AI 改写</span><span>→</span>
+        <span class="chip" style="font-size:12px;padding:6px 12px">④ 流式输出</span><span>→</span>
+        <span class="chip" style="font-size:12px;padding:6px 12px">⑤ diff 预览</span><span>→</span>
+        <span class="chip" style="font-size:12px;padding:6px 12px">⑥ 接受 / 拒绝（可 Ctrl+Z）</span><span>→</span>
+        <span class="chip" style="font-size:12px;padding:6px 12px">⑦ 打标签 / 置顶 / 归档</span>
+      </div>
+      <div style="margin-top:16px;font-size:12.5px;color:var(--on-surface-variant);line-height:1.9">
+        · 生成类结果（摘要 / 大纲 / 标题 / 标签）走「插入到光标处 · 追加到文末 · 复制」三选一，不进 diff；<br>
+        · 问答类结果只读，不写回文档（用户可手动「作为附录插入」）；<br>
+        · 任何写入都先落在编辑器缓冲并入撤销栈，自动保存随后落盘 —— 不存在「AI 直接改文件」；<br>
+        · AI 边栏可收起成 44px 竖轨（保留「生成中」角标），收起时笔记区横向扩展占回空间。<br>
+        · 移动端与桌面同一套上下分屏，只是 AI 侧栏换成底部抽屉。
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

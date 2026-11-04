@@ -12,6 +12,7 @@ import 'package:xchat/data/session_repository.dart';
 import 'package:xchat/data/template_repository.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/pages/session_wizard_page.dart';
+import 'helpers/test_theme.dart';
 
 Future<AppState> buildState() async {
   SharedPreferences.setMockInitialValues({});
@@ -58,7 +59,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<AppState>.value(
         value: state,
-        child: const MaterialApp(home: SessionWizardPage()),
+        child: MaterialApp(theme: testTheme(), home: SessionWizardPage()),
       ),
     );
     await tester.pump();

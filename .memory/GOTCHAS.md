@@ -208,3 +208,98 @@ for (var i = 0; i < 30; i++) {
 - **只改显示名**：applicationId（`com.yimo.xchat`）、deb 包名、数据目录都不变，
   所以改名版与正式版**不能共存**（装谁覆盖谁，数据共用）。要共存得另开
   applicationId / 包名 / 数据目录，那是另一件事。
+
+## 18. 笔记文件（Markdown + front-matter）
+
+笔记是**给人读的纯文本**，往返规则比会话 XML 更严格：
+
+- **正文逐字保留**：写回时只重写 front-matter 块，正文原样落盘（禁止格式化、
+  禁止补/删尾部换行）。解析时只吃掉 front-matter 与正文之间的**一个**空行 ——
+  多吃一个就会吞掉用户正文开头的空行。
+- **未知 front-matter key 必须原样保留**（存在 `Note.extra` 里），否则外部工具
+  （Obsidian 等）写的字段会被清掉。已知 key 是白名单：`id/title/tags/created_at/
+  updated_at/pinned/archived_at`。
+- **列表扫描只读文件头 4KB**（`noteHeadBytes`）：front-matter 装不下时才回退读全文；
+  头部里 `---` 没闭合会被当成「裸 Markdown」（标题取正文首个 `# ` 标题）。
+  → `lib/data/xml/note_md.dart`、`lib/data/index_repository.dart` 的 `_readNoteHead`。
+- **裸 Markdown 不是错误**：没有 front-matter 的 `.md` 会被导入为笔记（补齐头部）。
+- **改 `CatalogIndex.version` 会作废旧索引**（既定机制）—— 同时要改断言版本号的
+  测试（`test/task_session_test.dart` 里 `expect(CatalogIndex.version, 4)`）。
+- **`IndexRepository.load()` 先校验磁盘**：想测「旧索引被丢弃重建」必须用**新的
+  `IndexRepository` 实例**再 load，否则命中内存缓存、磁盘上的旧文件根本没被读。
+
+## 19. widget test 里 await 真实 I/O = 挂死（不是假失败）
+
+`await AppPaths.init(...)` / `await state.load()` 这类**真实 I/O**直接写在
+`testWidgets` 的测试体里，**会挂死**（进程空转、测试永远不结束、看不到任何断言失败）——
+因为假时钟不推进真实 I/O。必须放进 `tester.runAsync`：
+
+```dart
+final state = (await tester.runAsync(buildState))!;
+```
+
+判别方法：测试卡在第一条用例且**没有任何断言输出**，十有八九就是这个。
+（`GOTCHAS.md` §14 讲的是「先断言后失败」的形态，这里是它的兄弟形态：直接挂死。）
+
+## 20. widget test 里不能出现 InkSparkle（运行时着色器只编了 Vulkan stage）
+
+**症状**：任何「点了按钮」的 widget test 都会炸：
+
+```text
+Asset 'shaders/ink_sparkle.frag' does not contain appropriate runtime stage
+data for current backend (SkSL). Found stages: Vulkan
+```
+
+**根因**（不是环境问题，是这条工具链的必然结果）：
+
+1. widget test 里 `defaultTargetPlatform == android`（`FLUTTER_TEST` 环境变量强制，
+   见 `flutter/lib/src/foundation/_platform_io.dart`）→ `ThemeData` 默认用
+   `InkSparkle.splashFactory`（`theme_data.dart`：`useInkSparkle = android`）；
+2. `InkSparkle` 画墨水动画时要加载运行时着色器 `shaders/ink_sparkle.frag`；
+3. **测试**资源包把这个着色器按 `TargetPlatform.tester` 编译
+   （`flutter_tools/.../shader_compiler.dart`：`--sksl --runtime-stage-vulkan` +
+   `--iplr`）→ 产物里只有 **Vulkan** stage；
+4. `flutter_tester` 默认走 `--enable-software-rendering`（Skia / **SkSL** 后端）
+   → 引擎拒绝加载 → 抛异常。
+
+**修法（已实施）**：测试统一用 `InkRipple`（不需要运行时着色器）——
+`test/helpers/test_theme.dart` 的 `testTheme()`，所有测试的 `MaterialApp` 都传
+`theme: testTheme()`。
+
+**别再走的歪路**：
+
+- ❌ 在 `test/flutter_test_config.dart` 里设 `debugDefaultTargetPlatformOverride`
+  → flutter_test 的不变量检查会报
+  「The value of a foundation debug variable was changed by the test」（每个用例都炸）。
+- ❌ 以为「只有这台机器坏了」→ 用户机器上同样复现（用的是同一条工具链）。
+- ✅ 真 app 不受影响：真机/桌面包按目标平台编译着色器，`InkSparkle` 正常加载。
+
+## 21. 笔记编辑区（面板）的三个坑
+
+- **面板可能被直接当 `MaterialApp.home`**（测试里很常见）→ 没有 Scaffold 就没有
+  Material → 面板里的 `InkWell` 抛「No Material widget found」，还会连带把
+  `Row` 撑成「overflowed by 299348 pixels」（ErrorWidget 的固有宽度，数字很唬人）。
+  → `NotesPanel` 自己套一层 `Material(color: Colors.transparent)`。
+- **分隔条的拖动方向**：分隔条在编辑区**上方**，往下拖 = 编辑区变矮（比例变小），
+  往上拖 = 变高。比例公式是 `ratio - delta.dy / totalHeight`（`delta.dy` 向下为正）。
+- **等真实 I/O 的用例在并发下会偶发超时**：全量 `flutter test` 时机器负载高，
+  「停写 800ms 后落盘」「新建笔记后打开」这类用例会超时，但单独跑必绿。
+  → 等待预算给足（轮数 ≥ 80、真实延时 20ms），别按「单跑能过」的标准写。
+
+## 22. AI 写回笔记的三条纪律
+
+1. **必过 diff**：任何 AI 对正文的修改都要先弹 diff（接受/拒绝），接受后写进
+   **编辑器缓冲**（不是直接落盘），落盘仍走自动保存。`Ctrl+Z` 能撤销（Flutter 的
+   `UndoHistory` 会记录 `controller.value` 的每一次变化，所以直接改 value 也进历史）。
+2. **只允许一个请求在跑**；取消用 `llm.CancelToken`，取消后**不写回任何内容**
+   （流式中途取消会得到空结果 → `StateError('模型未返回有效内容')`）。
+3. **上下文裁剪要有提示**：正文超过 `notes_context_char_limit`（默认 12000）时
+   降级为「大纲 + 选区 + 命中关键词段落」，并把 `truncated=true` 传给界面提示，
+   同时提供「包含全文」强制开关。
+
+配套的易错点：
+- `StateError` 在 Dart 里是 `Error` **不是** `Exception` → 测试里写
+  `throwsA(isA<Exception>())` 会漏；用 `throwsA(anything)`。
+- widget test 里断言「编辑区没了」要用
+  `find.descendant(of: find.byKey(Key('note-editor')), matching: find.byType(TextField))`
+  —— AI 边栏里也有 `TextField`，直接 `find.byType(TextField)` 会多匹配。

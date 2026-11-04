@@ -14,6 +14,7 @@ import 'package:xchat/data/template_repository.dart';
 import 'package:xchat/models/project.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/widgets/project_dialog.dart';
+import 'helpers/test_theme.dart';
 
 /// Regression: the project dialog must not dispose its text controllers
 /// while the dialog is still mounted.
@@ -51,6 +52,7 @@ void main() {
       ChangeNotifierProvider<AppState>.value(
         value: state,
         child: MaterialApp(
+          theme: testTheme(),
           home: Scaffold(body: ProjectDialog(existing: existing)),
         ),
       ),

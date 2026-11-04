@@ -16,6 +16,7 @@ import 'package:xchat/llm/llm_factory.dart';
 import 'package:xchat/models/provider_config.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/pages/providers_page.dart';
+import 'helpers/test_theme.dart';
 
 ProviderConfig _provider({
   bool useMaxCompletionTokens = false,
@@ -250,7 +251,7 @@ void main() {
       await tester.pumpWidget(
         ChangeNotifierProvider<AppState>.value(
           value: state,
-          child: const MaterialApp(home: ProvidersPage()),
+          child: MaterialApp(theme: testTheme(), home: ProvidersPage()),
         ),
       );
       await tester.pumpAndSettle();
@@ -298,7 +299,7 @@ void main() {
       await tester.pumpWidget(
         ChangeNotifierProvider<AppState>.value(
           value: state,
-          child: const MaterialApp(home: ProvidersPage()),
+          child: MaterialApp(theme: testTheme(), home: ProvidersPage()),
         ),
       );
       await tester.pumpAndSettle();

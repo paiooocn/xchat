@@ -1,20 +1,25 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../core/app_paths.dart';
 import '../models/catalog_index.dart';
+import '../models/note.dart';
 import '../models/project.dart';
 import '../models/session.dart';
+import 'xml/note_md.dart';
 import 'xml/project_xml.dart';
 import 'xml/session_xml.dart';
 
-/// Maintains `XChat/index.json`: a four-bucket catalog of active/archived
-/// sessions and projects.
+/// Maintains `XChat/index.json`: a five-bucket catalog of active/archived
+/// sessions and projects plus the Markdown notes.
 ///
-/// The index lets the UI list and filter sessions/projects (and find archived
-/// ones) without parsing every XML file; a session's messages are only read
-/// when it is actually opened. The index is validated against the directory
-/// contents on load and transparently rebuilt when files changed on disk.
+/// The index lets the UI list and filter sessions/projects/notes (and find
+/// archived ones) without parsing every file; a session's messages and a
+/// note's body are only read when the item is actually opened. The index is
+/// validated against the directory contents on load and transparently rebuilt
+/// when files changed on disk.
 class IndexRepository {
   IndexRepository(this.paths);
 
@@ -90,9 +95,35 @@ class IndexRepository {
       projects: projects,
       archivedSessions: archivedSessions,
       archivedProjects: archivedProjects,
+      notes: await _scanNotes(),
     );
     await _persist(index);
     return index;
+  }
+
+  /// Scans `notes/` and builds the note summaries.
+  ///
+  /// Only the first [noteHeadBytes] of a note are read (the front-matter plus
+  /// the beginning of the body) — a long note must not slow the list down.
+  Future<List<NoteIndexEntry>> _scanNotes() async {
+    final entries = <NoteIndexEntry>[];
+    for (final file in await _noteFiles(paths.notesDir)) {
+      try {
+        final stat = await file.stat();
+        final head = await _readNoteHead(file);
+        final id = p.basenameWithoutExtension(file.path);
+        final summary = decodeNoteSummary(
+          head,
+          fallbackId: id,
+          fallbackCreatedAt: stat.modified.toUtc(),
+          fallbackUpdatedAt: stat.modified.toUtc(),
+        );
+        entries.add(NoteIndexEntry.fromSummary(summary));
+      } catch (_) {
+        // Skip unreadable files rather than failing the whole catalog.
+      }
+    }
+    return entries;
   }
 
   Future<void> upsertSession(Session session) async {
@@ -119,6 +150,34 @@ class IndexRepository {
   Future<void> removeProject(String id) async {
     final index = await _loadForWrite();
     if (_removeProject(index, id)) await _persist(index);
+  }
+
+  /// Adds/updates a note in the catalog.
+  Future<void> upsertNote(Note note) async {
+    final index = await _loadForWrite();
+    _removeNote(index, note.id);
+    index.notes.add(NoteIndexEntry(
+      id: note.id,
+      title: note.title,
+      tags: List<String>.of(note.tags),
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      pinned: note.pinned,
+      archivedAt: note.archivedAt,
+      preview: previewFromBody(note.body),
+    ));
+    await _persist(index);
+  }
+
+  Future<void> removeNote(String id) async {
+    final index = await _loadForWrite();
+    if (_removeNote(index, id)) await _persist(index);
+  }
+
+  bool _removeNote(CatalogIndex index, String id) {
+    final before = index.notes.length;
+    index.notes.removeWhere((e) => e.id == id);
+    return before != index.notes.length;
   }
 
   bool _removeSession(CatalogIndex index, String id) {
@@ -152,8 +211,18 @@ class IndexRepository {
   Future<bool> _matchesDisk(CatalogIndex index) async {
     final diskSessions = await _dirIds(paths.sessionsDir);
     final diskProjects = await _dirIds(paths.projectsDir);
+    final diskNotes = await _noteIds(paths.notesDir);
     return _sameSet(diskSessions, index.allSessionIds) &&
-        _sameSet(diskProjects, index.allProjectIds);
+        _sameSet(diskProjects, index.allProjectIds) &&
+        _sameSet(diskNotes, index.allNoteIds);
+  }
+
+  Future<Set<String>> _noteIds(String dir) async {
+    final out = <String>{};
+    for (final file in await _noteFiles(dir)) {
+      out.add(p.basenameWithoutExtension(file.path));
+    }
+    return out;
   }
 
   Future<Set<String>> _dirIds(String dir) async {
@@ -178,6 +247,36 @@ class IndexRepository {
       if (entity is File && entity.path.endsWith('.xml')) out.add(entity);
     }
     return out;
+  }
+
+  Future<List<File>> _noteFiles(String dir) async {
+    final d = Directory(dir);
+    if (!await d.exists()) return <File>[];
+    final out = <File>[];
+    await for (final entity in d.list()) {
+      if (entity is File && entity.path.endsWith('.md')) out.add(entity);
+    }
+    return out;
+  }
+
+  /// Reads the head of a note file (front-matter + the beginning of the body).
+  ///
+  /// Falls back to the whole file when the header does not fit into the head
+  /// (a huge front-matter is unusual, but it must not corrupt the summary).
+  Future<String> _readNoteHead(File file) async {
+    final handle = await file.open();
+    String head;
+    try {
+      final length = await handle.length();
+      final count = length > noteHeadBytes ? noteHeadBytes : length;
+      head = utf8.decode(await handle.read(count), allowMalformed: true);
+    } finally {
+      await handle.close();
+    }
+    if (head.startsWith('---') && !head.trimRight().endsWith('---')) {
+      return file.readAsString();
+    }
+    return head;
   }
 
   Future<void> _persist(CatalogIndex index) async {

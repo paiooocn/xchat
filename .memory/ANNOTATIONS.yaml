@@ -14,7 +14,7 @@
 #   - 某功能的文件集合变化 → 改 features[].files（这是本文件最有价值的部分）
 
 meta:
-  updated_at: "2026-10-28"
+  updated_at: "2026-11-04"
   git_sha: "e7712e6"
   app_version: "0.5.7"
 
@@ -43,15 +43,15 @@ modules:
     design: "DESIGN.md §5"
 
   data:
-    role: "仓库层：会话/模板/配置/项目/索引/models.dev/项目记忆索引的读写与原子落盘"
+    role: "仓库层：会话/模板/配置/项目/索引/models.dev/项目记忆索引/笔记 的读写与原子落盘"
     risk: high
     note: "index.json 只是缓存，必须能与磁盘自愈；写路径不能每次全量重建目录；MemoryRepository.ensureSkeleton 只补缺失文件，绝不覆盖 agent 已写的内容"
     design: "DESIGN.md §4"
 
   data.xml:
-    role: "会话/模板/项目的 XML 编解码（手写 CDATA writer，不用通用 pretty printer）"
+    role: "会话/模板/项目的 XML 编解码（手写 CDATA writer，不用通用 pretty printer）与笔记的 front-matter 编解码"
     risk: high
-    note: "通用 formatter 会往 CDATA 注入空白破坏往返；CDATA 里的 ]]> 必须拆分"
+    note: "通用 formatter 会往 CDATA 注入空白破坏往返；CDATA 里的 ]]> 必须拆分；笔记正文必须逐字保留，未知 front-matter key 原样保留"
     design: "DESIGN.md §6"
 
   llm:
@@ -115,6 +115,32 @@ modules:
     design: "FEATURES.md §3.1"
 
 features:
+  - id: notes
+    title: "Markdown 笔记（地基层 M0：模型 / front-matter / 仓库 / 索引第五桶）"
+    files:
+      - "lib/models/note.dart"
+      - "lib/data/xml/note_md.dart"
+      - "lib/data/note_repository.dart"
+      - "lib/data/index_repository.dart"
+      - "lib/models/catalog_index.dart"
+      - "lib/state/app_state.dart"
+      - "lib/core/app_paths.dart"
+      - "lib/ui/widgets/note_editor.dart"
+      - "lib/ui/widgets/note_list.dart"
+      - "lib/ui/pages/notes_panel.dart"
+      - "lib/llm/note_assistant.dart"
+      - "lib/ui/widgets/note_ai_panel.dart"
+      - "lib/ui/widgets/note_diff_dialog.dart"
+      - "lib/util/line_diff.dart"
+    design: "docs/NOTES_IMPL_PLAN.md §M0–M3"
+    contracts:
+      - "一篇笔记 = <root>/notes/<id>.md（front-matter + 正文），不是 XML"
+      - "front-matter 编解码只在 lib/data/xml/note_md.dart；正文逐字保留，未知 key 原样保留"
+      - "列表只带摘要（NoteSummary），正文按需读取；索引 notes 桶只放摘要不放正文"
+      - "笔记是左栏 Tab，不新增路由；AI 写回必过 diff（接受后先进编辑器缓冲）"
+      - "中间栏只有一套布局（上预览 / 下编辑）；下区高度三档 40/20/0，全局存 SharedPreferences"
+      - "diff 自己写行级 LCS（lib/util/line_diff.dart），不引第三方依赖"
+
   - id: session_storage
     title: "会话 XML 持久化（核心契约）"
     files:

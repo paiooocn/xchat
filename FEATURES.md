@@ -32,6 +32,7 @@ Documents/XChat/                  # 数据根（AppPaths）
   projects/<id>/                  # 项目默认工作目录（项目内会话的沙箱）
   projects/<id>/.memory/          # 项目记忆索引（README/STATE/ARCHITECTURE/GOTCHAS/MAP/PROMPT）
   templates/                      # 会话模板 <id>.xml
+  notes/<id>.md                   # Markdown 笔记（front-matter + 正文）
   scripts/                        # 页面解析脚本 <id>.json
   attachments/                    # （会话级：<sandbox>/attachments/）
   logs/                           # 诊断日志；logs/webview/（SERP 落盘、paging.log）
@@ -104,7 +105,11 @@ Documents/XChat/                  # 数据根（AppPaths）
 - 四桶目录：`sessions / projects / archivedSessions / archivedProjects`（含标题、标签、
   时间、provider/model 等摘要），供列表/筛选/归档查询，避免逐个解析 XML。
 - 会话条目还带 `kind` 与 `task_count / task_done_count`（任务式会话的进度徽标）；任务项
-  标题本身不进索引，打开会话时读 XML。版本号 **4**（缺 `kind` 的旧索引会重建）。
+  标题本身不进索引，打开会话时读 XML。版本号 **5**（缺 `kind` 的旧索引、
+  缺 `notes` 桶的旧索引都会重建）。
+- **第五桶 `notes`**（版本号 **5**）：Markdown 笔记的摘要（id/title/tags/
+  created_at/updated_at/pinned/archived_at/preview）；归档笔记也在这一桶里，
+  用 `archived_at` 区分。索引里**不放正文**。
 - 每次加载与磁盘目录比对（按 id 集合），文件变动则透明重建；损坏文件跳过不阻塞。
 
 ### 1.6 会话归档
@@ -144,7 +149,8 @@ Documents/XChat/                  # 数据根（AppPaths）
 | `SearchEngineConfig` | id/name/enabled/urlTemplate({query} 占位)/ready_selector/item_selector/ title_selector/link_selector/snippet_selector/next_selector/pages(1–10)/priority |
 | `ProxyConfig` | http_proxy / https_proxy / no_proxy（可仅对 http_fetch 生效） |
 | `ExtractScript` | 页面解析脚本（§6.3）+ `UrlMatcher`（url_pattern 正则 > 精确 host > host 后缀，同分比 priority） |
-| `CatalogIndex` | index.json 的四桶目录（§1.5） |
+| `CatalogIndex` | index.json 的五桶目录（§1.5） |
+| `Note` / `NoteSummary` | Markdown 笔记：id/title/tags/created_at/updated_at/pinned/archived_at/body（+ `extra` 保留未知 front-matter key）；`NoteSummary` 无正文，只有摘要 + preview |
 
 ---
 
@@ -359,6 +365,22 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 ---
 
+### 7.1 Markdown 笔记（地基层 M0）
+
+| 功能 | 说明 |
+| --- | --- |
+| 存储 | 一篇笔记 = `<root>/notes/<id>.md`：**front-matter + Markdown 正文**（不是 XML）；front-matter 白名单 key：`id / title / tags / created_at / updated_at / pinned / archived_at`，**未知 key 原样保留** |
+| 正文保真 | 写回时只重写 front-matter 块，正文**逐字保留**（空行、缩进、代码围栏都不动）；没有 front-matter 的裸 `.md` 会被导入为笔记（标题取正文首个 `# ` 标题） |
+| 列表 | 列表只带摘要（标题/标签/时间/置顶/归档/正文前 80 字 preview）；正文**按需读取**（打开笔记时才读文件）；扫描只读文件头 4KB；左栏列表含搜索 + 置顶/最近/归档分区 + 标签筛选 |
+| 索引 | `index.json` 第五桶 `notes`（版本号 5）；只放摘要不放正文；磁盘是事实，索引损坏/过期透明重建 |
+| 状态 | `AppState.notes` / `AppState.archivedNotes`（`NoteSummary` 列表）+ `createNote / readNote / saveNote / setNoteArchived / deleteNote / refreshNotes` |
+| AI 助手 | 右侧边栏两态：**展开 320px**（模型名 + 模型服务入口 / Tab「改写·生成·问答」/ 快捷动作 / 对话流 / 输入区 + 「包含全文」开关 + 停止）/ **收起 44px 竖轨**（AI 图标 + 生成中角标 + 竖排文字），收起状态存 `SharedPreferences: notes_ai_collapsed`，**生成中不允许收起** |
+| AI 能力 | 改写 7（润色/扩写/缩写/语气/翻译/纠错/格式，作用于选区）、生成 7（续写/摘要/标题/标签/大纲/纪要模板/复习卡片）、问答 1（只读）；温度 0.3/0.7/0.2；上下文：选区前后各 200 字，正文超 `notes_context_char_limit`（默认 12000）时降级为「大纲+选区+命中段落」并提示 |
+| AI 写回 | **任何改正文都先过 diff 弹层**（宽 720，红删绿增 + 「省略 N 行」折叠 + `[复制结果][拒绝][接受并应用]`）；接受后写进**编辑器缓冲**（`Ctrl+Z` 可撤销）再走自动保存；拒绝只关窗 |
+| 界面 | 笔记页是左栏「会话 \| 笔记」Tab（**不新增路由**）；主区**上预览 / 下编辑**（唯一一套布局），下区高度三档 **40% / 20% / 0%（收起）**、分隔条可拖并吸附到最近档位（全局存 `SharedPreferences: notes_editor_split_ratio`）；语法工具栏（粗体/斜体/H1-H3/列表/任务列表/代码块/行内码/链接/表格/引用/公式/图片，有选区则包裹、无选区则插模板）；停写 800ms 自动保存 + `Ctrl+S`；外部改动（mtime 变化）弹窗让用户选「重新加载 / 保留本地」；移动端改造见 `docs/NOTES_IMPL_PLAN.md`（M4） |
+
+---
+
 ## 8. 全局配置（config.json）
 
 | 配置 | 说明 |
@@ -400,6 +422,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 页面 | 功能点 |
 | --- | --- |
 | 首页 HomePage | 自适应布局：宽屏左会话列表+右聊天；窄屏列表↔聊天路由。边栏：搜索、项目分组（行尾「+」新建、更多操作菜单）、会话项（进行中显旋转圈）、右键/长按菜单（查看会话信息/重命名/克隆/编辑重发/导出/编辑器打开/打开工作目录/归档/删除）；AppBar：手动搜索、归档、设置、模板、工具管理、模型服务等入口；**项目新建/编辑对话框内含「启用项目记忆（.memory/ 索引）」开关 + 记忆索引状态行 +「初始化 / 补齐」按钮** |
+| 笔记（左栏 Tab，**不新增路由**） | `HomePage` 左栏「会话 \| 笔记」Tab：切 Tab 时左栏列表与主区同步换；顶行「↻ 刷新 / ＋ 新建 / ⌂ 回家」（刷新按钮按 Tab 换语义，会话 Tab 新建会话、笔记 Tab 新建笔记）；笔记 Tab 的左栏列表与主区面板见 `docs/NOTES_IMPL_PLAN.md`（M1–M4） |
 | 项目对话框 | `lib/ui/widgets/project_dialog.dart`（独立 widget，自持 TextEditingController）：名称/说明/工作目录/项目提示词 +「启用项目记忆（.memory/ 索引）」开关 + 记忆索引状态行 +「初始化 / 补齐」按钮 |
 | 聊天面板 | 头部（模型选择器/执行模式/用量/上下文条）、消息流（用户右/助手左）、实时流区域、状态栏、压缩进度弹窗、审批弹窗/列表 |
 | 创建向导 | 分步表单（§7） |

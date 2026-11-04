@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchat/ui/widgets/brand_mark.dart';
+import 'helpers/test_theme.dart';
 
 /// Renders the sidebar brand mark (侧边栏左上角的图标) into the launcher-icon
 /// masters used by the platform icon configurations.
@@ -23,6 +24,7 @@ void main() {
       final key = ValueKey('brand_$size');
       await tester.pumpWidget(
         MaterialApp(
+          theme: testTheme(),
           debugShowCheckedModeBanner: false,
           home: Scaffold(
             backgroundColor: Colors.transparent,

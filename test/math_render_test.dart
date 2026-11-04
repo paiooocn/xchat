@@ -5,6 +5,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xchat/ui/widgets/markdown_view.dart';
 import 'package:xchat/ui/widgets/math_support.dart';
+import 'helpers/test_theme.dart';
 
 /// TeX an assistant realistically writes; the engine must render all of it
 /// (directly or after [normalizeTex]) instead of showing a parse error.
@@ -48,6 +49,7 @@ $$
 
 Future<void> _pump(WidgetTester tester, String markdown) => tester.pumpWidget(
       MaterialApp(
+        theme: testTheme(),
         home: Scaffold(
           body: SizedBox(width: 500, child: markdownView(markdown)),
         ),
@@ -102,6 +104,7 @@ void main() {
     final md = File('test/fixtures/reported_newton.md').readAsStringSync();
     await tester.pumpWidget(
       MaterialApp(
+        theme: testTheme(),
         home: Scaffold(
           body: SingleChildScrollView(
             child: SizedBox(width: 760, child: markdownView(md)),

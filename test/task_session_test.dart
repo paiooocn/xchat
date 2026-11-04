@@ -124,7 +124,7 @@ void main() {
       ));
       expect(entry.toJson().containsKey('task_count'), isFalse);
       expect(entry.kind, SessionKind.normal);
-      expect(CatalogIndex.version, 4);
+      expect(CatalogIndex.version, 5);
     });
   });
 

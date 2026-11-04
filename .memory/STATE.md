@@ -3,6 +3,558 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-04 · M3 AI 助手（已实现）：改写 / 生成 / 问答 + diff 写回
+
+**做了什么**（按 `docs/NOTES_IMPL_PLAN.md` §M3；不新增依赖）
+
+- 新增 `lib/util/line_diff.dart`：**自己写的行级 LCS diff**（不引第三方依赖）。
+  `diffLines(old, new)` → `DiffLine{type: equal/delete/insert, text, oldIndex, newIndex}`；
+  先裁公共前后缀再做 LCS 表；表过大（> 400 万格）时退化为「全删 + 全增」；
+  空文本按「没有行」处理（否则会多出一条空的删除行）。
+- 新增 `lib/llm/note_assistant.dart`：
+  - `buildNoteSystemPrompt` / `buildNoteUserPrompt`（按规划的 system+user 契约）；
+  - `buildNoteContext`：**选区前后各 200 字**上下文；正文超过
+    `notes_context_char_limit`（默认 12000）时降级为「大纲 + 选区 + 命中关键词段落」
+    并置 `truncated`（界面据此提示「已按相关片段裁剪上下文」）；
+    `forceFull` 对应界面上的「包含全文」开关。
+  - `runNoteAssistant`（流式 + `llm.CancelToken` + 结果清洗）；
+    带 `providerFactory` 注入点（测试用假 provider）。
+  - `kNoteAiActions`：改写 7 个（润色/扩写/缩写/语气/翻译/纠错/格式）、
+    生成 7 个（续写/摘要/标题/标签/大纲/纪要模板/复习卡片）、问答 1 个；
+    温度：改写/纠错 0.3、生成 0.7、问答 0.2。
+- 新增 `lib/ui/widgets/note_diff_dialog.dart`：`showNoteDiffDialog` ——
+  宽 720 居中，红删/绿增 + 左侧竖条，未改行折叠成「省略 N 行」，
+  底部 `[复制结果] [拒绝] [接受并应用]`。
+- 新增 `lib/ui/widgets/note_ai_panel.dart`：AI 边栏两态 —— **展开 320px**
+  （模型名 + 模型服务入口 + 收起按钮 / Tab「改写·生成·问答」/ 快捷动作 chips /
+  对话流 / 输入区 + 「包含全文」开关 + 停止按钮），
+  **收起 44px 竖轨**（AI 图标 + 生成中圆点 + 竖排「AI 助手」）。
+  **生成中不允许收起**（收起按钮置灰）；未配 provider 时给引导文案（跳「模型服务」）。
+- `lib/ui/widgets/note_editor.dart`：新增 `NoteEditorController`
+  （读当前选区 / `replaceSelection` / `replaceAll` 写回**编辑器缓冲** → 走正常自动保存）。
+- `lib/ui/pages/notes_panel.dart`：挂上 AI 边栏（右侧 320/44），顶栏的「收起 AI」
+  与边栏里的收起按钮共用 `_toggleAi`；收起状态存 `SharedPreferences: notes_ai_collapsed`；
+  **AI 结果一律先弹 diff**：接受后写进编辑器缓冲（`Ctrl+Z` 可撤销），
+  拒绝则只关窗；「复制」类结果不改正文，只进剪贴板。
+
+**改了什么文件**
+
+- 新增：`lib/util/line_diff.dart`、`lib/llm/note_assistant.dart`、
+  `lib/ui/widgets/note_diff_dialog.dart`、`lib/ui/widgets/note_ai_panel.dart`、
+  `test/line_diff_test.dart`、`test/note_ai_test.dart`
+- 改：`lib/ui/widgets/note_editor.dart`、`lib/ui/pages/notes_panel.dart`、
+  `test/note_editor_test.dart`（编辑器输入框改用 `Key('note-editor')` 限定，
+  否则会和 AI 边栏的输入框混淆）、`FEATURES.md`、`.memory/STATE.md`（本节）、
+  `.memory/MAP.yaml`（生成器刷新）
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**
+- `flutter test test/line_diff_test.dart test/note_ai_test.dart` → **20/20 全绿**
+  （diff：空输入/无变化/修改/新增/删除/整段替换/行序；
+  prompt：system 带标题、user 带正文+请求+选区、选区前后 200 字、
+  超限降级并带裁剪提示、「包含全文」强制全文、结果清洗；
+  模型：流式收集、**中途取消 → 抛错不返回内容**、未配 provider 不请求；
+  diff 弹层：接受=true / 拒绝=false；AI 面板：未配模型给引导文案、生成中不许收起；
+  编辑器通道：读选区 + 写回缓冲）
+- `flutter test`（全量）→ **390 passed, 1 skipped, 0 failed**
+- `dart run tool/gen_memory_index.dart --check` → **OK**
+
+**下一步**
+
+- 进入 **M4（移动端 + 打磨）**：窄屏底部 Tab「会话｜笔记」（唯一工作区切换入口），
+  笔记栈（列表 → 编辑 → AI 底部抽屉，高 70% 可上拉全屏）；
+  深色走查；820–1080 窄区间 AI 边栏自动收起成竖轨；空态文案。
+
+**遗留问题**
+
+- 笔记页的 AI **临时切换模型**只做了「显示当前模型 + 跳模型服务页」，
+  规划里的「本次临时换模型」下拉还没做（默认用 `AppState.appFeatureTarget`）。
+- AI 的「问答」结果目前只能复制，不能一键「作为附录插入」（那会改正文，需走 diff）。
+- 移动端还没接 AI 抽屉（M4）。
+
+---
+
+## 2026-11-04 · M2 笔记编辑区（已实现）：上预览 / 下编辑 + 三档高度 + 自动保存
+
+**做了什么**（按 `docs/NOTES_IMPL_PLAN.md` §M2）
+
+- 新增 `lib/ui/widgets/note_editor.dart`：
+  - **上预览 / 下编辑**（唯一一套布局，不做模式切换）；预览走 `markdownView()`
+    （GOTCHAS §8 的坑全部规避），改动后 **300ms 防抖**重渲。
+  - **分隔条可拖动，拖完吸附到最近档位**（40% / 20% / 0%）；0% 档时编辑区与
+    分隔条一起收起，预览占满。档位常量 `noteSplitRatios = [0, 0.2, 0.4]`。
+  - **语法工具栏**：粗体/斜体/H1-H3/无序列表/任务列表/有序列表/代码块/行内码/
+    链接/表格/引用/公式/图片；**有选区 → 包起来**（`**…**`、`*…*`、`` `…` ``…），
+    **无选区 → 插入模板片段**（表格骨架、`![说明](图片路径)`…）。
+  - `Ctrl+S`（`NoteSaveShortcut` + `NoteSaveIntent`）→ 手动保存。
+  - `NoteSummaryTile`：列表行组件（标题 + preview + 置顶图标）。
+- 重写 `lib/ui/pages/notes_panel.dart`（笔记主区）：
+  - 顶栏：标题 / **40%·20%·收起** 三档按钮 / 「收起 AI」（M3 占位，先置灰）/
+    ⋮ 菜单（重命名 · 编辑标签 · 置顶 · 归档 · 删除）。
+  - 状态条：已保存 / 保存中… / 未保存 · 字数 · 标签 · 「保存」。
+  - **自动保存：停写 800ms 落盘**（`Timer` 防抖）；`Ctrl+S` / 状态条按钮手动存。
+  - **档位持久化**：`SharedPreferences` 键 `notes_editor_split_ratio`，值
+    `40|20|0`（首次打开也落一次盘）。
+  - **外部改动检测**：打开时记 mtime，保存前比对 → 变了就弹「磁盘上的笔记已变更」
+    → 选「重新加载（丢弃本地）」/「保留本地（覆盖）」。
+  - 「用编辑工具打开」走 `util/editor_launcher.dart` 的 `openInEditor`。
+- 重写 `lib/ui/widgets/note_list.dart`（左栏列表）：搜索框 + **置顶 / 最近 /
+  归档**分区 + 标签筛选 chips + 行菜单（重命名 · 标签 · 置顶 · 归档 · 删除）。
+- `lib/models/app_config.dart`：新增 `notesContextCharLimit`
+  （JSON `notes_context_char_limit`，默认 12000，供 M3 裁剪上下文用）。
+- `lib/state/app_state.dart`：新增 `renameNote` / `setNoteTags` / `setNotePinned` /
+  `noteModifiedAt`；`lib/data/note_repository.dart`：新增 `modifiedAt`。
+- `lib/ui/pages/home_page.dart`：左栏笔记列表（`NoteList`）+ 主区（`NotesPanel`）接上。
+
+**改了什么文件**
+
+- 新增：`lib/ui/widgets/note_editor.dart`、`test/note_editor_test.dart`
+- 改：`lib/ui/pages/notes_panel.dart`、`lib/ui/widgets/note_list.dart`、
+  `lib/ui/pages/home_page.dart`、`lib/models/app_config.dart`、
+  `lib/state/app_state.dart`、`lib/data/note_repository.dart`、
+  `test/sidebar_tab_test.dart`、`test/template_max_tokens_test.dart`（等待窗口）、
+  `FEATURES.md`、`.memory/STATE.md`（本节）、`.memory/MAP.yaml`（生成器刷新）
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**
+- `flutter test test/note_editor_test.dart` → **7/7 全绿**（预览渲染 Markdown、
+  40% 可见 / 0% 收起、分隔条拖动吸附 0.2、粗体包选区、无选区插表格骨架、
+  800ms 后自动落盘、档位写 `40/20/0`）
+- `flutter test`（全量）→ **370 passed, 1 skipped, 0 failed**
+- `dart run tool/gen_memory_index.dart --check` → **OK**
+
+**踩坑**
+
+- `NotesPanel` 里的 `InkWell`（档位按钮）报「No Material widget found」——
+  面板可能被直接当 `MaterialApp.home` 用（没有 Scaffold）→ 面板自己套一层
+  `Material(color: Colors.transparent)`。这个报错还会连带把 `Row` 撑成
+  「overflowed by 299348 pixels」（ErrorWidget 的固有宽度）。
+- 全量并发下，三个「等真实 I/O 落盘」的用例会**偶发超时**
+  （`note_editor_test` 自动保存、`sidebar_tab_test` 新建笔记、
+  `template_max_tokens_test` 保存）→ 单独跑必绿。已把等待预算加大
+  （轮数 30→80、真实延时 10ms→20ms、sidebar 等待 10s→30s）。
+
+**下一步**
+
+- 进入 **M3（AI 助手）**：`lib/util/line_diff.dart`（行级 LCS，自己写）、
+  `lib/llm/note_assistant.dart`（构造 prompt + 流式执行 + 上下文裁剪）、
+  `lib/ui/widgets/note_ai_panel.dart`（展开 320 / 收起 44 竖轨）、
+  `lib/ui/widgets/note_diff_dialog.dart`（diff 预览，接受后进编辑器缓冲）。
+  默认用 `AppState.appFeatureTarget` 调模型。
+
+**遗留问题**
+
+- AI 边栏尚未实现（M3）；移动端底部 Tab（M4）。
+- 笔记正文里的首行标题变化**不会**自动改 front-matter 的 `title`
+  （当前只在重命名对话框里改）——是否要联动，留到 M3/M4 一起定。
+- 下区高度档位是**全局**的（`SharedPreferences`），没做 per-note 覆盖（按拍板）。
+
+---
+
+## 2026-11-04 · M1 侧栏 Tab + 顶行按钮（已实现，纯 UI）
+
+**做了什么**（按 `docs/NOTES_IMPL_PLAN.md` §M1；不碰存储层）
+
+- `lib/ui/pages/home_page.dart`：
+  - 新增私有枚举 `_WorkspaceTab { session, note }`；`_HomePageState` 加
+    `_tab`（当前工作区 Tab）与 `_selectedNoteId`。
+  - **左栏新增 Tab 行**（顶行下方、列表上方）：分段控件（`surfaceContainer` 底 +
+    圆角 12），选中项白底 + 主色图标；切 Tab 时**左栏列表与主区同步换**
+    （会话树 ↔ 笔记列表；聊天区 ↔ 笔记面板）。
+  - **顶行改造（D7/D8）**：右侧依次 `↻ 刷新` → `＋ 新建`（primary 实心）→ `⌂ 回到首页`；
+    「＋ 新建」会话 Tab = 新建会话、笔记 Tab = 新建笔记；
+    **刷新按钮复用同一个 widget**，只按 Tab 换 tooltip（刷新会话列表 / 刷新笔记列表）
+    与行为（`_refreshSessions` / `_refreshNotes`），刷新中的 spinner 逻辑沿用。
+  - **删除「新建会话」行**：`_navEntries` / `_navList` / `_NavRow` 整块删掉，
+    `_Sidebar` 的 `onNavigate` 参数与两个调用点一并删；`_navigate` 的死分支
+    `case 'new':` 删除（`'new'` 只由 `_navEntries` 产生）。
+  - 侧栏列表拆成 `_sessionList()`（原会话树内容）与 `_noteList()`（笔记列表）。
+  - 笔记 Tab 的「＋新建」→ `AppState.createNote()` → 主区打开该笔记。
+- 新增 `lib/ui/pages/notes_panel.dart`（笔记主区面板，**M1 为占位**，
+  M2 填「上预览/下编辑」）、`lib/ui/widgets/note_list.dart`（左栏笔记列表，
+  **M1 只落地空态/标题+preview 的简版**，M2 补搜索/置顶/最近/标签/归档与行菜单）。
+- 未做：真 `Ctrl+N` / `Ctrl+Shift+N` 快捷键（按 D11 属**新增能力**，不在 M0–M4 范围）；
+  移动端底部 Tab（M4）。
+
+**改了什么文件**
+
+- 改：`lib/ui/pages/home_page.dart`、`FEATURES.md`（§7.1、§9.1）、
+  `.memory/STATE.md`（本节）
+- 新增：`lib/ui/pages/notes_panel.dart`、`lib/ui/widgets/note_list.dart`、
+  `test/sidebar_tab_test.dart`
+- **未改**存储层（M0 的文件未动）
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**
+- `flutter test test/sidebar_tab_test.dart` → **6/6 全绿**
+- `flutter test`（全量）→ **363 passed, 1 skipped, 0 failed**（含本轮修掉的着色器问题，
+  见下「修掉的既有失败」）
+- `dart run tool/gen_memory_index.dart --check` → **OK**（MAP.yaml 已刷新）
+- 手工路径（未在本机跑）：点「笔记」Tab → 左栏出现笔记列表、主区出现笔记面板；
+  顶行「＋」在笔记 Tab 建笔记；「新建会话」文字行已消失。
+
+**修掉的既有失败（不是环境问题，已定位并修好）**
+
+- 之前全量测试里长期有 9~10 条失败，报错都是
+  `Asset 'shaders/ink_sparkle.frag' does not contain appropriate runtime stage data
+  for current backend (SkSL). Found stages: Vulkan`。
+  **根因**（见 GOTCHAS §20）：widget test 的 `defaultTargetPlatform` 是 android
+  → `ThemeData` 默认用 `InkSparkle` → 要加载运行时着色器 `shaders/ink_sparkle.frag`；
+  而**测试**资源包按 `TargetPlatform.tester` 只把它编译成 **Vulkan** stage，
+  `flutter_tester` 却跑 SkSL 后端 → 引擎拒绝加载 → 凡是要画墨水动画的用例全炸。
+- **修法**：新增 `test/helpers/test_theme.dart`（`testTheme()` = 默认主题 +
+  `InkRipple.splashFactory`，不需要运行时着色器），13 个测试文件里的 17 处
+  `MaterialApp` 全部改用它。**真 app 不受影响**（真机按目标平台编译着色器）。
+- 试过但**走不通**的路：在 `test/flutter_test_config.dart` 里设
+  `debugDefaultTargetPlatformOverride` → flutter_test 的不变量检查
+  （`debugAssertAllFoundationVarsUnset`）会让**每个**用例报
+  「The value of a foundation debug variable was changed by the test」。已放弃该文件。
+- 副作用：这些用例的墨水动画从 sparkle 变成 ripple（仅测试环境）。
+
+**踩坑（已记入 GOTCHAS）**
+
+- widget test 里 `await AppPaths.init(...)` / `state.load()` 这类**真实 I/O 必须放进
+  `tester.runAsync`** —— 直接 await 会**挂死**（假时钟不推进真实 I/O）。
+  本轮第一次写测试就卡在这里（进程空转 4 分钟无输出），改用
+  `final state = (await tester.runAsync(buildState))!;` 后正常。
+  → GOTCHAS §14 已有的提醒，这里再补一条「挂死而不是假失败」的形态。
+
+**下一步**
+
+- 进入 **M2（笔记编辑区）**：`lib/ui/widgets/note_editor.dart`（上预览 / 下编辑 +
+  分隔条拖动吸附 40%/20%/0% + 工具栏 + 300ms/800ms 防抖自动保存 + `Ctrl+S` +
+  `SharedPreferences: notes_editor_split_ratio` + 外部改动 mtime 冲突弹窗）、
+  扩写 `note_list.dart` 与 `notes_panel.dart`；新增 `test/note_editor_test.dart`。
+  注意：预览**必须**走 `markdownView()`（GOTCHAS §8），公式走 `math_support.dart`。
+
+**遗留问题**
+
+- 笔记列表/编辑区/AI 边栏都还是占位（M2/M3 落地）。
+- 移动端仍是「窄屏直接渲染侧栏」，底部 Tab 在 M4。
+- `test/template_max_tokens_test.dart` 的「保存后落盘」用例在**全量并发**下偶发失败
+  （单独跑必绿）——保存断言的等待窗口偏短，属于既有的时序脆弱点，未改。
+
+---
+
+## 2026-11-04 · M0 地基层（已实现）：Note 模型 / front-matter 序列化 / NoteRepository / 索引第五桶
+
+**做了什么**（按 `docs/NOTES_IMPL_PLAN.md` §M0；**零 UI 改动**）
+
+- 新增 `lib/models/note.dart`：`Note`（完整笔记：id/title/tags/created_at/updated_at/
+  pinned/archived_at/body + `extra` 保留未知 front-matter key）、`NoteSummary`
+  （列表摘要：无正文，有 preview）、`NoteIndexEntry`（index.json `notes` 桶的条目）。
+- 新增 `lib/data/xml/note_md.dart`（**唯一**的笔记序列化处，纯字符串、无 IO）：
+  `encodeNote` / `decodeNote` / `decodeNoteSummary` / `parseTags` / `previewFromBody` /
+  `titleFromBody`；常量 `notePreviewLength = 80`、`noteHeadBytes = 4096`。
+  规则：正文**逐字保留**（写回只重写 front-matter 块）；front-matter 与正文之间
+  只吃掉**一个**空行；未知 key 原样保留；**裸 Markdown**（无 front-matter）按
+  「无头笔记」导入（标题取正文首个 `# ` 标题），不报错。
+- 新增 `lib/data/note_repository.dart`：读写 `<root>/notes/<id>.md`、tmp+rename 原子写
+  （含 Windows 回落）、列表走索引（不读正文）、`read` 按需读正文。
+- 改 `lib/core/app_paths.dart`：`notesDir` / `noteFile(id)`，`ensureDirs()` 加 `notesDir`。
+- 改 `lib/models/catalog_index.dart`：加 `notes` 桶 + `allNoteIds`，
+  **`version` 4 → 5**（旧索引被丢弃重建，既有机制）。
+- 改 `lib/data/index_repository.dart`：`rebuild()` 扫 `notes/`（**只读文件头 4KB** 解析
+  front-matter；头部没闭合 `---` 时回退读全文）、`_matchesDisk()` 增加 notes id 集合比对、
+  新增 `upsertNote` / `removeNote`。
+- 改 `lib/state/app_state.dart`：`notes` / `archivedNotes`（`List<NoteSummary>`）、
+  `refreshNotes()`、`createNote()` / `readNote()` / `saveNote()` / `setNoteArchived()` /
+  `deleteNote()`；`load()` 里调用 `refreshNotes()`；`indexRepository` 改 `late final`，
+  `noteRepository` 与它共用同一实例（否则两边索引不是一份）。
+
+**与计划的偏差（2 处，均已在实现中确认并按更贴规范的做法取）**
+
+1. 计划写 `AppState.notes: List<Note>` —— 实现用 `List<NoteSummary>`：列表带元数据、
+   正文懒加载是既有约定（会话同理），否则每篇笔记的正文都会被读进内存。
+2. `NoteIndexEntry` 放在 `lib/models/note.dart`（而不是 `catalog_index.dart`）：
+   让笔记特性的模型自成一个文件，catalog_index 只 import 它。
+
+**改了什么文件**
+
+- 新增：`lib/models/note.dart`、`lib/data/xml/note_md.dart`、`lib/data/note_repository.dart`、
+  `test/note_storage_test.dart`
+- 改：`lib/core/app_paths.dart`、`lib/models/catalog_index.dart`、
+  `lib/data/index_repository.dart`、`lib/state/app_state.dart`、
+  `test/task_session_test.dart`（`expect(CatalogIndex.version, 4)` → **5**）、
+  `FEATURES.md`（§1.1 / §1.5 / §2 / 新增 §7.1）、
+  `.memory/ARCHITECTURE.md`（新增不变量 16–18 + 落盘布局加 `notes/`）、
+  `.memory/GOTCHAS.md`（新增 §18 笔记 front-matter 坑）、
+  `.memory/ANNOTATIONS.yaml`（新增 `features[].notes`、更新 `data` / `data.xml` 职责）、
+  `.memory/MAP.yaml`（生成器刷新）
+
+**怎么验证**
+
+- `flutter analyze lib test` → **No issues found**
+- `flutter test test/note_storage_test.dart` → **15/15 全绿**（front-matter 往返、
+  正文逐字相等、未知 key 保留、缺 key 走默认、裸 Markdown 导入、归档时间、
+  仓库 CRUD、原子写无 `.tmp` 残留、4KB 头部扫描、index.json 出现 notes 桶且
+  version=5、v4 旧索引被丢弃重建、索引损坏重建、外部新增笔记被校验发现、
+  索引条目 JSON 往返、AppState 集成）
+- `flutter test`（全量）→ **345 passed, 1 skipped, 9 failed**
+- `dart run tool/gen_memory_index.dart --check` → **OK**（MAP.yaml 已用生成器刷新）
+- ⚠️ 那 9 个失败是**环境性既有失败**，与本轮改动无关：`git stash` 后在干净树上跑
+  同样是 9 个，报错均为
+  `Asset 'shaders/ink_sparkle.frag' does not contain appropriate runtime stage data
+  for current backend (SkSL). Found stages: Vulkan`
+  （涉及 archive_page / home_flow / home_template_dialog / project_dialog /
+  provider_max_output / session_wizard_prompt / task_session_flow /
+  template_max_tokens / template_default）。**需要用户在正常环境复跑确认全绿。**
+  （本轮唯一新增的真失败是 `test/task_session_test.dart` 断言了旧的
+  `CatalogIndex.version == 4`，已随版本递增改为 5。）
+
+**下一步**
+
+- 进入 **M1（纯 UI）**：左栏「会话 | 笔记」Tab、顶行「↻ 刷新 / ＋ 新建 / ⌂ 回家」、
+  移除「新建会话」行（连带删 `_navEntries` / `_navList` / `_NavRow` 与
+  `_navigate` 的死分支 `case 'new':`）、刷新按钮按 Tab 复用同一 widget；
+  新增 `test/sidebar_tab_test.dart`，并保持 `test/home_flow_test.dart` 不回归。
+
+**遗留问题**
+
+- 笔记的 UI（列表 / 编辑区 / AI 边栏）尚未存在，M0 只有存储层。
+- `notes` 桶里归档笔记与活动笔记同桶（用 `archived_at` 区分），与「会话分两桶」的
+  做法不同 —— 已在 `FEATURES.md §1.5` 注明。
+- 上下文裁剪阈值（`notes_context_char_limit`）与下区高度档位
+  （`SharedPreferences: notes_editor_split_ratio`）都还没接，M2/M3 再落。
+- 那 9 个环境性 widget 测试失败未解决（与笔记无关）。
+
+---
+
+## 2026-11-03 · 实施规划（未实现）：新增 docs/NOTES_IMPL_PLAN.md + 两点拍板落定
+
+**做了什么**
+
+- 用户拍板两个悬置项：
+  - **#4 移动端不保留双入口** —— 底部 Tab「会话｜笔记」是唯一工作区切换，
+    不再同时提供抽屉入口。
+  - **#5 刷新按钮复用** —— 同一个 widget 复用，按 Tab 只换 tooltip 与行为
+    （会话列表 / 笔记列表）。
+- 新增 **`docs/NOTES_IMPL_PLAN.md`**（实施规划，约 490 行）：让新会话照着做。
+  内容：10 条已拍板决策（含本轮两条 + 新增 D11）、现状代码锚点表（真实符号名）、
+  跨层不变量与已知坑提醒、**M0→M4 五阶段**（每阶段：目标 / 新增改文件 /
+  数据契约 / 实现要点 / 测试 / 验收）、文件总表、文档与记忆索引收尾清单、
+  验证口径、风险清单、**新会话开场对话提示词**（可直接复制）。
+- 顺带修正一处**事实错误**（规划与设计稿里都曾按「Ctrl+N 是真快捷键」写）：
+  全仓检索后确认 `Ctrl+N` **只是 `_navEntries` 里的文案标签**，
+  没有任何 `Shortcuts`/`CallbackAction` 绑定（`Shortcuts` 只出现在
+  `lib/ui/widgets/input_area.dart`，管 Enter/换行）。
+  → 设计稿与规划都改为如实描述；「真快捷键」被降级为**新增能力**（单列任务）。
+  同时补记：删 `_navEntries` 后 `_navigate` 的 `case 'new':` 变死代码，需一并删。
+
+**改了什么文件**
+
+- 新增：`docs/NOTES_IMPL_PLAN.md`
+- 改：`docs/NOTES_AI_DESIGN.md`（§5.1.1 快捷键表述纠正）
+- 改：`docs/mockups/notes_ui.html`（新建会话按钮 tooltip 去掉 `Ctrl+N`）
+- 改：`.memory/STATE.md`（本节）
+- **未改任何 `lib/` 代码**
+
+**怎么验证**
+
+- 规划里引用的代码位置逐条核对过真实源码：`_Sidebar` / `_brandRow` / `_navList` /
+  `_navEntries` / `_NavRow` / `_navigate` / `_sessionArea` / `_MobileChatPage` /
+  `markdownView` / `prompt_assistant._stream` / `appFeatureTarget` /
+  `CatalogIndex.version` / `AppPaths.ensureDirs` / `SessionRepository._writeAtomic` /
+  `TemplateRepository` / `confirmDelete` / `AppTheme` / `AppFonts`。
+- 确认 `_NavRow` 仅被 `_navList` 使用；确认 `'new'` id 仅由 `_navEntries` 产生。
+- 本轮**未跑** `flutter analyze` / `flutter test`（无代码改动）。
+
+**下一步**
+
+- 实施按 `docs/NOTES_IMPL_PLAN.md` 的 M0→M4 推进；每阶段独立提交、独立验证、
+  独立更新 `.memory/STATE.md`。
+- 实施时用规划 §9 的「对话提示词」开场。
+
+**遗留问题**
+
+- 仍待拍板（规划里已给出最小取值，实施时按此走）：
+  **①** 笔记是否支持内嵌图片附件（一期按「不做」）；
+  **②** AI 上下文裁剪阈值是否可配（按 `config.json` 的
+  `notes_context_char_limit`，默认 12000）；
+  **③** 下区高度档位按笔记存还是全局存（按全局 `SharedPreferences`，
+  不做 per-note 覆盖）。
+- 规划里把「真 Ctrl+N / Ctrl+Shift+N 快捷键」列为**新增能力**，
+  不在 M0–M4 范围内，需另行拍板是否要做。
+
+---
+
+## 2026-11-03 · 设计调整（未实现）：笔记栏与会话栏合并（侧栏 Tab）+ 顶行新建按钮
+
+**做了什么**
+
+- 用户提了两点 UI 修改，本轮**只改 UI 设计**（mockup + 设计文档），**零 Dart 代码改动**：
+  1. **「笔记栏」与「会话栏」合并，用 Tab 切换** —— 笔记不再是独立路由/独立页面，
+     而是 `HomePage` 左栏的一个 Tab（`会话 | 笔记`）。切 Tab 时**左栏列表与主区同步换**：
+     会话 Tab = 会话树 + 聊天区；笔记 Tab = 笔记列表 + 上预览/下编辑 + AI 边栏。
+     移动端同样对齐：底部 Tab 改为 `会话 | 笔记`，笔记内部是 列表→编辑→AI抽屉 的栈。
+  2. **移除侧栏「新建会话」行**，改为**顶行图标按钮**，插到「刷新会话列表」**右侧**
+     （primary 实心按钮）；笔记 Tab 下同位置变「＋ 新建笔记」。
+     连带影响：`_navEntries` 快捷入口列表只剩一项 → 整行取消（见 `home_page.dart`
+     的 `_navEntries` / `_navList` / `_brandRow`）。
+- 上一轮定的「上预览/下编辑 + 下区高度三档 + AI 边栏可收起」**保持不变**，与本次合并叠加。
+
+**改了什么文件**
+
+- 改：`docs/mockups/notes_ui.html`
+  - 画板① 重写为「合并后的工作区 · 侧栏 Tab 切换」：态A（会话 Tab，含聊天区 + 输入区
+    的新样式 `.chat-main` / `.chat-scroll` / `.composer`）与态B（笔记 Tab）上下并列
+  - 新增样式：`.side-tabs`（侧栏 Tab）、`.icon-btn.primary`、`.chat-*`、`.composer`
+  - 侧栏顶行改造：品牌行右侧 = 刷新 / ＋新建 / 回家；删除「＋ 新建会话」虚线行
+  - 移动端画板：底部 Tab 改 `会话 | 笔记`；列表页顶行加「＋ 新建笔记」；去掉重复的 FAB
+  - 画板编号：①合并工作区 ②下区高度三档&AI收起态 ③diff弹层 ④移动端 ⑤交互流程
+- 改：`docs/NOTES_AI_DESIGN.md`
+  - §1 范围内补「与会话合并为同一工作区的两个侧栏 Tab」
+  - §3 总体方案图重画（合并后的外壳 + 合并要点）
+  - §5.1 改为「入口：与『会话』并列的侧栏 Tab」；新增 §5.1.1「侧栏顶行调整」
+  - §5.2 改为「桌面（≥1080px）」，画出会话 Tab / 笔记 Tab 两个外壳对照
+  - §5.3 移动端改为底部 Tab `会话 | 笔记` + 笔记内部栈
+  - §8 M1/M4 分期项、§10 验收标准同步
+- 改：`.memory/STATE.md`（本节）
+- **未改任何 `lib/` 代码**
+
+**怎么验证**
+
+- headless Chromium 逐块渲染截图核对：合并工作区（态A/态B）、下区三档、AI 两态、
+  diff 弹层、移动端三屏、交互流程，均正常。
+- 期间修掉：AI 面板「模型」标签竖排换行（`white-space:nowrap` + select 限宽）；
+  移动端「新建笔记」与 FAB 重复（去掉 FAB）。
+- 本轮**未跑** `flutter analyze` / `flutter test`（无代码改动）。
+
+**下一步**
+
+- 等用户确认后再实现。实现要点（对应真实代码位置）：
+  - `lib/ui/pages/home_page.dart` 的 `_Sidebar`：`_brandRow` 加新建按钮、删掉
+    `_navEntries`/`_navList` 的「新建会话」行；加 Tab 行
+  - `HomePage` 增加 `_workspaceTab` 状态（会话/笔记），左栏与主区按它切换
+  - 笔记主区建议放 `lib/ui/pages/notes_panel.dart`（不新增路由）
+  - 移动端底部 Tab 同步改为 `会话 | 笔记`
+
+**遗留问题**
+
+- 沿用前两轮的待拍板点：**①** 笔记是否支持内嵌图片附件；**②** 上下文超 12k 字
+  自动裁剪的阈值是否可配；**③** 高度档位存 `SharedPreferences` 还是 front-matter。
+- 新增待拍板点：**④** 移动端底部 Tab 改成 `会话|笔记` 后，原来的移动端会话入口
+  （抽屉）是否保留双入口（底部 Tab + 抽屉）；**⑤** 笔记 Tab 下侧栏顶行的「刷新」
+  是否复用同一个 widget 还是按 Tab 换语义。
+
+---
+
+## 2026-11-03 · 设计调整（未实现）：笔记 UI 改为「一套布局」+ 上下分屏 + AI 边栏可收起
+
+**做了什么**
+
+- 用户对上一轮设计稿提了三点 UI 修改，本轮**只改 UI 设计**（mockup + 设计文档），
+  **零 Dart 代码改动**、不改版本号：
+  1. 「编辑 / 分屏 / 预览」三选一 → **合并为一套**：中间栏固定为
+     **上下分屏，上区预览 / 下区编辑**，不再做模式切换；
+  2. 下区（编辑区）高度可选 **40% / 20% / 0%**（0% = 收起编辑区，全宽预览）；
+  3. AI 边栏要能 **收缩 / 展开**。
+- 设计取舍（写进文档）：
+  - 中栏只留一个心智模型（预览永远在上、编辑永远在下），用户只调「下区多高」这一个量；
+  - 分隔条**可拖动**，拖动结果**吸附到最近档位**（40/20/0），保证持久化值只有三个；
+  - 档位**按笔记持久化**（`SharedPreferences` 或 front-matter 扩展字段）；
+  - AI 边栏：展开 320px / 收起 **44px 竖轨**（保留 AI 图标 + 「生成中」角标 + 竖排文字），
+    收起时笔记区横向扩展占回 320px；**生成中不允许收起**（或收起后角标继续跑完）。
+  - 移动端与桌面**同一套上下分屏**，只是 AI 侧栏换成底部抽屉。
+- mockup 画板重构为 5 块：①桌面三栏（上下分屏）②**下区高度三档 & AI 边栏收起态**
+  ③AI diff 弹层 ④移动端 ⑤交互流程。
+
+**改了什么文件**
+
+- 改：`docs/mockups/notes_ui.html`（布局重构：`.ed-prev`/`.ed-splitter`/`.ed-src` +
+  `.editor.h20/.h0` 高度档位类；`.ai.collapsed` 44px 竖轨态；AppBar 段控换成
+  「40%/20%/收起」；新增画板②；手机端编辑页改上下分屏）
+- 改：`docs/NOTES_AI_DESIGN.md`（§3 总体方案图、§5.2/5.2.2/5.2.3、§5.3 移动端、
+  §8 M2 分期项）
+- 改：`.memory/STATE.md`（本节）
+- **未改任何 `lib/` 代码**
+
+**怎么验证**
+
+- 用 headless Chromium（`~/.cache/ms-playwright/chromium-1228`）把 mockup 逐块
+  渲染截图核对：主画板（上下分屏 + 40% 档）、画板②（三档 + AI 两态）、
+  移动端三屏、交互流程，均正常；期间修掉了两个问题（编辑区 div 未闭合导致布局错位；
+  手机端标题被档位控件挤没 → 改为 AppBar 图标按钮 + 状态条显示「编辑区 40%」）。
+- 本轮**未跑** `flutter analyze` / `flutter test`（无代码改动）。
+
+**下一步**
+
+- 等用户确认这版 UI 后再进入实现；实现时按 M1 存储与列表 → M2 编辑器与预览
+  （上下分屏 + 高度三档 + 拖动吸附）→ M3 AI 助手 → M4 集成与移动端。
+- 实现要点提醒（来自本轮设计）：`markdownView()` 复用不变；预览在上编辑在下；
+  高度吸附档位；AI 收起态用 44px 竖轨且生成中不收起。
+
+**遗留问题**
+
+- 上一轮留的两个待拍板点仍未决：**①** 笔记是否支持内嵌图片附件；
+  **②** 上下文超 12k 字自动裁剪的阈值是否可配。
+- 新增一个实现期待定项：高度档位存 `SharedPreferences` 还是 front-matter 扩展字段
+  （文档里两者都写了，实现时二选一）。
+
+---
+
+## 2026-11-03 · 设计（未实现）：带 AI 助手的 Markdown 笔记
+
+**做了什么**
+
+- 需求：结合项目**已有的 Markdown 渲染能力**，设计一个带 AI 助手的 Markdown 笔记
+  功能。**只出功能设计与 UI 设计图，不做实现**（本轮零 Dart 代码改动）。
+- 盘点可复用点（决定设计方案的依据）：
+  - `lib/ui/widgets/markdown_view.dart` 的 `markdownView()` —— 已封装代码高亮、
+    行内码、引用、表格（`FlexColumnWidth`）、KaTeX 公式、选中复制保换行；
+    **笔记预览直接调用它，不重写渲染器**（否则 `GOTCHAS.md` §8 的坑会全部复现）。
+  - `lib/ui/widgets/math_support.dart` —— 公式语法随预览自动生效。
+  - `lib/llm/prompt_assistant.dart` —— 应用级 LLM 调用的现成范式
+    （`createProvider` → `provider.stream` → `onProgress` 增量 → `_unwrap` 去围栏）。
+  - `lib/state/app_state.dart` 的 `appFeatureTarget` —— 笔记 AI 默认用「模型服务」页
+    选的应用功能调用模型。
+  - `lib/data/index_repository.dart` + `lib/models/catalog_index.dart` —— 索引缓存
+    （笔记加第 5 个桶，`CatalogIndex.version` 4 → 5）。
+  - `lib/ui/widgets/confirm_dialog.dart` —— 删除确认交互复用。
+- 存储方案：**Markdown 文件 + front-matter**（`<root>/notes/<id>.md`），
+  不是会话那套 XML —— 产物要给人读/给外部工具读，`.md` 可被外部编辑器、git、
+  grep 直接消费；元数据用固定白名单 key 的 front-matter 承载。
+- AI 助手三组能力：**改写**（选区/全文，产出替换文本）/ **生成**（摘要、大纲、
+  标题、标签、待办骨架、复习卡片）/ **问答**（只读，基于笔记上下文）。
+- **写回纪律**：任何 AI 对正文的修改都必须先过「diff 预览弹层 → 接受/拒绝」，
+  接受后先进编辑器缓冲（可 `Ctrl+Z`），再走自动保存 —— 不存在静默覆盖。
+- UI 设计（HTML mockup，4 块画板）：①桌面三栏（笔记列表 240 / 编辑区 / AI 侧栏 320）
+  ②AI 修改 diff 弹层 ③移动端三 Tab（列表 / 编辑 / AI 底部抽屉）④交互流程。
+  配色/圆角/字号沿用 `lib/ui/theme/app_theme.dart`；深浅色两套都做了。
+
+**改了什么文件**
+
+- 新增：`docs/NOTES_AI_DESIGN.md`（功能设计，约 400 行）
+- 新增：`docs/mockups/notes_ui.html`（UI 设计图，单文件、零外部依赖、可直接浏览器打开）
+- 改：`.memory/STATE.md`（本节）
+- **未改任何 `lib/` 代码，未改版本号**
+
+**怎么验证**
+
+- 设计稿的 HTML 用 headless Chromium（`~/.cache/ms-playwright/chromium-1228`）
+  渲染截图逐块核对过：桌面三栏、diff 弹层、移动端三块、深色模式均正常，
+  工具栏/侧栏图标全部换成内联 SVG（emoji 在无字体环境会变成豆腐块）。
+- 本轮**未跑** `flutter analyze` / `flutter test`（无代码改动，按约定不代跑）。
+
+**下一步**
+
+- 用户确认设计后再进入实现，建议按文档里的 M1→M4 分期：
+  M1 存储与列表 → M2 编辑器与预览 → M3 AI 助手 → M4 集成与移动端打磨。
+- 实现时先落 `lib/models/note.dart` + `lib/data/xml/note_md.dart`（序列化只在这层），
+  再接 `NoteRepository` 与 `CatalogIndex` 第 5 桶（version 4 → 5）。
+
+**遗留问题**
+
+- 文档里留了两个待拍板点：**①** 笔记是否需要支持内嵌图片附件（一期只做纯 Markdown
+  + 外部相对路径引用）；**②** 上下文超 12k 字时自动降级为「标题 + 大纲 + 选区 +
+  关键词段落」的阈值是否可配（文档里写成可在设置里调）。
+- 未做「笔记 ↔ 会话」双向集成（列为二期 M4/§7）。
+
+---
+
 ## 2026-11-04 · 改名版打包：每次 build 多打一个「只改应用名」的 SixChat 版本
 
 **做了什么**
@@ -355,7 +907,7 @@
 
 | 项 | 值 |
 |---|---|
-| 应用版本 | 0.6.13 (build 1) |
+| 应用版本 | 0.7.0 (build 1) |
 | 最近提交 | `dcc13fe` release: v0.6.11 — 任务式会话（已提交 + 打标签 + 推送 origin/main） |
 | 工作区 | 干净（除两处与本轮无关的本地改动：`lib/models/app_config.dart` 的 defaultTools 默认值、未跟踪的 `.VSCodeCounter/`） |
 | 记忆索引 | 已建立并在用：`.memory/`（7 个文件）+ `tool/gen_memory_index.dart`（MAP 已刷新） |
