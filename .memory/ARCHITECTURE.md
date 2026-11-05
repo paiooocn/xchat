@@ -148,3 +148,8 @@ UI 发消息
     ③ 空闲看门狗（`idleTimeout`）按**前台时间**计时（`lib/core/app_activity.dart`
     实现 `llm.ActivityClock`），后台挂起的时间不得计入，否则一回到前台就误报
     「stream stalled」。
+24. **系统栏内边距只在 `XChatApp.builder` 预留一次**：Android（15+ edge-to-edge）
+    会画到状态栏/导航栏底下。`lib/app.dart` 的 `builder` 用 `MediaQuery.padding`
+    的 top/bottom 包一层 `Padding` + `MediaQuery.removePadding`，子页面因此
+    **不需要**自己再躲状态栏；新增整屏页面时不要改回 `viewPadding`，也不要再加
+    `Scaffold` 级别的手工偏移（会与这层叠加）。

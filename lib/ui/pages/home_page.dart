@@ -184,9 +184,9 @@ class _HomePageState extends State<HomePage> {
     final count = context.watch<AppState>().approvalCenter.pending.length;
     return IconButton(
       tooltip: count > 0 ? '工具审批（$count 项待处理）' : '工具审批',
-      iconSize: 20,
+      iconSize: 17,
       visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
       padding: EdgeInsets.zero,
       icon: Badge(
         isLabelVisible: count > 0,
@@ -550,6 +550,7 @@ class _HomePageState extends State<HomePage> {
                       width: AppTheme.sidebarWidth,
                       child: _Sidebar(
                         toolbarActions: _sidebarToolbar(context),
+                        titleMenu: _moreMenu(context),
                         tab: _tab,
                         onTabChanged: (tab) => setState(() => _tab = tab),
                         notes: state.notes,
@@ -583,8 +584,6 @@ class _HomePageState extends State<HomePage> {
                         },
                         onRefreshSessions: _refreshSessions,
                         onRefreshNotes: _refreshNotes,
-                        onExternalMenu: _onExternalMenu,
-                        externalRootOpen: state.externalRoot != null,
                         refreshingSessions: _refreshingSessions,
                         onSelect: (id) => _openSession(context, id),
                         onNewSession: (projectId) =>
@@ -621,6 +620,7 @@ class _HomePageState extends State<HomePage> {
                 )
               : _Sidebar(
                   toolbarActions: _sidebarToolbar(context),
+                  titleMenu: _moreMenu(context),
                   compact: true,
                   tab: _tab,
                   onTabChanged: (tab) => setState(() => _tab = tab),
@@ -655,10 +655,8 @@ class _HomePageState extends State<HomePage> {
                   },
                   onRefreshSessions: _refreshSessions,
                   onRefreshNotes: _refreshNotes,
-                  onExternalMenu: _onExternalMenu,
-                  externalRootOpen: state.externalRoot != null,
                   refreshingSessions: _refreshingSessions,
-                  // 底部工具条已固定在侧栏底部，列表不再需要为悬浮按钮留白。
+                  // 底行工具条已挪到顶行，列表底部只留一点呼吸空间。
                   bottomInset: 8,
                   onSelect: (id) async {
                     await _openSession(context, id);
@@ -709,19 +707,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 侧栏底部右侧的工具图标栏：审批 / 模板 / 更多。
+  /// 侧栏顶行的工具图标（排在「刷新」左侧）：审批 / 模板。
   List<Widget> _sidebarToolbar(BuildContext context) => [
         _approvalBadge(),
         _templatesButton(context),
-        _moreMenu(context),
       ];
 
-  /// 侧栏工具条里的「模板」入口。
+  /// 侧栏顶行里的「模板」入口。
   Widget _templatesButton(BuildContext context) => IconButton(
         tooltip: '模板',
-        iconSize: 20,
+        iconSize: 17,
         visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
         padding: EdgeInsets.zero,
         icon: const Icon(Icons.dashboard_customize_outlined),
         onPressed: () => Navigator.of(context).push(
@@ -729,19 +726,39 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-  /// 侧栏工具条里的「更多」菜单。
+  /// 「更多」菜单里转给 [_onExternalMenu] 的条目（外部 md / 目录相关的动作）。
+  static const _externalMenuActions = <String>{
+    'file',
+    'dir',
+    'inputFile',
+    'inputDir',
+    'refresh',
+    'close',
+  };
+
+  /// 侧栏顶行、标题右侧的「更多」菜单（图标为三横线）。
   Widget _moreMenu(BuildContext context) => PopupMenuButton<String>(
         tooltip: '更多',
-        iconSize: 20,
         padding: EdgeInsets.zero,
-        icon: const Icon(Icons.more_vert),
         onSelected: (value) {
           if (value == 'theme') {
             _toggleTheme();
             return;
           }
+          // 外部 Markdown 的动作原先在顶行的文件夹菜单里，顶行腾空间后并入此处。
+          if (_externalMenuActions.contains(value)) {
+            _onExternalMenu(value);
+            return;
+          }
           _navigate(context, value);
         },
+        // child 版按钮：尺寸就是 28×28（icon 版会套一个 48px 的 IconButton，
+        // 288px 的侧栏顶行放不下）。
+        child: const SizedBox(
+          width: 28,
+          height: 28,
+          child: Icon(Icons.menu, size: 19),
+        ),
         itemBuilder: (context) {
           final mode = context.read<AppState>().config.themeMode;
           final themeIcon = switch (mode) {
@@ -804,6 +821,51 @@ class _HomePageState extends State<HomePage> {
                 label: '设置',
               ),
             ),
+            PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'file',
+              child: _MoreMenuItem(
+                icon: Icons.description_outlined,
+                label: '打开 md 文件…',
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'dir',
+              child: _MoreMenuItem(
+                icon: Icons.folder_open_outlined,
+                label: '打开文件夹…',
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'inputFile',
+              child: _MoreMenuItem(
+                icon: Icons.edit_outlined,
+                label: '输入文件路径…',
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'inputDir',
+              child: _MoreMenuItem(
+                icon: Icons.edit_outlined,
+                label: '输入文件夹路径…',
+              ),
+            ),
+            if (context.read<AppState>().externalRoot != null) ...[
+              const PopupMenuItem(
+                value: 'refresh',
+                child: _MoreMenuItem(
+                  icon: Icons.sync,
+                  label: '重新扫描外部目录',
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'close',
+                child: _MoreMenuItem(
+                  icon: Icons.close,
+                  label: '关闭外部目录',
+                ),
+              ),
+            ],
             PopupMenuDivider(),
             // 最后一项显示应用版本号（只读，不可点击）。
             PopupMenuItem(
@@ -1360,8 +1422,6 @@ class _Sidebar extends StatelessWidget {
     required this.onSelectNote,
     required this.onNewNote,
     this.onRefreshNotes,
-    this.onExternalMenu,
-    this.externalRootOpen = false,
     this.externalRoot,
     this.externalFiles = const <ExternalMdEntry>[],
     this.externalTruncated = false,
@@ -1378,6 +1438,7 @@ class _Sidebar extends StatelessWidget {
     this.onEditProject,
     this.onGoHome,
     this.toolbarActions = const [],
+    this.titleMenu,
     this.compact = false,
   });
 
@@ -1400,13 +1461,6 @@ class _Sidebar extends StatelessWidget {
 
   /// Re-lists notes from disk (the same button, note tab).
   final VoidCallback? onRefreshNotes;
-
-  /// 笔记 Tab 顶行「打开外部 Markdown」菜单的动作：
-  /// `file` / `dir` / `inputFile` / `inputDir` / `refresh` / `close`。
-  final void Function(String action)? onExternalMenu;
-
-  /// 当前是否打开了外部目录（决定菜单里是否显示刷新/关闭）。
-  final bool externalRootOpen;
 
   // ---- 外部 md 文件区（转交给 [NoteList]）--------------------------------
 
@@ -1455,8 +1509,11 @@ class _Sidebar extends StatelessWidget {
   /// Back to the welcome page (clears the selected session).
   final VoidCallback? onGoHome;
 
-  /// 侧栏底部右侧的工具图标栏（审批 / 模板 / 更多）。
+  /// 侧栏顶行的工具图标（排在「刷新」左侧）：审批 / 模板。
   final List<Widget> toolbarActions;
+
+  /// 侧栏顶行、标题右侧的「更多」菜单。
+  final Widget? titleMenu;
 
   /// 窄屏（移动端）：工作区由底部 Tab 切换，侧栏内部的分段 Tab 不再显示
   /// —— 底部 Tab 是唯一入口（D9）。
@@ -1484,8 +1541,6 @@ class _Sidebar extends StatelessWidget {
                 ? _sessionList(context, theme)
                 : _noteList(context, theme),
           ),
-          Divider(height: 1, color: scheme.outlineVariant),
-          _bottomRow(context, theme),
         ],
       ),
     );
@@ -1632,110 +1687,86 @@ class _Sidebar extends StatelessWidget {
       onCloseExternalRoot: onCloseExternalRoot,
     );
   }
-  /// 品牌行：徽标 + 应用名 + 刷新 / 新建 / 回到首页。
+
+  /// 顶行：徽标 + 「☰ 更多」+ 标题 + 审批 / 模板 / 刷新 / 新建 / 回到首页。
   ///
   /// 「刷新」按钮在两个 Tab 之间**复用同一个 widget**，只换 tooltip 与行为；
   /// 「＋ 新建」在会话 Tab 新建会话、在笔记 Tab 新建笔记。
+  /// 侧栏只有 `AppTheme.sidebarWidth`（288px）宽：按钮统一 28×28（图标 17）
+  /// 且**彼此留 [_brandRowGap] 的间距**（贴在一起会显得很挤）；标题占掉剩余
+  /// 宽度并从左对齐，过长时省略。
+  /// 「打开外部 Markdown」不再是独立按钮（顶行放不下 7 个），已并入「更多」菜单。
+  static const double _brandRowGap = 6;
+
   Widget _brandRow(BuildContext context, ThemeData theme) {
     final isNote = tab == _WorkspaceTab.note;
+    final actions = <Widget>[
+      ...toolbarActions,
+      IconButton(
+        tooltip: isNote ? '刷新笔记列表' : '刷新会话列表',
+        iconSize: 17,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        padding: EdgeInsets.zero,
+        icon: refreshingSessions
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onPressed: refreshingSessions
+            ? null
+            : (isNote ? (onRefreshNotes ?? onRefreshSessions) : onRefreshSessions),
+      ),
+      IconButton.filled(
+        tooltip: isNote ? '新建笔记' : '新建会话',
+        iconSize: 17,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          // 图标颜色必须显式给 onPrimary：应用的 iconTheme 把所有 IconButton
+          // 的前景色定成 onSurfaceVariant，而 filled 按钮的底色是 primary
+          // —— 深灰图标压在蓝底上几乎看不见（只剩一个蓝圆块）。
+          foregroundColor: theme.colorScheme.onPrimary,
+          backgroundColor: theme.colorScheme.primary,
+          minimumSize: const Size(28, 28),
+          padding: EdgeInsets.zero,
+        ),
+        icon: const Icon(Icons.add),
+        onPressed: isNote ? onNewNote : () => onNewSession(null),
+      ),
+      IconButton(
+        tooltip: '回到首页',
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        padding: EdgeInsets.zero,
+        icon: const Icon(Icons.home_outlined),
+        onPressed: onGoHome,
+      ),
+    ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 14, 4, 10),
+      padding: const EdgeInsets.fromLTRB(8, 12, 2, 8),
       child: Row(
         children: [
-          const BrandMark.solid(size: 26),
-          const SizedBox(width: 8),
-          Text(
-            kAppBrandName,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const Spacer(),
-          if (isNote)
-            PopupMenuButton<String>(
-              tooltip: '打开外部 Markdown',
-              padding: EdgeInsets.zero,
-              onSelected: (value) => onExternalMenu?.call(value),
-              // child 版按钮：尺寸就是 30×30（icon 版会套一个 48px 的 IconButton，
-              // 在 280px 的侧栏里会和品牌名一起溢出）。
-              child: const SizedBox(
-                width: 30,
-                height: 30,
-                child: Icon(Icons.folder_open_outlined, size: 18),
+          const BrandMark.solid(size: 22),
+          const SizedBox(width: 4),
+          ?titleMenu,
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              kAppBrandName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'file',
-                  child: Text('打开 md 文件…'),
-                ),
-                const PopupMenuItem(
-                  value: 'dir',
-                  child: Text('打开文件夹…'),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'inputFile',
-                  child: Text('输入文件路径…'),
-                ),
-                const PopupMenuItem(
-                  value: 'inputDir',
-                  child: Text('输入文件夹路径…'),
-                ),
-                if (externalRootOpen) ...[
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'refresh',
-                    child: Text('重新扫描目录'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'close',
-                    child: Text('关闭目录'),
-                  ),
-                ],
-              ],
             ),
-          IconButton(
-            tooltip: isNote ? '刷新笔记列表' : '刷新会话列表',
-            iconSize: 19,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-            padding: EdgeInsets.zero,
-            icon: refreshingSessions
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            onPressed: refreshingSessions
-                ? null
-                : (isNote ? (onRefreshNotes ?? onRefreshSessions) : onRefreshSessions),
           ),
-          IconButton.filled(
-            tooltip: isNote ? '新建笔记' : '新建会话',
-            iconSize: 18,
-            visualDensity: VisualDensity.compact,
-            style: IconButton.styleFrom(
-              // 图标颜色必须显式给 onPrimary：应用的 iconTheme 把所有 IconButton
-              // 的前景色定成 onSurfaceVariant，而 filled 按钮的底色是 primary
-              // —— 深灰图标压在蓝底上几乎看不见（只剩一个蓝圆块）。
-              foregroundColor: theme.colorScheme.onPrimary,
-              backgroundColor: theme.colorScheme.primary,
-              minimumSize: const Size(30, 30),
-              padding: EdgeInsets.zero,
-            ),
-            icon: const Icon(Icons.add),
-            onPressed: isNote ? onNewNote : () => onNewSession(null),
-          ),
-          IconButton(
-            tooltip: '回到首页',
-            iconSize: 20,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.home_outlined),
-            onPressed: onGoHome,
-          ),
+          for (var i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(width: _brandRowGap),
+            actions[i],
+          ],
         ],
       ),
     );
@@ -1817,28 +1848,6 @@ class _Sidebar extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// 底部条：品牌 + 工具图标栏（审批 / 模板 / 更多）。
-  Widget _bottomRow(BuildContext context, ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 10),
-      child: Row(
-        children: [
-          const BrandMark.solid(size: 20),
-          const SizedBox(width: 8),
-          Text(
-            kAppBrandName,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
-          ...toolbarActions,
-        ],
       ),
     );
   }

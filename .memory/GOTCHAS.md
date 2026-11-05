@@ -332,10 +332,12 @@ data for current backend (SkSL). Found stages: Vulkan
   下），往那儿写回去不会影响用户的原始文件。`ExternalDocRepository.read` 用
   `isTransientCopyPath` 标记 `writable = false`，UI 必须禁用「开启编辑」。
   单元测试里注入 `ExternalDocRepository(cacheDir: '')` 以免依赖 path_provider 插件。
-- **侧栏品牌行很挤**：280px 宽的侧栏里塞 4 个 `IconButton` 会
-  `RenderFlex overflowed`（图标按钮默认最小 48px）。新按钮要么用
-  `PopupMenuButton(child: SizedBox(30,30,…))`（child 版不套 IconButton），
-  要么显式给 `constraints: BoxConstraints.tightFor(width: 32, height: 32)`。
+- **侧栏顶行只有 288px，别再加按钮**：`AppTheme.sidebarWidth` = 288，
+  `_Sidebar._brandRow` = 徽标 + ☰更多 + 标题 + 审批/模板/刷新/新建/回家，按钮统一
+  28×28（iconSize 17、`constraints: tightFor`）、彼此用 `_brandRowGap`(6) 隔开，
+  标题用 `Expanded(Text(…ellipsis))` 吃掉剩余宽度。再加第 7 个按钮就得复用
+  这个宽度（「打开外部 md」就是这样被挪进「更多」菜单的）。图标按钮默认最小 48px，
+  不显式收紧必 `RenderFlex overflowed`。
 - **笔记列表的空态不能整列替换**：外部文件区在列表最上方，用 `Center` 空态卡片替换
   整列会让「打开 md 文件 / 打开文件夹」入口一起消失。空态改成列表内的软提示
   （`_emptyHint`）。

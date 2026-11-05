@@ -1,5 +1,65 @@
 # STATE — 进度交接
 
+## 2026-11-06 · 侧栏按钮布局重排 + Android 状态栏遮挡修复
+
+**做了什么**
+
+- **移除侧栏底行**：删掉 `_Sidebar._bottomRow`（品牌 + 审批/模板/更多那一条）与它上面的
+  `Divider`，列表直接顶到底；`_Sidebar.build` 少一行。
+- **审批 / 模板 挪到顶行「刷新」左侧**：`_HomePageState._sidebarToolbar` 现在只返回
+  `[_approvalBadge(), _templatesButton(context)]`，在 `_brandRow` 里排在
+  `...toolbarActions` 位置（刷新/新建/回家之前）。
+- **「更多」挪到标题右侧、图标换成三横线**：新增 `_Sidebar.titleMenu` 字段，
+  `_moreMenu` 由 `Icon(Icons.more_vert)` 改 `Icon(Icons.menu)`，并用
+  `PopupMenuButton(child: SizedBox(28,28,Icon(size:19)))`（icon 版会套 48px 按钮，撑爆顶行）。
+- **顶行尺寸收紧**：`_brandRow` 内边距改 `(8,12,2,8)`、徽标 26→22、所有图标按钮
+  28×28 / iconSize 17（原来是 32/40 混用），标题包
+  `Expanded(Row(Flexible(Text)…))` 兜底省略号 —— 288px 侧栏放 7 个按钮不溢出。
+- **Android 状态栏遮挡**：`lib/app.dart` 的 `MaterialApp.builder` 原来只预留
+  `padding.bottom`，现在同时预留 `padding.top`（`removeTop: top > 0`），
+  edge-to-edge 下侧栏顶行/欢迎页不再被状态栏压住。
+
+**改了什么文件**
+
+- `lib/ui/pages/home_page.dart`（`_sidebarToolbar` / `_templatesButton` / `_moreMenu` /
+  `_approvalBadge` / `_Sidebar.titleMenu` / `_brandRow` / 删 `_bottomRow` / 两处
+  `_Sidebar` 调用点补 `titleMenu:`）
+- `lib/app.dart`（builder 补 top inset）
+- `FEATURES.md`（§7.1 笔记左栏顶行描述）、`.memory/GOTCHAS.md`（侧栏顶行 288px 挤爆一条改写）、
+  `.memory/ARCHITECTURE.md`（不变量 24：系统栏内边距只在 `XChatApp.builder` 预留）
+
+**怎么验证**
+
+```sh
+flutter analyze lib/ui/pages/home_page.dart lib/app.dart   # 已跑：No issues found
+dist/build_apk.sh -p                                      # 真机看：状态栏不再压住顶行
+```
+
+- 真机要点：侧栏只剩一行按钮；标题右侧是三横线「更多」；审批/模板在刷新左侧；
+  列表底部不再有品牌行；状态栏（时间/电量）下面不再压着「XChat」标题。
+
+### 2026-11-06 补丁（同日）：顶行图标调开 + 三横线移到标题左侧
+
+- `_brandRow` 重排：徽标 → `?titleMenu`（☰ 三横线）→ 标题（`Expanded` 左对齐、省略号）
+  → 右侧动作组；动作之间用 `_brandRowGap = 6` 的 `SizedBox` 隔开（原先 0 间距，
+  所以看着挤）。审批/模板也从 30×30 收到 28×28，与刷新/新建/回家一致。
+- **顶行放不下第 7 个按钮**：原「📂 打开外部 Markdown」菜单从顶行移除，整体并入
+  `_moreMenu`（三横线菜单）末尾 —— 打开 md 文件 / 打开文件夹 / 输入文件路径 /
+  输入文件夹路径 /（已开目录时）重新扫描·关闭目录。`_Sidebar.onExternalMenu`、
+  `externalRootOpen` 两个字段随之删除（改由 `_moreMenu` 里 `_externalMenuActions`
+  + `context.read<AppState>().externalRoot` 处理）。
+- `flutter analyze lib/ui/pages/home_page.dart` → No issues found。
+
+**下一步 / 遗留**
+
+- 顶行按钮已到密度下限（28×28 + 6px 间距）—— 再加按钮只能继续往「更多」里收。
+- 「打开 md 文件 / 文件夹」现在要两步（更多 → 菜单项）；若嫌深，可考虑只在笔记 Tab
+  把「更多」菜单的第一组换成外部区。
+- `docs/NOTES_AI_DESIGN.md` / `docs/NOTES_IMPL_PLAN.md` 里仍写着「底行工具条」，
+  属历史设计文档，未同步。
+
+---
+
 ## 2026-11-06 · 新增 `dist/bump_version.sh`（升版本一条命令）
 
 - 两处版本号一次改：`pubspec.yaml` 的 `version:` + `lib/core/app_version.dart` 的
