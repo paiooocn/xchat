@@ -43,7 +43,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
   final _seedUser = TextEditingController();
   final _seedAssistant = TextEditingController();
 
-  /// 会话模式：普通 / 任务式（任务式需至少一个任务项）。
+  /// 会话模式：普通 / 任务式。任务项可以留空，进入会话后再加。
   SessionKind _kind = SessionKind.normal;
 
   /// 任务式会话的任务项草稿（创建时写进会话）。
@@ -162,12 +162,6 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
 
   Future<void> _finish() async {
     final state = context.read<AppState>();
-    if (_kind == SessionKind.task && _draftTasks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('任务式会话至少需要一个任务项（可新增或批量导入）')),
-      );
-      return;
-    }
     final extras = _seedMessages();
     final params = (_template?.params ?? SessionParams()).copyWith()
       ..thinking = _thinking
@@ -291,6 +285,7 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
           _SectionLabel(
             label: '会话模式',
             hint: '任务式会话打开后先显示任务列表，点进某一项后才是对话；'
+                '任务项可以留空，进入会话后再新增或批量导入。'
                 '发给模型的历史仍是整个会话。',
           ),
           Wrap(
@@ -595,7 +590,8 @@ class _TaskDraftSection extends StatelessWidget {
           ],
         ),
         Text(
-          '每个任务项进入后各自一段对话；发给模型的历史仍是整个会话。',
+          '每个任务项进入后各自一段对话；发给模型的历史仍是整个会话。'
+          '留空也能创建，进入会话后在任务列表里再新增。',
           style: theme.textTheme.bodySmall,
         ),
         for (var i = 0; i < tasks.length; i++)

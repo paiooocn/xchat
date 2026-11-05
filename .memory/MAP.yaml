@@ -5,21 +5,21 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-04 15:19"
-  git_sha: "5100429"
+  generated_at: "2026-11-05 14:41"
+  git_sha: "e715cf7"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 133
-  line_count: 35409
+  file_count: 136
+  line_count: 36584
 
 modules:
   - id: "agent"
     path: "lib/agent"
-    lines: 562
+    lines: 645
     deps: ["core", "data", "llm", "models", "pkg.llm_api"]
     files:
       - path: "lib/agent/agent_engine.dart"
-        lines: 460
+        lines: 543
         symbols: ["AgentEngine"]
       - path: "lib/agent/agent_events.dart"
         lines: 102
@@ -59,19 +59,22 @@ modules:
         symbols: ["WebViewTools", "htmlProbeScript", "textProbeScript"]
   - id: "app"
     path: "lib"
-    lines: 132
+    lines: 140
     deps: []
     files:
       - path: "lib/app.dart"
-        lines: 52
+        lines: 56
         symbols: ["XChatApp"]
       - path: "lib/main.dart"
-        lines: 80
+        lines: 84
   - id: "core"
     path: "lib/core"
-    lines: 1451
-    deps: ["models"]
+    lines: 1642
+    deps: ["models", "pkg.llm_api"]
     files:
+      - path: "lib/core/app_activity.dart"
+        lines: 123
+        symbols: ["AppActivity"]
       - path: "lib/core/app_brand.dart"
         lines: 33
         doc: "应用显示名的**唯一来源**。"
@@ -88,6 +91,9 @@ modules:
         lines: 62
         doc: "Small, defensive helpers for reading untyped JSON payloads."
         symbols: ["asMap", "asList", "asString", "asInt", "asDouble", "asBool", "pruneNulls"]
+      - path: "lib/core/keep_alive.dart"
+        lines: 68
+        symbols: ["KeepAlive"]
       - path: "lib/core/memory_protocol.dart"
         lines: 290
         doc: "The project memory index (`.memory/`) — protocol text and skeleton."
@@ -142,7 +148,7 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 949
+    lines: 960
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
@@ -156,7 +162,7 @@ modules:
         lines: 97
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
-        lines: 368
+        lines: 379
         symbols: ["SessionXml"]
       - path: "lib/data/xml/template_xml.dart"
         lines: 88
@@ -167,17 +173,17 @@ modules:
         symbols: ["XmlOut"]
   - id: "llm"
     path: "lib/llm"
-    lines: 945
-    deps: ["models", "pkg.llm_api"]
+    lines: 961
+    deps: ["core", "models", "pkg.llm_api"]
     files:
       - path: "lib/llm/llm_factory.dart"
-        lines: 72
+        lines: 78
         symbols: ["createProvider", "fetchModels", "testProvider"]
       - path: "lib/llm/note_assistant.dart"
         lines: 379
         symbols: ["NoteAiMode", "NoteAiTarget", "NoteAiAction", "NoteContext", "isProviderConfigured", "cleanNoteAiResult"]
       - path: "lib/llm/outbound_adapter.dart"
-        lines: 202
+        lines: 212
         symbols: ["resolveEchoMode"]
       - path: "lib/llm/prompt_assistant.dart"
         lines: 122
@@ -188,7 +194,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4249
+    lines: 4299
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -237,10 +243,10 @@ modules:
         lines: 187
         symbols: ["SearchEngineConfig"]
       - path: "lib/models/session.dart"
-        lines: 366
+        lines: 377
         symbols: ["SessionKind", "Session"]
       - path: "lib/models/session_message.dart"
-        lines: 186
+        lines: 211
         symbols: ["ThinkingReplyMode", "MessageRole", "ToolCallData", "SessionMessage"]
       - path: "lib/models/session_params.dart"
         lines: 129
@@ -257,18 +263,18 @@ modules:
         doc: "Shell command policy: maps a command string to an approval level, or marks"
         symbols: ["ShellMatch", "ShellClassification"]
       - path: "lib/models/task_item.dart"
-        lines: 116
+        lines: 130
         symbols: ["TaskItem", "parseTaskMarkdown"]
       - path: "lib/models/token_usage.dart"
         lines: 79
         symbols: ["TokenUsage"]
   - id: "pkg.llm_api"
     path: "packages/llm_api/lib"
-    lines: 5476
+    lines: 5586
     deps: []
     files:
       - path: "packages/llm_api/lib/llm_api.dart"
-        lines: 68
+        lines: 69
         doc: "Provider-agnostic Dart client for LLM chat APIs."
       - path: "packages/llm_api/lib/llm_api_testing.dart"
         lines: 10
@@ -341,7 +347,7 @@ modules:
         doc: "Provider for the OpenAI `/chat/completions` wire format."
         symbols: ["OpenAiReasoningRequestStyle", "OpenAiCompatibleConfig", "OpenAiCompatibleProvider", "OpenAiReasoningContext"]
       - path: "packages/llm_api/lib/src/providers/presets.dart"
-        lines: 313
+        lines: 312
         doc: "Ready-made providers for popular endpoints."
         symbols: ["LlmPresets"]
       - path: "packages/llm_api/lib/src/providers/provider.dart"
@@ -364,12 +370,16 @@ modules:
         lines: 301
         doc: "Streaming splitter for models that inline their thinking in the text"
         symbols: ["ThinkSegmentType", "ThinkSegment", "ThinkParseResult", "ThinkTagParser"]
+      - path: "packages/llm_api/lib/src/transport/activity_clock.dart"
+        lines: 40
+        doc: "How much of a wall-clock span the host app was actually *active*."
+        symbols: ["ActivityClock", "AlwaysActiveClock"]
       - path: "packages/llm_api/lib/src/transport/cancel_token.dart"
         lines: 51
         doc: "Cooperative cancellation shared by every provider call."
         symbols: ["CancelToken"]
       - path: "packages/llm_api/lib/src/transport/io_transport.dart"
-        lines: 155
+        lines: 225
         doc: "`dart:io` implementation of [HttpTransport] with connection pooling,"
         symbols: ["IoHttpTransport"]
       - path: "packages/llm_api/lib/src/transport/transport.dart"
@@ -378,11 +388,11 @@ modules:
         symbols: ["TransportRequest", "TransportResponse", "HttpTransport"]
   - id: "session"
     path: "lib/session"
-    lines: 412
-    deps: ["agent", "data", "models"]
+    lines: 601
+    deps: ["agent", "core", "data", "models"]
     files:
       - path: "lib/session/session_controller.dart"
-        lines: 307
+        lines: 496
         symbols: ["SessionController"]
       - path: "lib/session/session_ops.dart"
         lines: 105
@@ -400,7 +410,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 10521
+    lines: 10613
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -413,7 +423,7 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3569
+        lines: 3630
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1152
@@ -422,13 +432,13 @@ modules:
         lines: 389
         symbols: ["PipPackagesPage"]
       - path: "lib/ui/pages/providers_page.dart"
-        lines: 987
+        lines: 1022
         symbols: ["ProvidersPage"]
       - path: "lib/ui/pages/search_page.dart"
         lines: 394
         symbols: ["SearchPage"]
       - path: "lib/ui/pages/session_wizard_page.dart"
-        lines: 834
+        lines: 830
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
         lines: 627
@@ -459,8 +469,8 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 4761
-    deps: ["core", "llm", "models", "pkg.llm_api", "state", "ui.pages", "ui.theme", "util"]
+    lines: 5186
+    deps: ["core", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
         lines: 100
@@ -469,7 +479,7 @@ modules:
         lines: 92
         symbols: ["confirmDelete"]
       - path: "lib/ui/widgets/input_area.dart"
-        lines: 582
+        lines: 602
         symbols: ["InputArea", "ToolbarPill"]
       - path: "lib/ui/widgets/markdown_view.dart"
         lines: 230
@@ -479,7 +489,7 @@ modules:
         doc: "Math (KaTeX/TeX) support for the markdown renderer."
         symbols: ["normalizeTex"]
       - path: "lib/ui/widgets/message_bubble.dart"
-        lines: 230
+        lines: 249
         symbols: ["MessageBubble"]
       - path: "lib/ui/widgets/note_ai_panel.dart"
         lines: 534
@@ -499,8 +509,8 @@ modules:
         lines: 264
         symbols: ["SessionInfoDialog"]
       - path: "lib/ui/widgets/task_session_view.dart"
-        lines: 441
-        symbols: ["TaskListView", "TaskChatHeader", "showTaskEditorDialog", "showTaskImportDialog"]
+        lines: 827
+        symbols: ["TaskListView", "TaskChatHeader", "showTaskEditorDialog", "showTaskImportDialog", "AutoRunOptions"]
       - path: "lib/ui/widgets/thinking_block.dart"
         lines: 74
         symbols: ["ThinkingBlock"]
@@ -549,7 +559,7 @@ tests:
     lines: 264
     cases: 19
   - path: "test/external_doc_ui_test.dart"
-    lines: 233
+    lines: 250
     cases: 8
   - path: "test/extract_script_test.dart"
     lines: 221
@@ -659,6 +669,12 @@ tests:
   - path: "test/sidebar_tab_test.dart"
     lines: 138
     cases: 6
+  - path: "test/task_auto_run_test.dart"
+    lines: 224
+    cases: 9
+  - path: "test/task_premark_test.dart"
+    lines: 217
+    cases: 14
   - path: "test/task_session_flow_test.dart"
     lines: 145
     cases: 2
@@ -671,3 +687,6 @@ tests:
   - path: "test/template_max_tokens_test.dart"
     lines: 124
     cases: 4
+  - path: "test/zz_measure_tmp_test.dart"
+    lines: 64
+    cases: 1

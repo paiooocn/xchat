@@ -43,6 +43,8 @@ class InputArea extends StatefulWidget {
     this.onScrollToRecent,
     this.onScrollToBottom,
     this.maxAttachmentBytes = kDefaultMaxAttachmentBytes,
+    this.sendLocked = false,
+    this.lockedHint,
     this.hint = 'Enter 发送，Ctrl+Enter 换行',
     this.header,
     this.trailing,
@@ -78,6 +80,14 @@ class InputArea extends StatefulWidget {
 
   /// Per-image transfer cap; 0 = no limit (see `AppConfig.maxAttachmentBytes`).
   final int maxAttachmentBytes;
+
+  /// Locks the send action (e.g. the task of a task-style session is marked
+  /// done). The text field stays editable — only "发出" is blocked, so the
+  /// user can still write a draft or unmark 完成 to resume.
+  final bool sendLocked;
+
+  /// Replaces the input hint while [sendLocked] is set.
+  final String? lockedHint;
 
   final String hint;
 
@@ -133,11 +143,17 @@ class _InputAreaState extends State<InputArea> {
 
   bool get _canSend =>
       !widget.running &&
+      !widget.sendLocked &&
       (_controller.text.trim().isNotEmpty || _pending.isNotEmpty);
+
+  /// 发送被锁定时统一的说法（按钮 tooltip / 输入框提示共用）。
+  String get _lockedMessage => widget.lockedHint ?? '已锁定：取消「完成」后才能发送';
 
   void _send() {
     final text = _controller.text.trim();
     if (widget.running) return;
+    // 锁定时连桌面端 Enter 也发不出去（Enter 走的就是这里）。
+    if (widget.sendLocked) return;
     if (text.isEmpty && _pending.isEmpty) return;
     final files = List<MessageAttachment>.of(_pending);
     // The message is only cleared when it is actually accepted: a rejected
@@ -231,7 +247,9 @@ class _InputAreaState extends State<InputArea> {
     final isTouchPlatform = !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS);
-    final hint = isTouchPlatform ? '点击 [发送] 按钮发送，Enter 换行' : widget.hint;
+    final hint = widget.sendLocked
+        ? _lockedMessage
+        : (isTouchPlatform ? '点击 [发送] 按钮发送，Enter 换行' : widget.hint);
 
     return Container(
       decoration: BoxDecoration(
@@ -418,8 +436,10 @@ class _InputAreaState extends State<InputArea> {
                   )
                 else
                   _RoundActionButton(
-                    icon: Icons.arrow_upward_rounded,
-                    tooltip: '发送',
+                    icon: widget.sendLocked
+                        ? Icons.lock_outline
+                        : Icons.arrow_upward_rounded,
+                    tooltip: widget.sendLocked ? _lockedMessage : '发送',
                     onPressed: _canSend ? _send : null,
                     filled: true,
                   ),

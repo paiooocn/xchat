@@ -153,3 +153,13 @@ UI 发消息
     的 top/bottom 包一层 `Padding` + `MediaQuery.removePadding`，子页面因此
     **不需要**自己再躲状态栏；新增整屏页面时不要改回 `viewPadding`，也不要再加
     `Scaffold` 级别的手工偏移（会与这层叠加）。
+25. **任务标注是消息上的数据，不是出站时算出来的**：任务式会话每条 user 消息的
+    `【任务：…】` 落盘在 `SessionMessage.premark`（`<user><premark>`），文本的
+    唯一出处是 `TaskItem.premark`，写入点只有 `AgentEngine.run` 与
+    `SessionController.seedTaskMessage`（+ 续判的合成 user 消息）。**写入即冻结**
+    ——任务改名不回改历史标注。展示层（`message_bubble`、编辑框、复制）**只读
+    `content`**，不许把 premark 混进 UI。
+    **标注跟着归属走**：删消息 / 删任务项（`Session.removeTask` 连带删其全部消息）
+    时 `<premark>` 随消息一起从 XML 消失；出站层的 `premarkOf` 还做一次归属校验
+    ——任务项不存在或 `task_id` 为空 → 一律不发标注（含已落盘的 premark）。
+    旧存档没有该字段时回退按任务项当前标题派生，**只读、不迁移、不回写**文件。

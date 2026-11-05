@@ -20,7 +20,9 @@ class TaskItem {
   /// The task body; sent verbatim as the first user message of the task.
   String content;
 
-  /// Manually toggled by the user (never set by the agent).
+  /// Manually toggled by the user (never set by the agent). 「自动执行」may set
+  /// it once a task's turn finished, but only when the user ticked that option
+  /// in the run dialog — the agent itself never writes it.
   bool done;
 
   /// Title shown in the task list: falls back to the first non-empty content
@@ -56,6 +58,18 @@ class TaskItem {
     final titled = title.trim();
     if (titled.isNotEmpty) return titled;
     return content.trim().isEmpty ? null : displayTitle;
+  }
+
+  /// The marker line stored on every user message of this task
+  /// (`<user><premark>`), i.e. `【任务：…】`, or `null` when it has neither a
+  /// title nor content.
+  ///
+  /// 这是标注文本的**唯一出处**：消息落盘时复制一份到
+  /// `SessionMessage.premark`（此后冻结，不再跟任务改名走），出站时原样插在
+  /// 正文前一行。标点/括号的改动只需要动这里。
+  String? get premark {
+    final anchor = anchorTitle;
+    return anchor == null ? null : '【任务：$anchor】';
   }
 
   Map<String, Object?> toJson() => <String, Object?>{

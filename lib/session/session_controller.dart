@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../agent/agent_engine.dart';
 import '../agent/agent_events.dart';
+import '../core/ids.dart';
 import '../data/session_repository.dart';
 import '../models/app_config.dart';
 import '../models/agent_mode.dart';
@@ -10,6 +11,7 @@ import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_message.dart';
 import '../models/session_params.dart';
+import '../models/task_item.dart';
 import '../models/token_usage.dart';
 import 'session_ops.dart';
 
@@ -42,6 +44,38 @@ class SessionController extends ChangeNotifier {
   /// task-style session's turn that is somehow untagged).
   String? _runningTaskId;
 
+  // ---------------------------------------------------- 任务自动执行（需求三）
+  //
+  // 状态放在 controller 而不是 widget：自动执行必须跨面板存活（切会话、
+  // 移动端压栈都不该断链），而 controller 由 AppState 按会话常驻。
+
+  bool _autoRunning = false;
+  bool _autoCancelled = false;
+  bool _autoMarkDone = false;
+  int _autoTotal = 0;
+  String? _autoCurrentTaskId;
+  int _autoDoneCount = 0;
+  int _autoSkipped = 0;
+
+  /// 自动执行中止原因（已翻成人话），为空表示没有硬失败。
+  String? _autoFailure;
+
+  /// 上次中断/报错的任务项：下次自动执行默认从这一项开始。
+  String? _autoResumeTaskId;
+
+  /// 自动执行开始时的累计用量，`autoUsage` = 当前累计 − 这个快照。
+  TokenUsage _autoUsageStart = TokenUsage.empty;
+
+  /// 当前（或刚结束的）这一轮是否被用户「停止」。
+  bool _turnStopped = false;
+
+  /// 测试注入点：自动执行里「跑一轮」的实现（默认走 [resend]，真联网）。
+  ///
+  /// 自动执行的编排（排队、跳过、勾完成、失败即停、断点续跑）需要能在
+  /// 不联网的情况下验证，所以把这一小步抽成可替换的钩子。
+  @visibleForTesting
+  Future<void> Function(String taskId)? debugTaskTurn;
+
   final StringBuffer _reasoning = StringBuffer();
   final StringBuffer _content = StringBuffer();
   final List<ToolCallData> _liveToolCalls = <ToolCallData>[];
@@ -55,6 +89,29 @@ class SessionController extends ChangeNotifier {
 
   /// The task item whose turn is currently streaming (see [_running]).
   String? get runningTaskId => _runningTaskId;
+
+  // ------------------------------------------------- 任务自动执行 getter
+
+  /// 是否正在「自动执行」整队任务。
+  bool get autoRunning => _autoRunning;
+
+  /// 自动执行当前（或刚刚跑完）的任务项 id；轮次之间的空档也有值。
+  String? get autoCurrentTaskId => _autoCurrentTaskId;
+
+  /// 本次自动执行的队列长度 / 已完成项数 / 被跳过项数。
+  int get autoTotal => _autoTotal;
+  int get autoDoneCount => _autoDoneCount;
+  int get autoSkipped => _autoSkipped;
+
+  /// 自动执行中止原因（为空 = 没有硬失败）。
+  String? get autoFailure => _autoFailure;
+
+  /// 上次中断/报错的任务项；下次自动执行默认从这一项开始。
+  String? get autoResumeTaskId => _autoResumeTaskId;
+
+  /// 本次自动执行消耗的 token（会话累计的增量）。
+  TokenUsage get autoUsage =>
+      (_session?.cumulativeUsage ?? TokenUsage.empty).diff(_autoUsageStart);
   String get streamReasoning => _reasoning.toString();
   String get streamContent => _content.toString();
   List<ToolCallData> get liveToolCalls =>
@@ -120,8 +177,138 @@ class SessionController extends ChangeNotifier {
   }
 
   void stop() {
+    // 自动执行期间点「停止」= 停掉整条链，不会偷偷继续跑下一项。
+    if (_autoRunning) _autoCancelled = true;
     _engine?.stop();
     onStop?.call();
+  }
+
+  // ------------------------------------------------------- 任务自动执行
+
+  /// 把任务内容写成该任务的第一条 `user` 消息（已有则不动）。
+  ///
+  /// 返回 `false` 表示这个任务没有可发送的内容（标题与内容都是空）。
+  /// 面板里的「立即发送」与自动执行共用这一份，避免两处拼接不一致。
+  Future<bool> seedTaskMessage(TaskItem task) async {
+    final session = _session;
+    if (session == null) return false;
+    final hasUser = session
+        .taskMessages(task.id)
+        .any((m) => m.role == MessageRole.user);
+    if (hasUser) return true;
+    if (task.title.trim().isEmpty && task.content.trim().isEmpty) return false;
+    session.messages.add(SessionMessage(
+      role: MessageRole.user,
+      id: newShortId(),
+      content: task.promptText,
+      taskId: task.id,
+      // 标注与正文分开存：展示层只读 content（见 SessionMessage.premark）。
+      premark: task.premark,
+    ));
+    session.updatedAt = DateTime.now();
+    await save();
+    notifyListeners();
+    return true;
+  }
+
+  /// 按顺序逐个执行 [taskIds]（任务式会话的「自动执行」）。
+  ///
+  /// 每一项：seed 第一条 user 消息 → 跑一轮（等到流式结束）→ 可选勾选「完成」。
+  /// 出错 / 被停止则停下，并把该项记进 [autoResumeTaskId]，下次从这里重跑。
+  /// 同一会话串行（[_running] 挡并发），出站历史仍是整个会话。
+  Future<void> runTasksAuto({
+    required List<String> taskIds,
+    bool markDoneWhenFinished = true,
+  }) async {
+    final session = _session;
+    if (session == null || _running || _autoRunning) return;
+    final queue = <String>[];
+    for (final id in taskIds) {
+      final task = session.taskById(id);
+      if (task != null && !task.done) queue.add(id);
+    }
+    if (queue.isEmpty) return;
+
+    _autoRunning = true;
+    _autoCancelled = false;
+    _autoMarkDone = markDoneWhenFinished;
+    _autoTotal = queue.length;
+    _autoCurrentTaskId = null;
+    _autoDoneCount = 0;
+    _autoSkipped = 0;
+    _autoFailure = null;
+    _autoUsageStart = session.cumulativeUsage;
+    _error = null;
+    _notice = null;
+    notifyListeners();
+
+    try {
+      for (final id in queue) {
+        if (_autoCancelled) {
+          _autoResumeTaskId = id;
+          break;
+        }
+        final task = session.taskById(id);
+        if (task == null) continue;
+        _autoCurrentTaskId = id;
+        notifyListeners();
+
+        if (!await seedTaskMessage(task)) {
+          // 没有内容的任务发不出去：跳过但不打断整条链。
+          _autoSkipped++;
+          continue;
+        }
+
+        _turnStopped = false;
+        try {
+          await _runTaskTurn(id);
+        } catch (error) {
+          _error ??= '请求失败：$error';
+        }
+
+        if (_autoCancelled || _turnStopped) {
+          _autoResumeTaskId = id;
+          break;
+        }
+        if (_error != null) {
+          _autoFailure =
+              '第 ${_autoDoneCount + 1} 项「${task.displayTitle}」失败：$_error';
+          _autoResumeTaskId = id;
+          break;
+        }
+
+        _autoResumeTaskId = null;
+        _autoDoneCount++;
+        if (_autoMarkDone) {
+          task.done = true;
+          session.updatedAt = DateTime.now();
+          await save();
+        }
+        notifyListeners();
+      }
+    } finally {
+      _autoRunning = false;
+      _autoCurrentTaskId = null;
+      notifyListeners();
+    }
+  }
+
+  /// 取消后续任务（当前这一轮也会被停下）。
+  void cancelAutoRun() {
+    if (!_autoRunning) return;
+    _autoCancelled = true;
+    stop();
+    notifyListeners();
+  }
+
+  /// 自动执行里的「跑一轮」：测试可经 [debugTaskTurn] 替换。
+  Future<void> _runTaskTurn(String taskId) async {
+    final override = debugTaskTurn;
+    if (override != null) {
+      await override(taskId);
+      return;
+    }
+    await resend(taskId: taskId);
   }
 
   Future<void> save() async {
@@ -187,6 +374,7 @@ class SessionController extends ChangeNotifier {
     if (session == null) return;
     _running = true;
     _runningTaskId = taskId;
+    _turnStopped = false;
     _clearStream();
     notifyListeners();
 
@@ -244,6 +432,7 @@ class SessionController extends ChangeNotifier {
       case AgentFinished():
         _notice = null;
       case AgentStopped():
+        _turnStopped = true;
         _notice = '已停止';
     }
   }

@@ -167,7 +167,7 @@ features:
       - "索引是缓存，磁盘为准，加载时校验并透明重建"
 
   - id: task_sessions
-    title: "任务式会话（任务项分组 + 按任务显示）"
+    title: "任务式会话（任务项分组 + 按任务显示 + 完成锁定 + 自动执行）"
     files:
       - "lib/models/task_item.dart"
       - "lib/models/session.dart"
@@ -177,14 +177,19 @@ features:
       - "lib/session/session_controller.dart"
       - "lib/agent/agent_engine.dart"
       - "lib/ui/widgets/task_session_view.dart"
+      - "lib/ui/widgets/input_area.dart"
       - "lib/ui/pages/session_wizard_page.dart"
       - "lib/ui/pages/home_page.dart"
-    design: "FEATURES.md §1.2 / §7"
+    design: "FEATURES.md §1.2 / §7；docs/TASK_SESSION_AUTORUN_PLAN.md"
     contracts:
       - "task_id 只做显示分组：出站历史始终是整个会话（方案 B），改这里别把过滤带进 buildChatMessages"
       - "一个 turn 内的 user/assistant/tool 消息必须带同一个 task_id（AgentEngine 统一打标）"
       - "SessionOps 的 lastUserIndex/editLastUser/dropLastAssistant 必须按 onlyTaskId 限定范围，否则会删掉别的任务的对话"
       - "一个会话只有一个 SessionController → 任务串行；runningTaskId 用于把流式区绑到对应任务"
+      - "TaskItem.done = 该任务对话的发送锁：SessionChatPanel 把它传给 InputArea.sendLocked，并同时停掉状态条「继续生成」与「立即发送」弹窗，别只锁按钮"
+      - "自动执行的状态机在 SessionController（跨面板存活），不在 widget；每项走 seedTaskMessage → resend(taskId) → 可选勾 done"
+      - "自动执行候选 = Session.autoRunCandidates（排除 done，默认排除已有回复的）；报错即停并把该项记进 autoResumeTaskId，下次从这里重跑"
+      - "session_wizard 不校验任务项数量：任务式会话允许空任务列表（XML 里 <tasks/>）"
 
   - id: thinking_echo
     title: "思考模式显示与回发"

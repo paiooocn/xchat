@@ -12,6 +12,14 @@
   → `XmlOut._cdata`。
 - **新增字段必须同步读写两侧，且必须能读旧文件**。会话 XML 是用户长期存档，不能改语义。
   → `lib/data/xml/session_xml.dart`。
+- **任务标注 `<user><premark>` 是"写入即冻结"的存档数据**，不是出站时算出来的：
+  空值不写（旧文件字节不变）、读取不 trim 语义、任务改名不回改历史标注；
+  **标注跟着归属走** —— 删 message / 删任务项（连带删其消息）时 `<premark>` 随消息
+  一起消失，出站层 `premarkOf` 还要求任务项存在，否则一律不发标注。
+  展示层不读它（用户看不到 `【任务：…】`），只有出站层把它插在正文前一行。
+  → `lib/models/session_message.dart` 的 `SessionMessage.premark`、
+  `lib/models/task_item.dart` 的 `TaskItem.premark`、
+  `lib/llm/outbound_adapter.dart` 的 `premarkOf`（旧档回退派生，不迁移）。
 
 ## 2. 数据目录解析：不能抛异常
 

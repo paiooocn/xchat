@@ -1,5 +1,131 @@
 # STATE — 进度交接
 
+## 2026-11-06 · 任务标注落盘（`<user><premark>`）
+
+**拍板结论**（用户 P1–P7 全接收，**P4 后被推翻**）：P1 存整行 `【任务：标题】`；P2 旧档出站
+回退派生、**不迁移不回写**；P3 写入即**冻结**（改名不追改历史）；P4 改为「**标注跟着归属走**」
+—— 删消息 / 删任务项（`Session.removeTask` 连带删其全部消息）时 `<premark>` 随消息一起从
+XML 消失，且出站层 `premarkOf` 再校验任务项存在，不存在就不发标注；P5 只 user 消息存；
+P6 展示层不露出；P7 不动 `buildTranscript`（压缩不带标注）。
+
+**做了什么**
+
+- `TaskItem.premark`（新增 getter）= `anchorTitle == null ? null : '【任务：$anchorTitle】'`
+  —— 标注文本的**唯一出处**（`anchorTitle` 保留给回退派生用）。
+- `SessionMessage.premark`（新增 `String?`）：`toJson` / `fromJson` / `copyWith` 同步。
+- `session_xml.dart`：`<user>` 里 **在 `<attachments>`/`<content>` 之前**写
+  `<premark><![CDATA[…]]></premark>`，写前 `trim()`，空值**不写**（旧文件与普通会话字节不变）；
+  读回用 `readText` + `trim()`，空串归 `null`。
+- 写入点：`AgentEngine.run` 的两条 user（发送/`resend` 的正文、工具预算续判的合成消息）
+  → `session.taskById(taskId)?.premark`；`SessionController.seedTaskMessage` → `task.premark`。
+- 出站 `outbound_adapter.dart`：删掉 `taskTitles` 映射与 `anchorOf`，改为
+  `premarkOf(premark, taskId)`：**先校验归属**（`taskId` 为空或任务项不存在 → 返回
+  `null`，落盘的 premark 也一并失效），否则 `premark ?? task.premark`（后者是旧档
+  回退，只读）；三条出口都改用它，输出仍是 `'$premark\n$text'` /
+  首个 `ContentPart.text('$premark\n')`，**请求字节与旧版逐字相同**。正文为空
+  （消息被清空）时不单独发一行标注。
+- 展示层零改动（`message_bubble` / 编辑框 / 复制都只读 `content`）。
+- **删除连带**：单条消息删除（`SessionOps.deleteMessage`）与删任务项
+  （`Session.removeTask` → 连带删该任务全部消息）都是整个 `SessionMessage` 出列，
+  `<premark>` 随消息一起从 XML 消失，无需额外清理；出站层的归属校验是第二道保险
+  （兜手工改过 XML、`task_id` 悬空的存档）。
+
+**改了什么文件**
+
+- 改：`lib/models/session_message.dart`、`lib/models/task_item.dart`、
+  `lib/data/xml/session_xml.dart`、`lib/agent/agent_engine.dart`、
+  `lib/session/session_controller.dart`、`lib/llm/outbound_adapter.dart`、`FEATURES.md`（§7 任务锚那行改写）
+- 新增：`test/task_premark_test.dart`（13 例：模型 getter、XML 往返/多行/`]]>`/不写空值、
+  出站冻结/删任务项后不发标注/正文为空不发标注/旧档回退/多模态/普通会话、
+  删除连带（删消息、删任务项 → XML 里 `<premark>` 一并消失）、`seedTaskMessage` 写入点）
+- 索引：`.memory/ARCHITECTURE.md`（不变量 25）、`.memory/GOTCHAS.md`（§1 新增一条）、
+  `.memory/MAP.yaml`（已用 `dart run tool/gen_memory_index.dart` 刷新）
+- 现有测试**不用改**：`test/task_session_test.dart` 的出站断言仍全绿（回退派生让旧写法字节相同）。
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test test/task_premark_test.dart test/task_session_test.dart test/task_auto_run_test.dart
+dist/build_apk.sh -p
+```
+
+- 真机要点：进任务式会话发一条 → 看会话 XML 的 `<user>` 里有 `<premark>【任务：…】</premark>`，
+  对话气泡里**看不到**那行；把任务改名，历史消息的标注不变；删掉一条 user 消息 / 删掉任务项
+  → XML 里对应的 `<premark>` 也消失，且再次发送的请求里不再带该任务的标注。
+
+**下一步 / 遗留**
+
+- 可选（本轮按 P7 没做）：`buildTranscript`（会话压缩）不带标注，压缩后的摘要里丢失任务分段；
+  `docs/` 里 `TASK_SESSION_AUTORUN_PLAN.md` 仍写着「出站临时拼锚」，属历史文档未同步。
+- 若以后想让"改名 → 刷新该任务历史标注"，加一个 `SessionController` 的批量回写即可
+  （会破坏 P3 的冻结语义，需用户明确要求）。
+
+---
+
+## 2026-11-06 · 任务式会话三项改进（任务项可选 / 完成即锁发送 / 自动执行）
+
+**拍板结论**（用户确认）：D1 弹确认框选范围、D2 默认自动勾完成、D3 报错即停且**重跑从报错项开始**、
+D4 已完成不参与自动执行、D5 执行时**停留在任务列表**（只显示进度 + token，不展示文本流）、
+D6 按钮在列表头、D7 不做「从这一项开始」。
+方案与拍板记录：`docs/TASK_SESSION_AUTORUN_PLAN.md`。
+
+**做了什么**
+
+- **任务项可选**：`session_wizard_page.dart` `_finish` 删掉「至少一个任务项」的拦截；
+  会话模式 hint / `_TaskDraftSection` 说明改成「可以留空，进入会话后再加」。
+  存储层零改动（`session_xml.dart` 对 `kind==task` 恒写 `<tasks>`，空列表可往返）。
+- **完成即锁发送**：`input_area.dart` 新增 `sendLocked` / `lockedHint` —— `_canSend` 加锁、
+  `_send()` 早退（桌面 Enter 走同一路径）、提示文案替换、发送键换锁图标。
+  `home_page.dart` `SessionChatPanel` 用 `session.taskById(taskId)?.done` 算出 `taskDone`：
+  传给 `InputArea`，并**隐藏状态条「继续生成」**（否则绕过锁）、`_maybeStartTask` 对已完成任务不再弹窗。
+  `TaskChatHeader` 完成态副标题 = 「已完成：取消勾选『完成』后才能继续对话」+ 锁图标。
+- **自动执行**：状态机在 `lib/session/session_controller.dart`（跨面板存活）：
+  `runTasksAuto({taskIds, markDoneWhenFinished})` / `cancelAutoRun()` /
+  `seedTaskMessage(task)`（面板「立即发送」与自动执行共用），getter
+  `autoRunning / autoCurrentTaskId / autoTotal / autoDoneCount / autoSkipped / autoFailure /
+  autoResumeTaskId / autoUsage`。`stop()` 在自动执行期间置取消标志（停止 = 停整条链）；
+  `_turnStopped` 记录用户主动停止，避免误判成「跑完」。
+  候选规则在 `Session.autoRunCandidates({includeReplied})`：排除 done，默认排除已有回复的。
+- **列表 UI**（`task_session_view.dart`）：`TaskListView` 改收 `SessionController`（自己 listen，
+  进度/token 才能实时刷新），头部 `自动执行 / 停止自动执行`（窄屏收成图标）、副标题
+  `自动执行 2/5 · 本次已用 入 xx / 出 xx`、当前行 spinner +「自动执行中…」、空态给
+  新增/导入按钮、执行期间禁用勾选与删除、结束 SnackBar 汇总（完成 N 项 / 已停止 N/M / 失败原因）。
+  新增 `showAutoRunDialog` + `AutoRunOptions`（范围、自动勾完成、**「从上次中断的 X 开始」**）。
+- 测试注入点：`SessionController.debugTaskTurn`（`@visibleForTesting`），让编排逻辑
+  不联网即可验证。
+
+**改了什么文件**
+
+- 新增：`docs/TASK_SESSION_AUTORUN_PLAN.md`、`test/task_auto_run_test.dart`（8 例）
+- 改：`lib/session/session_controller.dart`、`lib/ui/widgets/task_session_view.dart`、
+  `lib/ui/widgets/input_area.dart`、`lib/ui/pages/home_page.dart`、
+  `lib/ui/pages/session_wizard_page.dart`、`lib/models/session.dart`、`lib/models/task_item.dart`、
+  `FEATURES.md`（§7 任务式会话三行改写）、`.memory/STATE.md`
+
+**怎么验证**（本轮未跑，按用户要求不编译）
+
+```sh
+flutter analyze lib test
+flutter test test/task_auto_run_test.dart test/task_session_flow_test.dart
+dist/build_apk.sh -p
+```
+
+- 真机要点：①任务式会话不放任务也能创建 → 列表空态点「新增任务」；②勾选「完成」→
+  发送键变锁、点不动、Enter 无效；取消勾选立刻恢复；③「自动执行」→ 确认框 →
+  列表停留、副标题进度与 token 递增、跑完自动打勾；中途断开网络 → 停下并提示
+  「第 k 项失败」，再点「自动执行」默认从该项开始。
+
+**下一步 / 遗留**
+
+- `test/task_session_flow_test.dart` 里 `TaskListView` 的 `running/runningTaskId` 参数已换成
+  `controller`，该测试是通过 HomePage 间接构造的，应该不受影响；跑一次确认。
+- 自动执行的汇总 SnackBar 只在任务列表可见时出现（用户切走会话就看不到）。
+- 自动执行期间若用户打开某个任务对话，只看到该项自己的流（D5 决定不跟随、不显示文本流）。
+- 未做：跨会话排队自动执行、按任务单独重跑（D7）。
+
+---
+
 ## 2026-11-06 · 侧栏按钮布局重排 + Android 状态栏遮挡修复
 
 **做了什么**

@@ -33,19 +33,25 @@ Future<List<llm.ChatMessage>> buildChatMessages(
   List<SessionMessage>? messages,
 }) async {
   final source = messages ?? session.messages;
-  // 任务式会话：每条 user 消息前加一行「【任务：标题】」。
+  // 任务式会话：user 消息的「任务标注」（`【任务：标题】`）落盘在
+  // `message.premark`（`<user><premark>`），出站时**原样**插在正文前一行。
   //
-  // 标题的唯一出处是任务项（`session.tasks`），消息里只有 `task_id`，所以这里
-  // 按 id 反查——XML 不必在每条消息上冗余存标题，任务改名后历史消息也自动跟着变。
-  // 它同时也是方案 B（整会话历史都发给模型）的分段标签：不同任务的消息各有各的
-  // 锚，模型能分清哪一段属于哪个任务。任务项已被删除 → 查不到 → 不加锚。
-  final taskTitles = <String, String>{};
-  for (final task in session.tasks) {
-    final title = task.anchorTitle;
-    if (title != null) taskTitles[task.id] = title;
+  // 它是「方案 B」（整会话历史都发给模型）的分段标签，所以每条 user 消息各带
+  // 各的。标注在写入时冻结：任务改名不影响历史消息的标注。
+  //
+  // 归属校验在这里做：任务项已被删除（或消息本来就没有 `task_id`）→ **一律不发
+  // 标注**，落盘的 premark 也随之失效 —— 与「删任务项 = 连它的一切一起删」
+  // 保持一致。（当前 UI 删任务项会连带删消息，见 `Session.removeTask`；
+  // 这条兜的是手工改过 XML、`task_id` 悬空的存档。）
+  //
+  // 旧存档没有 premark（那时是出站时按 `task_id` 反查标题临时拼的），这里回退
+  // 按任务项当前标题派生一次 —— 只读，不回写文件。
+  String? premarkOf(String? premark, String? taskId) {
+    if (taskId == null) return null;
+    final task = session.taskById(taskId);
+    if (task == null) return null;
+    return premark ?? task.premark;
   }
-  String? anchorOf(String? taskId) =>
-      taskId == null ? null : taskTitles[taskId];
   final echo = resolveEchoMode(session, provider);
   final thinkingOn = session.params.thinkingEnabled;
   final out = <llm.ChatMessage>[];
@@ -61,9 +67,12 @@ Future<List<llm.ChatMessage>> buildChatMessages(
   Future<void> flushToolImages() async {
     if (pendingToolImages.isEmpty) return;
     final parts = <llm.ContentPart>[];
-    // 这条合成消息属于产出图片的那个任务，同样带上锚。
-    final anchor = anchorOf(pendingToolImages.first.taskId);
-    if (anchor != null) parts.add(llm.ContentPart.text('【任务：$anchor】\n'));
+    // 这条合成消息属于产出图片的那个任务，同样带上标注。
+    final premark = premarkOf(
+      pendingToolImages.first.premark,
+      pendingToolImages.first.taskId,
+    );
+    if (premark != null) parts.add(llm.ContentPart.text('$premark\n'));
     for (final message in pendingToolImages) {
       parts.addAll(await _imageParts(message));
     }
@@ -82,16 +91,17 @@ Future<List<llm.ChatMessage>> buildChatMessages(
         ));
       case MessageRole.user:
         await flushToolImages();
-        final anchor = anchorOf(message.taskId);
+        final premark = premarkOf(message.premark, message.taskId);
         final parts = await _userParts(message);
         if (parts == null) {
           final text = message.content ?? '';
+          // 正文为空（消息被清空）时不单独发一行标注。
           out.add(llm.ChatMessage.user(
-            anchor == null ? text : '【任务：$anchor】\n$text',
+            premark == null || text.trim().isEmpty ? text : '$premark\n$text',
           ));
         } else {
           out.add(llm.ChatMessage.userParts([
-            if (anchor != null) llm.ContentPart.text('【任务：$anchor】\n'),
+            if (premark != null) llm.ContentPart.text('$premark\n'),
             ...parts,
           ]));
         }

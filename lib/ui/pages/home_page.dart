@@ -11,7 +11,6 @@ import '../../core/app_activity.dart';
 import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
-import '../../core/ids.dart';
 import '../../models/external_doc.dart';
 import '../../models/project.dart';
 import '../../models/note.dart';
@@ -52,6 +51,20 @@ import 'settings_page.dart';
 import 'templates_page.dart';
 import 'tools_page.dart';
 import 'xml_editor_page.dart';
+
+/// 侧栏顶行按钮的统一尺寸：28×28、图标 17、零内边距。
+///
+/// Material 3 的 `IconButton` 一旦拿到 `style`（`IconButton.filled` 也算）就会
+/// **忽略 `constraints`**，尺寸只能靠 style 的 minimum/maximumSize 钉住 —— 否则
+/// 回落成 48（compact 后 40）的命中区，288px 的侧栏顶行会溢出。
+final ButtonStyle _brandRowIconStyle = IconButton.styleFrom(
+  minimumSize: const Size(28, 28),
+  maximumSize: const Size(28, 28),
+  padding: EdgeInsets.zero,
+  iconSize: 17,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  visualDensity: VisualDensity.compact,
+);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -184,10 +197,7 @@ class _HomePageState extends State<HomePage> {
     final count = context.watch<AppState>().approvalCenter.pending.length;
     return IconButton(
       tooltip: count > 0 ? '工具审批（$count 项待处理）' : '工具审批',
-      iconSize: 17,
-      visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-      padding: EdgeInsets.zero,
+      style: _brandRowIconStyle,
       icon: Badge(
         isLabelVisible: count > 0,
         label: Text('$count'),
@@ -693,8 +703,7 @@ class _HomePageState extends State<HomePage> {
       return TaskListView(
         key: ValueKey('tasks-${session.id}'),
         session: session,
-        running: controller.isRunning,
-        runningTaskId: controller.runningTaskId,
+        controller: controller,
         onOpenTask: (id) => setState(() => _activeTaskId = id),
       );
     }
@@ -716,10 +725,7 @@ class _HomePageState extends State<HomePage> {
   /// 侧栏顶行里的「模板」入口。
   Widget _templatesButton(BuildContext context) => IconButton(
         tooltip: '模板',
-        iconSize: 17,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-        padding: EdgeInsets.zero,
+        style: _brandRowIconStyle,
         icon: const Icon(Icons.dashboard_customize_outlined),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const TemplatesPage()),
@@ -1352,8 +1358,7 @@ class _MobileChatPageState extends State<_MobileChatPage> {
         ),
         body: TaskListView(
           session: session,
-          running: controller.isRunning,
-          runningTaskId: controller.runningTaskId,
+          controller: controller,
           onOpenTask: (id) => setState(() => _activeTaskId = id),
         ),
       );
@@ -1704,10 +1709,7 @@ class _Sidebar extends StatelessWidget {
       ...toolbarActions,
       IconButton(
         tooltip: isNote ? '刷新笔记列表' : '刷新会话列表',
-        iconSize: 17,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-        padding: EdgeInsets.zero,
+        style: _brandRowIconStyle,
         icon: refreshingSessions
             ? const SizedBox(
                 width: 16,
@@ -1721,26 +1723,21 @@ class _Sidebar extends StatelessWidget {
       ),
       IconButton.filled(
         tooltip: isNote ? '新建笔记' : '新建会话',
-        iconSize: 17,
-        visualDensity: VisualDensity.compact,
-        style: IconButton.styleFrom(
-          // 图标颜色必须显式给 onPrimary：应用的 iconTheme 把所有 IconButton
-          // 的前景色定成 onSurfaceVariant，而 filled 按钮的底色是 primary
-          // —— 深灰图标压在蓝底上几乎看不见（只剩一个蓝圆块）。
-          foregroundColor: theme.colorScheme.onPrimary,
-          backgroundColor: theme.colorScheme.primary,
-          minimumSize: const Size(28, 28),
-          padding: EdgeInsets.zero,
+        style: _brandRowIconStyle.merge(
+          IconButton.styleFrom(
+            // 图标颜色必须显式给 onPrimary：应用的 iconTheme 把所有 IconButton
+            // 的前景色定成 onSurfaceVariant，而 filled 按钮的底色是 primary
+            // —— 深灰图标压在蓝底上几乎看不见（只剩一个蓝圆块）。
+            foregroundColor: theme.colorScheme.onPrimary,
+            backgroundColor: theme.colorScheme.primary,
+          ),
         ),
         icon: const Icon(Icons.add),
         onPressed: isNote ? onNewNote : () => onNewSession(null),
       ),
       IconButton(
         tooltip: '回到首页',
-        iconSize: 18,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-        padding: EdgeInsets.zero,
+        style: _brandRowIconStyle,
         icon: const Icon(Icons.home_outlined),
         onPressed: onGoHome,
       ),
@@ -2495,7 +2492,8 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     }
     if (controller.isRunning) return;
     final task = session.taskById(taskId);
-    if (task == null || session.taskHasReply(taskId)) return;
+    // 已完成的任务被锁定：不再提示「立即发送」。
+    if (task == null || task.done || session.taskHasReply(taskId)) return;
     final start = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -2516,29 +2514,15 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
       ),
     );
     if (start != true || !mounted) return;
-    await _startTask(controller, session, task);
+    await _startTask(controller, task);
   }
 
   /// Ensures the task content is the task's first `user` message, then runs a
   /// turn with the existing history (the whole session history is sent).
-  Future<void> _startTask(
-    SessionController controller,
-    Session session,
-    TaskItem task,
-  ) async {
-    final hasUser = session
-        .taskMessages(task.id)
-        .any((m) => m.role == MessageRole.user);
-    if (!hasUser) {
-      session.messages.add(SessionMessage(
-        role: MessageRole.user,
-        id: newShortId(),
-        content: task.promptText,
-        taskId: task.id,
-      ));
-      session.updatedAt = DateTime.now();
-      await controller.save();
-    }
+  ///
+  /// Seeding lives in the controller so 「自动执行」 uses the exact same rule.
+  Future<void> _startTask(SessionController controller, TaskItem task) async {
+    if (!await controller.seedTaskMessage(task)) return;
     if (!mounted) return;
     await controller.resend(taskId: task.id);
   }
@@ -2768,6 +2752,9 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
         SessionOps.lastUserIndex(session, onlyTaskId: widget.taskId);
     // 同一会话串行执行：只有本视图所属任务在运行时才显示流式区。
     final live = controller.isRunning && controller.runningTaskId == widget.taskId;
+    // 任务勾了「完成」→ 锁定发送（需求二）。取消勾选即恢复。
+    final taskDone =
+        widget.taskId != null && (session.taskById(widget.taskId)?.done ?? false);
 
     return Column(
       children: [
@@ -2827,7 +2814,10 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
             // A broken turn can be resumed: `resend()` replays the history,
             // which already contains the salvaged (incomplete) answer, so the
             // model continues from where it stopped instead of starting over.
-            onRetry: controller.error != null && !controller.isRunning
+            // 任务已完成时不提供（否则绕过发送锁）。
+            onRetry: controller.error != null &&
+                    !controller.isRunning &&
+                    !taskDone
                 ? () => _controller?.resend(taskId: widget.taskId)
                 : null,
           ),
@@ -2835,7 +2825,13 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: InputArea(
             running: controller.isRunning,
+            // 任务勾了「完成」→ 锁定发送；取消勾选立即恢复。
+            sendLocked: taskDone,
+            lockedHint: taskDone
+                ? '任务已完成：取消「完成」后才能继续发送'
+                : null,
             onSend: (text, attachments) {
+              if (taskDone) return false;
               controller.send(
                 text,
                 attachments: attachments,

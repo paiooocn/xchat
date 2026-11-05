@@ -81,6 +81,7 @@ class SessionMessage {
     this.incomplete = false,
     this.usage = TokenUsage.empty,
     this.taskId,
+    this.premark,
   })  : toolCalls = toolCalls ?? <ToolCallData>[],
         attachments = attachments ?? <MessageAttachment>[];
 
@@ -117,6 +118,17 @@ class SessionMessage {
   /// task view filters on. It never affects what is sent to the model.
   String? taskId;
 
+  /// 任务标注（`<user><premark>`）：任务式会话里这条 user 消息所属任务的
+  /// 「【任务：…】」整行，出站时原样插在正文前一行。
+  ///
+  /// 写入时由 `TaskItem.premark` 决定，之后**冻结**：任务改名、甚至任务项被
+  /// 删掉，历史消息的标注都不变（可追溯）。展示层不读它 —— 用户只看到
+  /// [content]，标注只发给模型。
+  ///
+  /// 旧存档没有这个字段（那时标注由出站层按 [taskId] 反查任务标题临时拼），
+  /// 出站时仍然回退派生，不回写文件。
+  String? premark;
+
   /// Per-turn usage (assistant only).
   TokenUsage usage;
 
@@ -140,6 +152,7 @@ class SessionMessage {
     bool? incomplete,
     TokenUsage? usage,
     String? taskId,
+    String? premark,
   }) =>
       SessionMessage(
         role: role ?? this.role,
@@ -155,6 +168,7 @@ class SessionMessage {
         incomplete: incomplete ?? this.incomplete,
         usage: usage ?? this.usage,
         taskId: taskId ?? this.taskId,
+        premark: premark ?? this.premark,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -172,6 +186,7 @@ class SessionMessage {
         if (isError) 'is_error': true,
         if (usage.isNotEmpty) 'usage': usage.toJson(),
         if (taskId != null) 'task_id': taskId,
+        if (premark != null) 'premark': premark,
       });
 
   factory SessionMessage.fromJson(Object? value) {
@@ -190,6 +205,7 @@ class SessionMessage {
       isError: asBool(json['is_error']),
       usage: TokenUsage.fromJson(json['usage']),
       taskId: asString(json['task_id']),
+      premark: asString(json['premark']),
     );
   }
 }

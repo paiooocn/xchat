@@ -145,6 +145,8 @@ class AgentEngine {
           content: userText,
           attachments: await _storeAttachments(id, attachments ?? const []),
           taskId: taskId,
+          // 任务标注在写入时定稿（此后冻结，见 SessionMessage.premark）。
+          premark: session.taskById(taskId)?.premark,
         ));
         await _persist();
       }
@@ -302,6 +304,8 @@ class AgentEngine {
             id: _shortId(),
             content: prompt,
             taskId: taskId,
+            // 同一次 turn 的合成 user 消息，标注与首条一致。
+            premark: session.taskById(taskId)?.premark,
           ));
           await _persist();
           budgetRound = 0;

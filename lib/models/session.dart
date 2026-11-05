@@ -130,6 +130,17 @@ class Session {
   bool taskHasReply(String taskId) =>
       taskMessages(taskId).any((m) => m.role == MessageRole.assistant);
 
+  /// Task items that 「自动执行」 should run, in list order.
+  ///
+  /// Always excludes finished (`done`) tasks — a finished task is locked and
+  /// must be re-opened by un-checking it (see the send lock). With
+  /// [includeReplied] off (the default) tasks that already have an assistant
+  /// reply are skipped too, so a run only covers what has never been run.
+  List<TaskItem> autoRunCandidates({bool includeReplied = false}) => [
+        for (final task in tasks)
+          if (!task.done && (includeReplied || !taskHasReply(task.id))) task,
+      ];
+
   /// Removes a task item together with every message tagged with it.
   void removeTask(String taskId) {
     tasks.removeWhere((t) => t.id == taskId);

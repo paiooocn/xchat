@@ -97,6 +97,11 @@ class SessionXml {
           out.close('system');
         case MessageRole.user:
           out.open('user', _attrs({'id': message.id, 'task_id': message.taskId}));
+          // 任务标注：独立字段，展示层不读它，出站时插在正文前一行。
+          // 为空就不写 —— 旧会话文件与普通会话的字节保持不变。
+          if (message.premark?.trim().isNotEmpty ?? false) {
+            out.leaf('premark', message.premark!.trim());
+          }
           if (message.hasAttachments) {
             out.open('attachments');
             for (final file in message.attachments) {
@@ -239,12 +244,14 @@ class SessionXml {
           final context = element.getAttribute('context');
           session.contextTokens = context == null ? null : int.tryParse(context);
         case 'user':
+          final premark = readText(element, 'premark')?.trim();
           session.messages.add(SessionMessage(
             role: MessageRole.user,
             id: element.getAttribute('id'),
             content: readTextOrEmpty(element, 'content'),
             attachments: _decodeAttachments(element, session.sandbox),
             taskId: element.getAttribute('task_id'),
+            premark: (premark == null || premark.isEmpty) ? null : premark,
           ));
         case 'assistant':
           session.messages.add(_decodeAssistant(element));
