@@ -30,6 +30,12 @@ P6 展示层不露出；P7 不动 `buildTranscript`（压缩不带标注）。
   `<premark>` 随消息一起从 XML 消失，无需额外清理；出站层的归属校验是第二道保险
   （兜手工改过 XML、`task_id` 悬空的存档）。
 
+**发布**：已提交 `a06f5a1`、打标签 **`v0.7.14`** 并推送 `origin main`（含此前未推的 5 个提交）；
+tag 推送会触发三个 build workflow + `publish-gitcode` 串行发布。
+`flutter test test/app_version_test.dart` → 通过；`test/task_premark_test.dart` +
+`task_session_test.dart` + `task_auto_run_test.dart` → 49/49 通过。
+`test/zz_measure_tmp_test.dart`（早前量侧栏用的临时脚本）**未提交**，留在工作区未跟踪。
+
 **改了什么文件**
 
 - 改：`lib/models/session_message.dart`、`lib/models/task_item.dart`、
