@@ -59,6 +59,23 @@ Future<void> pumpAsync(
   }
 }
 
+/// Polls until [file] holds [expected], pumping in between.
+///
+/// The write-back goes through real asynchronous disk I/O, which under the
+/// full-suite load can finish after a fixed pump budget — a one-shot assert
+/// then fails with the old content (flaky).
+Future<void> waitForFileContent(
+  WidgetTester tester,
+  File file,
+  String expected, {
+  int rounds = 200,
+}) async {
+  for (var i = 0; i < rounds; i++) {
+    if (file.existsSync() && file.readAsStringSync() == expected) return;
+    await pumpAsync(tester, rounds: 1);
+  }
+}
+
 Future<void> pumpNoteList(
   WidgetTester tester, {
   String? externalRoot,
@@ -199,7 +216,7 @@ void main() {
       expect(find.text('编辑中'), findsOneWidget);
 
       await tester.enterText(editorField(), '# 已修改\n');
-      await pumpAsync(tester);
+      await waitForFileContent(tester, file, '# 已修改\n');
       expect(file.readAsStringSync(), '# 已修改\n');
       expect(file.readAsStringSync().startsWith('---'), isFalse);
     });
