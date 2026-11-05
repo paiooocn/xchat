@@ -373,3 +373,21 @@ data for current backend (SkSL). Found stages: Vulkan
 - **artifact 下载后是 `<artifact名>/<文件>` 两层**，且发布 workflow 里不能把产物解到
   `dist/`（那目录装的是构建脚本，`dist/*` 会把 `.sh` 一起传上去）→ 解到 `_dl/`，
   `find _dl -mindepth 2 -type f -exec mv -f {} out/` 展平，再传 `out/*`。
+
+## 27. Android 剪贴板：`Clipboard.getData` 会被**逐应用权限**挡掉
+
+- 症状极具迷惑性：**整个 app 里所有输入框**长按 → 选「Paste」→ 什么都没发生（一个字也不进框）；
+  自造粘贴按钮拿到的是**非 null 的 `ClipboardData` 但 `text` 为空串**，看上去像"剪贴板是空的"。
+- 真因（2026-11-05 本机实测）：系统里 **XChat 的「读取剪贴板」权限被禁用**。放开后
+  Base URL / API Key 立刻都能长按粘贴。
+- 两条路径**不是一回事**，排查时别混：
+  - 应用内/Flutter 自绘工具栏的「粘贴」→ `EditableTextState.pasteText` → `Clipboard.getData`
+    → **受逐应用权限/ROM 隐私策略限制**；拿到空文本时框架静默把选区替换成空串，
+    所以"点了没反应"。
+  - 键盘/输入法自己的「粘贴」→ IME 通过 `InputConnection.commitText` 提交 → **不受该限制**。
+    但**密码框（`obscureText: true`）里多数 IME 不显示剪贴板条**，用户往往碰不到这条路。
+- 判定法：同一个剪贴板内容，在**另一个 Flutter app** 里长按 Paste 能贴、在本 app 不能 →
+  就是逐应用权限，不是 Flutter 版本，也不是 `obscureText`/`autocorrect`/按钮实现/容器
+  （`Scaffold+ListView` vs `AlertDialog`）的任何差异。
+- 关掉这个坑的唯一可靠做法：**提示文案要指向权限**，不要写「剪贴板为空」；
+  排查时先在一个普通明文框（不是密码框）试粘贴，能区分"字段问题"还是"应用级权限问题"。

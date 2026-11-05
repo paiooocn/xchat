@@ -3,6 +3,194 @@
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 
+## 2026-11-05 · 定位并收尾：系统未给 XChat「读取剪贴板」权限（用户已开启，粘贴恢复正常）
+
+**真因**：用户在系统里查到 **XChat 的「读取剪贴板」权限被禁用**；开启后 Base URL 与 API Key
+**长按粘贴都正常**。与 Flutter 版本、`obscureText`、`autocorrect`、按钮实现、容器全部无关。
+
+**收尾改动**（`lib/ui/pages/providers_page.dart`）
+
+- 删掉上一轮为验证而加的 `_openPasteDialog()`（明文粘贴对话框中转），保留
+  `_pasteApiKey()` + `_insertIntoApiKey()`；API Key 右侧按钮回到「从剪贴板粘贴」直接读剪贴板。
+- `_pasteApiKey()` 失败提示改为指向真因：「系统没给 XChat『读取剪贴板』权限，请到系统设置里开启」，
+  不再写「剪贴板为空」误导排查；读之前不抢焦点则保留（无害），读失败后仍 `requestFocus`。
+- 字段本体维持与 novelwriter 同形：`TextField(controller, focusNode, obscureText: true,
+  InputDecoration(labelText, suffixIcon: 粘贴按钮))`。
+- 机制结论写进 `.memory/GOTCHAS.md` §27（两条粘贴路径不同、症状、判定法）。
+
+**验证**：`flutter analyze lib test` → No issues found（已跑）。真机已由用户确认可粘贴。
+
+**下一步 / 遗留**
+
+- 若要在无障碍层面兜住"权限被关"的场景，可考虑首次粘贴失败时给一次性引导弹窗
+  （打开系统应用权限页 `permission_handler` 的 `openAppSettings()`），本轮未做。
+- 记住：以后遇到「所有输入框都贴不进」先查系统逐应用剪贴板权限（GOTCHAS §27）。
+
+
+---
+
+## 2026-11-05 · 真机测试 A/B：xchat 全应用都无法粘贴，novelwriter 可以
+
+**测试结果（用户实测）**
+
+- A：xchat「服务编辑」页 **Base URL（普通明文框）** 长按 → Paste → **也贴不进去**。
+- B：novelwriter「编辑提供商」的 **API Key（密码框）** 长按 → 菜单里的 Paste → **能贴**。
+
+**结论**
+
+- 与字段类型、`obscureText`、`autocorrect`、按钮实现、容器（Scaffold/ListView vs AlertDialog）
+  **全部无关**：普通框同样失败。之前的"参数对齐"方向作废。
+- 差异在**应用级**：xchat 这个包读 `Clipboard.getData` 拿到的是空；novelwriter 读得到。
+  同一台机、同一份 Flutter 3.47.7、同为 `adjustResize`。
+- 只剩两个候选：①系统/ROM 逐应用拒绝 xchat 读剪贴板（xchat 多了
+  `MANAGE_EXTERNAL_STORAGE`、`taskAffinity=""`、`launchMode="singleTop"`）；
+  ②xchat 里某处把剪贴板写空了（现有 `Clipboard.setData` 全是用户主动复制，尚未发现自动触发）。
+
+**待做的决定性判定**（不改代码）
+
+1. 在别的 App 复制一段文字 → xchat 长按 Paste（失败）→ **不再复制** → 切到 novelwriter 长按 Paste：
+   仍有内容 = ①（xchat 被拒读）；已空 = ②（xchat 清空了剪贴板）。
+2. 测上一轮新增的「粘贴 API Key」明文对话框（走 IME 的 `commitText`，不依赖应用读剪贴板）——
+   若那里能贴，说明应用内已有可用通道，可按此收敛。
+
+
+**现象（关键）**：API Key 框长按 → 菜单里点「Paste」→ **也没有文本进框**；而 novelwriter 同款
+`obscureText: true` 输入框能正常粘贴。
+
+**结论**
+
+- Flutter 自绘的选择工具栏「Paste」= `EditableTextState.pasteText` → `Clipboard.getData`；
+  拿回空文本时它会**静默 replace 成空**，所以「点了没反应」。
+- 即：**本机对 xchat 的应用级剪贴板读取整体失效**（不是按钮问题、不是密码框参数问题）。
+  键盘/输入法自己的粘贴走 `InputConnection.commitText`，不经过这条限制，novelwriter 也是这样成功。
+- 因此继续在 `Clipboard.getData` 上打补丁无意义。
+
+**改了什么**（`lib/ui/pages/providers_page.dart`）
+
+- 新增 `_openPasteDialog()`：弹出「粘贴 API Key」对话框，里面是一个**明文普通 TextField**
+  （`autofocus`、3–5 行、无密码语义 → 输入法剪贴板/粘贴全可用）。用户在此粘贴 → 点「填入」
+  → 经 `_insertIntoApiKey()` 写入被遮挡的 API Key 框。对话框另有「读取剪贴板」按钮保留原
+  `Clipboard.getData` 路径做对照、「取消」。
+- 抽出 `_insertIntoApiKey(String)`（按光标/选区插入），`_pasteApiKey()` 也复用它。
+- API Key 的 suffixIcon 按钮改为打开该对话框（tooltip「粘贴 API Key（先粘到明文框）」）。
+
+**怎么验证**：`flutter analyze lib test` → No issues found（已跑）。真机需重打包：点按钮 →
+在明文框长按粘贴（或用输入法剪贴板）→ 填入 → 保存 → 测试连接。
+
+**下一步 / 遗留**
+
+- 若明文框里也贴不进去，说明连 IME 路径都被拦（只可能出现在极严格 ROM），那时只剩
+  「从文件导入 / 手输」。
+- 该 ROM 的剪贴板权限可以单独在系统设置里给 xchat 放开（novelwriter 能用说明系统本身允许）。
+
+---
+
+## 2026-11-05 · 真机二次回归：长按「Paste」也贴不进去 → 应用级问题，改为明文中转
+
+
+---
+
+## 2026-11-05 · 真机回归：应用内粘贴按钮报「剪贴板为空」→ 关键认知更正
+
+**现象**：真机点 API Key 的「粘贴」按钮，提示「剪贴板为空」；而 novelwriter 的
+`obscureText: true` 输入框**系统长按粘贴正常**。
+
+**结论（推翻了上一轮的判断）**
+
+- 「系统粘贴」与「应用内 `Clipboard.getData`」**不是同一条通道**：键盘/IME 的「粘贴」是
+  IME 通过 **InputConnection.commitText** 把文本提交给 Flutter；只有 Flutter 自绘工具栏的
+  `EditableTextState.pasteText` 才走 `Clipboard.getData`。
+- 本机拿到的是**非 null 的 `ClipboardData` 但 `text` 为空**（所以命中「剪贴板为空」那支，
+  而不是 `data == null` 那支）→ 平台层主动抹空：典型是无窗口焦点 / ROM 隐私开关 /
+  应用级剪贴板读取被拒。**在这种设备上自造粘贴按钮救不活**。
+
+**改了什么**（`lib/ui/pages/providers_page.dart` `_pasteApiKey`）
+
+- **先读剪贴板、后 `requestFocus()`**（软键盘弹出后 IME 窗口可能抢焦点，读就变空）；
+- 失败重试 2 轮（间隔 120ms），成功后 `mounted` 检查再落值；
+- 失败提示按原因分三种：通道异常 / `data == null` / **有 data 但文本为空**，并且都指向
+  「请长按输入框用键盘上的『粘贴』」（系统通道不受此限制）；
+- `docs/API_KEY_FIELD_ALIGN_PLAN.md` §9 顶部加了更正块。
+
+**怎么验证**：`flutter analyze lib test` → No issues found（本轮已跑）。真机需重打包复测。
+
+**下一步 / 遗留**
+
+- 若复测仍为空 → 该 ROM 就是不给应用读剪贴板，建议**去掉自造粘贴按钮**（回到完全对齐
+  novelwriter，只靠系统长按粘贴），或把按钮降级为纯提示。
+---
+
+## 2026-11-05 · 实现：API Key 输入框（取消眼睛、保留粘贴、其余对齐 novelwriter）
+
+**做了什么**（按用户拍板；`docs/API_KEY_FIELD_ALIGN_PLAN.md` §7–§10 已同步）
+
+- `lib/ui/pages/providers_page.dart` `_ProviderEditorPageState`：
+  - 删 `bool _obscureApiKey`；字段恒 `obscureText: true`。
+  - 删 `autocorrect: false` / `enableSuggestions: true` / `keyboardType: TextInputType.text`
+    三个覆盖（与 novelwriter 的 `TextField(controller, obscureText: true)` 对齐）。
+  - 删「眼睛」按钮；`suffixIcon` 只剩「从剪贴板粘贴」，收紧为
+    `visualDensity: compact / padding: zero / 40×40`（原两个 48px 挤压输入区与长按命中区）。
+  - 新增 `FocusNode _apiKeyFocus`（`dispose` 释放），挂 `focusNode`；`_pasteApiKey()`
+    先 `requestFocus()` 再读剪贴板（Android 按窗口焦点判读取权限）。
+  - `_pasteApiKey()` 拆三段判定：非 `resumed` / `data == null`（系统或 ROM 限制，
+    提示改用系统长按粘贴）/ `trim` 后为空 / 成功回「已从剪贴板粘贴 N 个字符」；
+    平台通道异常也 try/catch 报出。不再一律说「剪贴板为空」。
+- 未动 `ProviderConfig.apiKey`、`llm_factory`、`packages/llm_api`、存储与导入导出。
+
+**怎么验证**（本轮未跑，按用户要求不编译不测试）
+
+```sh
+flutter analyze lib            # 预期 No issues（重点看 unused/deprecated）
+flutter test                   # 预期全绿（该字段无现有断言）
+dist/build_apk.sh -p           # 出正式包，真机验收
+```
+
+- 真机要点：点「粘贴」→ 出现「已从剪贴板粘贴 N 个字符」且框内变化 → 保存 → 测试连接通过；
+  若提示「无法读取剪贴板」则按文档 §9 判定矩阵查焦点/ROM。
+
+**下一步 / 遗留**
+
+- 无「看明文」入口了（按拍板）；需要核对 key 时只能靠「测试连接」。
+- 若某些 ROM 连前台读取都拒，唯一通道是系统长按粘贴（本项目实测 novelwriter 主流程可用）。
+
+---
+
+## 2026-11-05 · 规划（未改代码）：API Key 输入框对齐 novelwriter
+
+- 对照结论：novelwriter（同一份 Flutter 3.47.7、同 `adjustResize`）的 API Key 只是
+  `TextField(controller, obscureText: true)`，**无**粘贴按钮/明文切换，系统粘贴可用 →
+  再次排除 SDK 版本；xchat 多出的 `autocorrect: false` / `suffixIcon` 双 IconButton /
+  `_pasteApiKey()`（`Clipboard.getData`）才是差异点。
+- 计划落盘：**`docs/API_KEY_FIELD_ALIGN_PLAN.md`**（P0 严格对齐：删 `_obscureApiKey`、
+  `_pasteApiKey`、`services.dart` 导入、`autocorrect/enableSuggestions/keyboardType`
+  覆盖，只留 `controller + obscureText: true`；P1 排查遮挡/IME；P2-B 可选「眼睛按钮 +
+  强制重挂 IME」，不再用应用内 Clipboard）。
+- **用户已拍板：保留「粘贴」和「眼睛」两个按钮 → 走 P2-B**（文档 §7–§10）。结论：
+  `Clipboard.getData` 与框架系统粘贴是**同一条通道**，能力相同——按钮只多出"跳过 IME
+  是否展示粘贴菜单"和"跳过 `_allowPaste` 的 selection 有效性要求"两点；读不到只有四种
+  情形（无窗口焦点 / ROM 隐私开关 / 来源标 sensitive / 非纯文本）。改动要点：给字段加
+  `FocusNode` 并在读前 `requestFocus`、把「剪贴板为空」拆成三段判定（null / 空 / 成功带字符数）、
+  眼睛切换走 `unfocus → endOfFrame → requestFocus` 强制 IME 重挂、IconButton 收紧到 36×36、
+  删 `autocorrect:false` 等噪音参数。
+- 待用户拍板 §7 三条（文案 / 是否接受失去看明文与一键粘贴 / 是否直接走 P2-B）。
+- 未改任何 `lib/` 代码，未跑 analyze/test。
+
+---
+
+## 2026-11-05 · 诊断（未改代码）：Android 上 API Key 密码框无法复制/粘贴
+
+- 结论：**不是 Flutter 3.47.7 的回归**。①`obscureText` 下复制/剪切被框架禁用是
+  2021 年起的既定设计（`EditableTextState.copyEnabled/cutEnabled` 恒含 `!obscureText`，
+  可写遮挡字段默认 `ToolbarOptions(selectAll, paste)`）；②键盘层剪贴板消失是 Android
+  IME 对 `VARIATION_PASSWORD` 输入类型的行为；③"显示密码"就地切换无效的根因是
+  `EditableText.didUpdateWidget` 对 obscureText 变化**只 `updateConfig()`（且仅在已有输入
+  连接时）**，Android IME 需重新 attach 才刷新——须失焦再点回；④应用内
+  `ProvidersPage._pasteApiKey` 走 `Clipboard.getData`，失效与密码框无关，看焦点/ROM
+  剪贴板限制或空剪贴板提示吞掉原因。详见本轮对话；用户要求**只回答不实现**。
+- 未改任何 `lib/` 代码，未跑 analyze/test。
+
+---
+
 ## 2026-11-04 · release: v0.7.6（GitCode 发布流水线重构）
 
 - 版本号 `0.7.5+1` → **`0.7.6+1`**（`pubspec.yaml` 与 `lib/core/app_version.dart` 同步）。

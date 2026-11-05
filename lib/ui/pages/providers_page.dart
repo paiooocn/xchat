@@ -282,10 +282,9 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
   Map<String, List<String>> _reasoningEfforts = <String, List<String>>{};
   Map<String, ModelSpec> _specs = <String, ModelSpec>{};
 
-  /// Whether the API Key is masked. Toggling it off makes the field a plain
-  /// text input, which lets the system keyboard paste normally (Android IMEs
-  /// refuse to paste into password-type fields).
-  bool _obscureApiKey = true;
+  /// Focus of the API Key field. Android only lets an app read the clipboard
+  /// while it holds window focus, so the paste button grabs focus first.
+  final FocusNode _apiKeyFocus = FocusNode();
 
   @override
   void initState() {
@@ -318,6 +317,7 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
     _name.dispose();
     _baseUrl.dispose();
     _apiKey.dispose();
+    _apiKeyFocus.dispose();
     _models.dispose();
     _contextWindow.dispose();
     _maxOutputTokens.dispose();
@@ -472,28 +472,75 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
 
   /// Pastes the clipboard content into the API Key field.
   ///
-  /// Android keyboards refuse to paste into password-type fields, so the
-  /// clipboard is read by the app itself and inserted at the caret — this
-  /// always works, no matter whether the key is masked.
+  /// The field is masked (a password-type input), so some Android IMEs do not
+  /// offer their own「粘贴」there — this button reads the clipboard directly.
+  /// Note the two are **different paths**: `Clipboard.getData` needs the app to
+  /// be allowed to read the clipboard (per-app permission / ROM policy), while
+  /// the keyboard's own paste commits text through the input connection and is
+  /// not affected by that permission. A failure therefore means the system
+  /// denied the read, and the message says so instead of「剪贴板为空」.
   Future<void> _pasteApiKey() async {
     final messenger = ScaffoldMessenger.of(context);
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = (data?.text ?? '').trim();
-    if (text.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('剪贴板为空')));
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('应用不在前台，读不到剪贴板：请回到应用再试')),
+      );
       return;
     }
+
+    String? text;
+    Object? error;
+    var sawNull = false;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        if (data == null) {
+          sawNull = true;
+        } else {
+          final value = (data.text ?? '').trim();
+          if (value.isNotEmpty) {
+            text = value;
+            break;
+          }
+        }
+      } catch (e) {
+        error = e;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    if (!mounted) return;
+    // Focus afterwards: the field should be ready to accept typing / system
+    // paste whichever way the clipboard read went.
+    _apiKeyFocus.requestFocus();
+
+    if (text == null) {
+      final message = error != null
+          ? '读取剪贴板失败：$error'
+          : sawNull
+              ? '读不到剪贴板：系统没给 XChat「读取剪贴板」权限，请到系统设置里开启'
+              : '剪贴板为空，或系统没给 XChat「读取剪贴板」权限，请到系统设置里检查';
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+
+    _insertIntoApiKey(text);
+    messenger.showSnackBar(
+      SnackBar(content: Text('已从剪贴板粘贴 ${text.length} 个字符')),
+    );
+  }
+
+  /// Inserts [text] at the caret of the API Key field (replaces the selection).
+  void _insertIntoApiKey(String text) {
     final value = _apiKey.value;
     final selection = value.selection;
     final start = selection.isValid ? selection.start : value.text.length;
     final end = selection.isValid ? selection.end : value.text.length;
-    final updated = value.text.replaceRange(start, end, text);
     _apiKey.value = value.copyWith(
-      text: updated,
+      text: value.text.replaceRange(start, end, text),
       selection: TextSelection.collapsed(offset: start + text.length),
       composing: TextRange.empty,
     );
-    messenger.showSnackBar(const SnackBar(content: Text('已从剪贴板粘贴')));
   }
 
   Future<void> _fetchModels() async {
@@ -532,33 +579,21 @@ class _ProviderEditorPageState extends State<_ProviderEditorPage> {
           const SizedBox(height: 12),
           TextField(
             controller: _apiKey,
-            obscureText: _obscureApiKey,
-            // A masked field is a password-type input: Android IMEs refuse to
-            // paste there. Revealing the key turns it into a plain text field
-            // (no autocorrect, suggestions on) so the keyboard paste works.
-            autocorrect: false,
-            enableSuggestions: true,
-            keyboardType: TextInputType.text,
+            focusNode: _apiKeyFocus,
+            // Kept identical to novelwriter's API Key field: masked, and no
+            // `autocorrect` / `keyboardType` / `enableSuggestions` overrides —
+            // extra input-type flags make some Android IMEs treat the field as
+            // "no suggestions" and drop the clipboard strip altogether.
+            obscureText: true,
             decoration: InputDecoration(
               labelText: 'API Key',
-              suffixIcon: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: '从剪贴板粘贴',
-                    icon: const Icon(Icons.content_paste, size: 18),
-                    onPressed: _pasteApiKey,
-                  ),
-                  IconButton(
-                    tooltip: _obscureApiKey ? '显示 API Key' : '隐藏 API Key',
-                    icon: Icon(
-                      _obscureApiKey ? Icons.visibility_off : Icons.visibility,
-                      size: 18,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureApiKey = !_obscureApiKey),
-                  ),
-                ],
+              suffixIcon: IconButton(
+                tooltip: '从剪贴板粘贴',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                icon: const Icon(Icons.content_paste, size: 18),
+                onPressed: _pasteApiKey,
               ),
             ),
           ),
