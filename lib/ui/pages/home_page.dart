@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/app_activity.dart';
 import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
@@ -2814,6 +2815,12 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
           _StatusBar(
             text: controller.error ?? controller.notice!,
             isError: controller.error != null,
+            // A broken turn can be resumed: `resend()` replays the history,
+            // which already contains the salvaged (incomplete) answer, so the
+            // model continues from where it stopped instead of starting over.
+            onRetry: controller.error != null && !controller.isRunning
+                ? () => _controller?.resend(taskId: widget.taskId)
+                : null,
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -3242,6 +3249,36 @@ class _LiveStream extends StatelessWidget {
               padding: EdgeInsets.symmetric(vertical: 8),
               child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
             ),
+          // L4: while the app is in the background the system may freeze/kill
+          // the process, so warn instead of letting the user wonder why the
+          // answer stopped.
+          ListenableBuilder(
+            listenable: AppActivity.instance,
+            builder: (context, _) => AppActivity.instance.isActive
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.battery_alert_outlined,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            '应用在后台：系统可能中断本次生成，回前台后请留意底部的状态条',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
         ],
       ),
     );
@@ -3249,25 +3286,44 @@ class _LiveStream extends StatelessWidget {
 }
 
 class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.text, required this.isError});
+  const _StatusBar({required this.text, required this.isError, this.onRetry});
 
   final String text;
   final bool isError;
 
+  /// Shown as a「继续生成」button — resumes the interrupted turn.
+  final VoidCallback? onRetry;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final color =
+        isError ? theme.colorScheme.onErrorContainer : theme.colorScheme.onSurfaceVariant;
     return Container(
       width: double.infinity,
       color: isError
           ? theme.colorScheme.errorContainer
           : theme.colorScheme.secondaryContainer.withValues(alpha: 0.4),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Text(
-        text,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: isError ? theme.colorScheme.onErrorContainer : theme.colorScheme.onSurfaceVariant,
-        ),
+      padding: EdgeInsets.fromLTRB(16, onRetry == null ? 8 : 4, 16, onRetry == null ? 8 : 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+          if (onRetry != null)
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('继续生成'),
+              style: TextButton.styleFrom(
+                foregroundColor: color,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+        ],
       ),
     );
   }

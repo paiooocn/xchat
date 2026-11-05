@@ -117,6 +117,9 @@ class SessionXml {
             _attrs({
               'id': message.id,
               'task_id': message.taskId,
+              // Only written when set: existing files stay byte-identical, and
+              // old readers simply ignore the attribute (invariant 10).
+              'incomplete': message.incomplete ? 'true' : null,
               ..._usageAttrs(message.usage),
             }),
           );
@@ -299,6 +302,7 @@ class SessionXml {
       reasoning: reasoningElement?.innerText,
       reasoningMode: reasoningElement?.getAttribute('mode'),
       toolCalls: toolCalls,
+      incomplete: element.getAttribute('incomplete') == 'true',
       usage: TokenUsage.fromAttrs(_attrsOf(element)),
       taskId: element.getAttribute('task_id'),
     );

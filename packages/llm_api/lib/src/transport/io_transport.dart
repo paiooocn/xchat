@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../core/errors.dart';
+import 'activity_clock.dart';
 import 'cancel_token.dart';
 import 'transport.dart';
 
@@ -15,6 +16,7 @@ class IoHttpTransport implements HttpTransport {
   IoHttpTransport({
     HttpClient? client,
     this.userAgent = 'llm_api/0.1 (+dart)',
+    this.clock = const AlwaysActiveClock(),
   }) : _client = client ?? HttpClient() {
     _client.connectionTimeout ??= const Duration(seconds: 20);
     _client.autoUncompress = true;
@@ -22,6 +24,12 @@ class IoHttpTransport implements HttpTransport {
 
   final HttpClient _client;
   final String userAgent;
+
+  /// Decides how much of the idle budget actually elapsed — see
+  /// [ActivityClock]; a mobile host passes its lifecycle-aware clock so a
+  /// backgrounded app is not declared "stalled" the moment it resumes.
+  final ActivityClock clock;
+
   bool _closed = false;
 
   /// Access to the underlying client (proxies, bad certificates, …).
@@ -112,6 +120,7 @@ class IoHttpTransport implements HttpTransport {
       stream = _withIdleWatchdog(stream, request.idleTimeout!, request.uri);
     }
 
+
     final headers = <String, List<String>>{};
     response.headers.forEach((name, values) {
       headers[name] = values;
@@ -128,23 +137,84 @@ class IoHttpTransport implements HttpTransport {
 
   /// Errors the stream if the provider stops sending for too long — a stalled
   /// SSE connection would otherwise hang the UI forever.
-  static Stream<List<int>> _withIdleWatchdog(
+  ///
+  /// The budget is measured in **active** time ([clock]): a mobile OS suspends
+  /// a backgrounded app, and the naive `Stream.timeout` would fire the moment
+  /// it resumes with a bogus "stalled" error over a healthy socket.
+  Stream<List<int>> _withIdleWatchdog(
     Stream<List<int>> source,
     Duration timeout,
     Uri uri,
-  ) =>
-      source.timeout(
-        timeout,
-        onTimeout: (sink) {
-          sink.addError(
-            TransportException(
-              'No data received for ${timeout.inSeconds}s (stream stalled)',
-              uri: uri,
-            ),
-          );
-          sink.close();
-        },
-      );
+  ) {
+    late final StreamController<List<int>> controller;
+    StreamSubscription<List<int>>? subscription;
+    Timer? timer;
+    var lastActivity = clock.now();
+    var finished = false;
+
+    void stopTimer() {
+      timer?.cancel();
+      timer = null;
+    }
+
+    void complete([Object? error, StackTrace? stack]) {
+      if (finished) return;
+      finished = true;
+      stopTimer();
+      if (error != null) controller.addError(error, stack);
+      unawaited(controller.close());
+    }
+
+    late final void Function() arm;
+
+    void onTimeout() {
+      if (finished) return;
+      // Still inside the budget (the process was frozen / the app is in the
+      // background): keep waiting without counting that time.
+      if (timeout - clock.activeSince(lastActivity) > Duration.zero) {
+        arm();
+        return;
+      }
+      complete(TransportException(
+        'No data received for ${timeout.inSeconds}s (stream stalled)',
+        uri: uri,
+      ));
+      unawaited(subscription?.cancel());
+    }
+
+    arm = () {
+      stopTimer();
+      final left = timeout - clock.activeSince(lastActivity);
+      timer = Timer(left > Duration.zero ? left : Duration.zero, onTimeout);
+    };
+
+    controller = StreamController<List<int>>(
+      onListen: () {
+        subscription = source.listen(
+          (chunk) {
+            if (finished) return;
+            lastActivity = clock.now();
+            arm();
+            controller.add(chunk);
+          },
+          onError: (Object error, StackTrace stack) {
+            if (finished) return;
+            stopTimer();
+            complete(error, stack);
+          },
+          onDone: () => complete(),
+          cancelOnError: false,
+        );
+        arm();
+      },
+      onCancel: () {
+        finished = true;
+        stopTimer();
+        return subscription?.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
   @override
   void close({bool force = false}) {

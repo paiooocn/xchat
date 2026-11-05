@@ -11,7 +11,6 @@
 /// ```
 library;
 
-import '../core/content_part.dart';
 import '../thinking/reasoning_router.dart';
 import '../transport/transport.dart';
 import 'anthropic.dart';

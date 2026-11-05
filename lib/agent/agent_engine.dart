@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:llm_api/llm_api.dart' as llm;
 import 'package:path/path.dart' as p;
 
+import '../core/app_activity.dart';
 import '../core/app_paths.dart';
+import '../core/keep_alive.dart';
 import '../core/python_runtime.dart';
 import '../data/session_repository.dart';
 import '../llm/llm_factory.dart';
@@ -126,7 +129,14 @@ class AgentEngine {
       maxAttachmentBytes: config.maxAttachmentBytes,
     ));
 
+    final turnStartedAt = DateTime.now();
+    // Aggregator of the round currently streaming — kept outside the loop so a
+    // mid-stream failure can still salvage what the model already produced.
+    llm.ChatStreamAggregator? inflight;
     try {
+      // Keeps the process alive in the background while this turn streams (a
+      // foreground service on Android); no-op elsewhere.
+      await KeepAlive.begin();
       if (userText != null || (attachments?.isNotEmpty ?? false)) {
         final id = _shortId();
         session.messages.add(SessionMessage(
@@ -163,6 +173,7 @@ class AgentEngine {
         );
 
         final aggregator = llm.ChatStreamAggregator(model: session.model);
+        inflight = aggregator;
         await for (final event in provider.stream(request, cancel: token)) {
           aggregator.feed(event);
           final mapped = _mapStreamEvent(event);
@@ -192,6 +203,7 @@ class AgentEngine {
           session.contextTokens = assistant.usage.contextTotal;
         }
         await _persist();
+        inflight = null;
         yield AgentAssistantCompleted(assistant);
         yield AgentUsageUpdated(
           cumulative: session.cumulativeUsage,
@@ -300,11 +312,78 @@ class AgentEngine {
     } on llm.RequestCancelledException {
       yield const AgentStopped();
     } catch (error) {
-      yield AgentError('$error');
+      // Salvage the half-streamed answer instead of dropping it: the text only
+      // lives in memory otherwise, and a background kill would look like the
+      // message never existed. Tool calls are dropped — a partial argument set
+      // would break the tool protocol (invariant 5).
+      final partial = _partialAssistant(inflight);
+      if (partial != null) {
+        session.messages.add(partial);
+        try {
+          await _persist();
+        } catch (persistError) {
+          debugPrint('AgentEngine: 保存中断回答失败: $persistError');
+        }
+        inflight = null;
+        yield AgentAssistantCompleted(partial);
+      }
+      yield AgentError(_describeFailure(error, turnStartedAt));
     } finally {
       provider.close();
       _cancel = null;
+      unawaited(KeepAlive.end());
     }
+  }
+
+  /// Builds the "answer so far" message for a stream that failed mid-way.
+  ///
+  /// Returns `null` when nothing usable arrived (then there is nothing to keep).
+  SessionMessage? _partialAssistant(llm.ChatStreamAggregator? aggregator) {
+    if (aggregator == null) return null;
+    final content = aggregator.content;
+    final reasoning = aggregator.reasoning;
+    if (content.trim().isEmpty) return null;
+    return SessionMessage(
+      role: MessageRole.assistant,
+      id: _shortId(),
+      taskId: taskId,
+      content: content,
+      reasoning: reasoning.isEmpty ? null : reasoning,
+      reasoningMode: reasoning.isEmpty ? null : _reasoningModeLabel(),
+      incomplete: true,
+    );
+  }
+
+  /// Turns a transport failure into something the user can act on.
+  ///
+  /// The most common cause on mobile is the app being backgrounded: the system
+  /// freezes/kills the process and the SSE socket dies. Say that instead of
+  /// dumping `TransportException: … SocketException …` on the user.
+  String _describeFailure(Object error, DateTime startedAt) {
+    final activity = AppActivity.instance;
+    final raw = '$error';
+    final detail = _firstLine(raw);
+    if (activity.wasBackgroundedSince(startedAt)) {
+      final away = _formatSpan(activity.backgroundSince(startedAt));
+      return '应用在后台时被系统中断（后台约 $away），本次回答已保留到中断处。\n'
+          '点「重发」可从断点继续；长期后台生成请允许本应用「后台运行 / 关闭电池优化」。\n'
+          '原因：$detail';
+    }
+    if (raw.contains('stream stalled')) {
+      return '连接长时间没有收到数据，已中断：$detail\n点「重发」可重试。';
+    }
+    return '请求失败：$raw';
+  }
+
+  static String _firstLine(String text) {
+    final line = text.split('\n').first.trim();
+    return line.length <= 300 ? line : '${line.substring(0, 300)}…';
+  }
+
+  static String _formatSpan(Duration span) {
+    if (span.inMinutes < 1) return '${span.inSeconds} 秒';
+    if (span.inHours < 1) return '${span.inMinutes} 分钟';
+    return '${span.inHours} 小时 ${span.inMinutes % 60} 分钟';
   }
 
   /// Waits for the user's tool approval but aborts immediately when the turn

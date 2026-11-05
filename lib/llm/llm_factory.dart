@@ -1,5 +1,6 @@
 import 'package:llm_api/llm_api.dart';
 
+import '../core/app_activity.dart';
 import '../models/provider_config.dart';
 
 /// Builds an `llm_api` provider from an [ProviderConfig].
@@ -12,7 +13,12 @@ import '../models/provider_config.dart';
 /// console, in either debug or release builds.
 LlmProvider createProvider(ProviderConfig config, {String? reasoningEffort}) {
   return OpenAiCompatibleProvider(
-      config: buildOpenAiConfig(config, reasoningEffort: reasoningEffort));
+    config: buildOpenAiConfig(config, reasoningEffort: reasoningEffort),
+    // The lifecycle-aware clock keeps the idle watchdog from declaring a
+    // backgrounded (frozen) app's stream "stalled" the moment it resumes.
+    transport: IoHttpTransport(clock: AppActivity.instance),
+    ownsTransport: true,
+  );
 }
 
 /// Translates an [ProviderConfig] into the wire-level configuration.

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'core/app_activity.dart';
 import 'core/app_brand.dart';
 import 'core/app_paths.dart';
 import 'core/window_prefs.dart';
@@ -18,6 +19,9 @@ import 'state/app_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Foreground/background bookkeeping: drives the stream idle watchdog (it must
+  // not count suspended time) and the "interrupted in background" hint.
+  AppActivity.instance.attach();
   // Android: ask (once) for shared-storage access so data lands in the
   // externally readable {shared}/com.yimo.xchat/data.
   await AppPaths.requestSharedAccess();

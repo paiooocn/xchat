@@ -188,6 +188,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _assistantBubble(BuildContext context) {
+    final theme = Theme.of(context);
     final text = message.content ?? '';
     return Align(
       alignment: Alignment.centerLeft,
@@ -199,6 +200,24 @@ class MessageBubble extends StatelessWidget {
             if (message.hasReasoning)
               ThinkingBlock(text: message.reasoning ?? ''),
             if (message.hasToolCalls) ToolCallBlock(calls: message.toolCalls),
+            // The turn was cut off (background kill / network drop): keep the
+            // partial text but say so, so it is not mistaken for a full answer.
+            if (message.incomplete)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.link_off, size: 14, color: theme.colorScheme.error),
+                    const SizedBox(width: 4),
+                    Text(
+                      '回答被中断，仅保留已生成部分（可点状态条「继续生成」）',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ],
+                ),
+              ),
             if (text.trim().isNotEmpty)
               markdownView(text),
             if (message.usage.isNotEmpty) ...[

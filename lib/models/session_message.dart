@@ -78,6 +78,7 @@ class SessionMessage {
     this.toolCallId,
     this.toolName,
     this.isError = false,
+    this.incomplete = false,
     this.usage = TokenUsage.empty,
     this.taskId,
   })  : toolCalls = toolCalls ?? <ToolCallData>[],
@@ -102,6 +103,12 @@ class SessionMessage {
   String? toolCallId;
   String? toolName;
   bool isError;
+
+  /// Assistant only: the stream was cut off (background kill, network drop,
+  /// user stop …) and this text is only the part that made it. Kept so the
+  /// answer is not lost, and so the outbound history can be continued instead
+  /// of regenerating from scratch.
+  bool incomplete;
 
   /// Owning task item of a task-style session (`<task id>`); `null` for the
   /// messages of a normal session (and for the shared `system` message).
@@ -130,6 +137,7 @@ class SessionMessage {
     String? toolCallId,
     String? toolName,
     bool? isError,
+    bool? incomplete,
     TokenUsage? usage,
     String? taskId,
   }) =>
@@ -144,6 +152,7 @@ class SessionMessage {
         toolCallId: toolCallId ?? this.toolCallId,
         toolName: toolName ?? this.toolName,
         isError: isError ?? this.isError,
+        incomplete: incomplete ?? this.incomplete,
         usage: usage ?? this.usage,
         taskId: taskId ?? this.taskId,
       );

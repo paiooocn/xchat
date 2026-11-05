@@ -391,3 +391,23 @@ data for current backend (SkSL). Found stages: Vulkan
   （`Scaffold+ListView` vs `AlertDialog`）的任何差异。
 - 关掉这个坑的唯一可靠做法：**提示文案要指向权限**，不要写「剪贴板为空」；
   排查时先在一个普通明文框（不是密码框）试粘贴，能区分"字段问题"还是"应用级权限问题"。
+
+## 28. Android 转后台会掐断 LLM 流（不是网络库的锅）
+
+- 症状：转后台再回来，回答停在半截 / 状态条出现 `TransportException … SocketException`，
+  有时恰好是「`No data received for 120s (stream stalled)`」。
+- 真因是**进程**而不是连接：Activity 进 cached 后会被 cached-app freezer 冻结、被 LMK
+  回收、被 Doze 断网、被国产 ROM 秒杀。整个 turn 是进程内一个 `dart:io` SSE 流
+  （`IoHttpTransport`），进程没了连接就没了。
+- 三条必须记住的机制：
+  1. `HttpLlmProvider._sendWithRetry` **只在首字节前**重试（出了内容再重试会重复输出）
+     → 中途断必然向上抛，靠 `AgentEngine` 的兜底，不要指望重试。
+  2. `Stream.timeout` 的计时器在进程冻结期间不走，解冻瞬间一次性到期 → 会**误报**
+     stalled。所以 watchdog 走 `ActivityClock.activeSince`（前台时间），别改回
+     `source.timeout(...)`。
+  3. `ForegroundServiceStartNotAllowedException`（Android 12+ 从后台启动 FGS）只能
+     catch 掉：保活失败不影响本进程内的 turn，别把它当致命错误。
+- 判定法：`adb logcat | grep -iE 'lowmemorykiller|am_kill|Freezer'`；把电池优化关掉后
+  是否还断；屏幕常亮放前台是否不断。
+- 用户侧唯一有效设置：允许本应用后台运行 / 关闭电池优化（Android 13+ 还要允许通知，
+  否则前台服务的通知不显示，但服务仍然在跑）。

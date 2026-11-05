@@ -355,6 +355,8 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 编辑器打开 | 外部编辑器命令模板（`{file}` 占位，如 `code --goto {file}`），未配置用系统默认程序；移动端/无外部编辑器时用**内置 XML 编辑器**（等宽字体、保存前 XML 校验）；保存后自动重载 |
 | 打开工作目录 | 系统文件管理器打开会话 sandbox（open/explorer/xdg-open） |
 | 多会话并行 | 控制器按会话 id 全局持有，切换不中断后台流式对话；进行中会话在边栏显示旋转圈 |
+| 后台续跑（Android） | 一次 turn 期间起前台服务（`TurnKeepAliveService`，低优先级通知「正在生成回答…」），避免进程被冻结/回收；回落时不报错，只损失保活 |
+| 中断可续 | 流式中断（后台被杀/网络掉线/停滞看门狗）时把**已生成的部分**落盘成一条 `incomplete="true"` 的 assistant 消息，状态条给「继续生成」（replay 历史 = 接着写），不再整段丢失 |
 | 任务式会话 | 新建会话时选「任务式会话」并录入任务项（逐项新增 / `## 标题` 批量导入）；打开会话先显示**任务列表**（标题、消息数、未开始/尚无回复、完成勾选、删除），点某项进入与普通会话一样的对话视图 |
 | 任务项对话 | 只显示 `task_id` 等于该任务的消息（含 thinking / tool）；发送、流式、审批与普通会话一致。**发给模型的历史仍是整个会话**（任务项只是分组维度）；开始新任务（该项还没有 assistant 回复）时弹窗询问是否立即发送，发送即把任务内容写成该项第一条 user 消息 |
 | 任务锚（出站） | 任务式会话里**每条** user 消息（含追问、含预算续判、含工具图片合成消息）在发给模型时首行加 `【任务：<标题>】`；标题按 `task_id` 从任务项反查（XML 里消息只存 `task_id`，不冗余存标题，任务改名后历史自动跟随）；任务项已删除 → 不加锚；普通会话完全不受影响。作用是给「整会话历史都发」的扁平消息流加分段标签，避免跨任务串台 |
@@ -467,7 +469,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 | 平台 | 要点 |
 | --- | --- |
-| Android | App 私有数据目录；可申请外部存储权限迁移数据；系统 WebView；单 Activity |
+| Android | App 私有数据目录；可申请外部存储权限迁移数据；系统 WebView；单 Activity；**流式对话期间起前台服务保活**（`FOREGROUND_SERVICE_DATA_SYNC` + 通知，Android 13+ 通知需 `POST_NOTIFICATIONS`）。后台仍可能被 Doze/ROM 掐断 → 见 §7 的「中断可续」 |
 | iOS/macOS | 系统 WebView（WKWebView）；Documents 目录 |
 | Windows | 系统 WebView2；`start` 打开文件/目录 |
 | Linux | WebKitGTK 4.1（`libwebkit2gtk-4.1-dev`）；`xdg-open` |

@@ -52,6 +52,7 @@ export 'src/thinking/think_tag_parser.dart';
 
 // Streaming + transport
 export 'src/stream/sse.dart';
+export 'src/transport/activity_clock.dart';
 export 'src/transport/cancel_token.dart';
 export 'src/transport/io_transport.dart';
 export 'src/transport/transport.dart';

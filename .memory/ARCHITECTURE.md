@@ -139,3 +139,12 @@ UI 发消息
     必须在 UI 上「开启编辑」（每文件每会话确认一次）后才允许写回原文件；
     保存前比对 mtime。`<root>/notes/` 内的文件一律按内部笔记打开
     （`AppState.internalNoteIdForPath`），避免同一文件两个真相。
+23. **长连接在移动端要「保活 + 可续」**：一次 turn 全程是一个进程内 SSE 连接
+    （`llm` → `IoHttpTransport`）。移动端后台会被冻结/回收，所以
+    ① `AgentEngine.run` 用 `lib/core/keep_alive.dart`（Android 前台服务
+    `TurnKeepAliveService`）护住进程，桌面/iOS 是 no-op；
+    ② 流中断时 `AgentEngine` 把已生成内容写成 `incomplete="true"` 的 assistant 消息
+    再报错（工具调用一律丢弃，否则破坏不变量 5），UI 据此显示「已中断」；
+    ③ 空闲看门狗（`idleTimeout`）按**前台时间**计时（`lib/core/app_activity.dart`
+    实现 `llm.ActivityClock`），后台挂起的时间不得计入，否则一回到前台就误报
+    「stream stalled」。
