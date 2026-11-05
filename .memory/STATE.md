@@ -1,5 +1,108 @@
 # STATE — 进度交接
 
+## 2026-11-06 · 新增 `dist/bump_version.sh`（升版本一条命令）
+
+- 两处版本号一次改：`pubspec.yaml` 的 `version:` + `lib/core/app_version.dart` 的
+  `kAppVersion` / `kAppBuildNumber`，写回后自校验（不一致直接 exit 2）。
+- 参数：`-s` 显示当前版号（两点不一致时打 warning）；无升版参数或只有 `-c` = 修订号 +1；
+  `-z n` 修订号 +n；`-y n` 次版本号 +n；`-x` 主版本号 +1；`-b n` 构建号 +n；可组合；
+  `-c` 跳过确认，无 `-c` 且非 tty → exit 2。
+- 已在 `/tmp` 副本里跑过全参数组合（含无 `+build` 的旧格式、掉队检测、非法参数），
+  `bash -n` 通过；**未在本仓库真跑**（`./dist/bump_version.sh -s` 只读，已跑 → 0.7.7+1）。
+- `VERSIONING.md` 增补用法段。
+- 以后发版：`dist/bump_version.sh -c [-z/-y/-x/-b …]` → `flutter test test/app_version_test.dart`
+  → `dist/build_apk.sh -p`。
+
+---
+
+## 2026-11-06 · 实现 L1+L2+L4：Android 转后台不再掐断 LLM 流（保活 + 可续 + 提示）
+
+**诊断结论**（本轮前半段只分析，未改代码）：转后台被系统冻结/LMK 回收/Doze 断网 →
+进程内 SSE 连接（`IoHttpTransport`）直接死；`_sendWithRetry` 只在首字节前重试，
+中途断必然抛到 `AgentEngine` 的 catch；半截内容只活在内存 → 看起来"回答消失"。
+另有代码级放大器：`Stream.timeout` 的 120s 看门狗在冻结期间不走，解冻瞬间误报 stalled。
+
+**L1（可续 + 看门狗）**
+
+- 新增 `lib/core/app_activity.dart`：`AppActivity`（`ChangeNotifier` +
+  `WidgetsBindingObserver` + 实现 `llm.ActivityClock`），记录后台区间，
+  提供 `activeSince` / `wasBackgroundedSince` / `backgroundSince`；
+  `main.dart` 里 `AppActivity.instance.attach()`。`inactive` 不算后台（通知栏/弹窗）。
+- `packages/llm_api`：新增 `src/transport/activity_clock.dart`
+  （`ActivityClock` / `AlwaysActiveClock`，已在 `llm_api.dart` 导出）；
+  `IoHttpTransport` 新增 `clock` 参数，`_withIdleWatchdog` 由 `source.timeout(...)`
+  改为自制定时器 + `clock.activeSince(lastActivity)` 计费 —— **后台时间不计入空闲预算**，
+  不再回前台误报 `stream stalled`。`lib/llm/llm_factory.dart` 传
+  `IoHttpTransport(clock: AppActivity.instance)` + `ownsTransport: true`。
+- `SessionMessage.incomplete`（默认 false）：`lib/data/xml/session_xml.dart` 只在为真时写
+  `incomplete="true"`（旧文件字节不变、旧读者忽略）。
+- `AgentEngine.run`：`inflight` 聚合器提到循环外；异常路径把已生成内容
+  （有正文才留，**丢弃半截 tool_calls** 以守住工具协议）写成 incomplete assistant 消息、
+  落盘、`yield AgentAssistantCompleted`；`_describeFailure` 把失败翻成人话
+  （后台约 N 分钟 / stalled / 其他），不再裸抛 `TransportException`。
+
+**L2（前台服务保活）**
+
+- 新增 `android/app/src/main/kotlin/com/yimo/xchat/TurnKeepAliveService.kt`
+  （低优先级常驻通知「正在生成回答…」，API 34+ 用
+  `ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC`）。
+- `MainActivity.kt`：`MethodChannel('xchat/keep_alive')` 的 `start`/`stop`；
+  启动包 try/catch（Android 12+ 后台启动 FGS 会抛
+  `ForegroundServiceStartNotAllowedException`，只损失保活）。
+- `AndroidManifest.xml`：`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` /
+  `POST_NOTIFICATIONS` + `<service … foregroundServiceType="dataSync">`。
+- Dart 侧 `lib/core/keep_alive.dart`：引用计数的 `begin()/end()`，非 Android/iOS
+  或没有 channel 时静默 no-op；`AgentEngine.run` 里 begin，`finally` 里
+  `unawaited(KeepAlive.end())`。
+
+**L4（提示）**
+
+- `home_page.dart` `_StatusBar` 加「继续生成」按钮（`controller.error != null &&
+  !isRunning` → `_controller.resend(taskId:)`：replay 历史里已含半截回答 = 接着写）。
+- `_LiveStream` 在 `AppActivity.isActive == false` 时显示
+  「应用在后台：系统可能中断本次生成…」。
+- `message_bubble.dart`：`message.incomplete` 时在正文前挂一行
+  「回答被中断，仅保留已生成部分（可点状态条「继续生成」）」。
+
+**改了什么文件**
+
+- 新增：`lib/core/app_activity.dart`、`lib/core/keep_alive.dart`、
+  `packages/llm_api/lib/src/transport/activity_clock.dart`、
+  `android/app/src/main/kotlin/com/yimo/xchat/TurnKeepAliveService.kt`
+- 改：`lib/agent/agent_engine.dart`、`lib/models/session_message.dart`、
+  `lib/data/xml/session_xml.dart`、`lib/llm/llm_factory.dart`、`lib/main.dart`、
+  `lib/ui/pages/home_page.dart`、`lib/ui/widgets/message_bubble.dart`、
+  `packages/llm_api/lib/src/transport/io_transport.dart`、
+  `packages/llm_api/lib/llm_api.dart`、`android/.../MainActivity.kt`、
+  `android/app/src/main/AndroidManifest.xml`、`FEATURES.md`（§7 两行 + §10 Android 行）、
+  `.memory/ARCHITECTURE.md`（不变量 23）、`.memory/GOTCHAS.md`（§28）、
+  `packages/llm_api/lib/src/providers/presets.dart`（删掉既有的 unused import）
+- 已提交的另一次 commit（本轮开头）：`16ab336 fix(android): API Key 粘贴失败的真因…`
+
+**怎么验证**
+
+```sh
+flutter analyze lib packages/llm_api/lib test   # 已跑：No issues found
+dist/build_apk.sh -p                            # 真机验收需重新出包（改了 Kotlin + Manifest）
+```
+
+- 真机要点：发一条长回答 → 立刻切后台 → 通知栏出现「正在生成回答…」→ 回前台，
+  回答应已完整（或半截 + 「已中断」+ 状态条「继续生成」）；
+  `adb logcat | grep XChatKeepAlive` 可看保活启动是否被系统拒绝。
+- **未跑 `flutter build` / `flutter test`**（按用户要求不编译）。
+
+**下一步 / 遗留**
+
+- iOS 侧没有对等实现（`KeepAlive` 在 iOS 上是 no-op；要支持需 `beginBackgroundTask`）。
+- 除 `AgentEngine` 外的 LLM 调用（笔记助手 / 会话压缩 / 自动命名 / 提示词助手）
+  **没有**挂 `KeepAlive`，因为都是一次性短请求；如需后台跑完要各自 begin/end。
+- `incomplete` 消息目前只是"可继续"；没有"自动跳过一次工具轮"之类的收敛逻辑。
+- L3（按块续传、丢弃重复前缀）按上一轮结论**未做**。
+- Android 15 起 `dataSync` 类型有每 24h 总时长上限，超长生成会被系统停 FGS；
+  由于 `KeepAlive` 是引用计数、只在 turn 期间存在，正常使用碰不到。
+
+---
+
 > **每次会话结束前必须更新本文件。** 这是新会话唯一的"上次到哪了"来源。
 > 格式保持：做了什么 / 改了什么文件 / 怎么验证 / 下一步 / 遗留问题。
 

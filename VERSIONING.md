@@ -48,6 +48,22 @@ const String kAppVersionFull = '$kAppVersion+$kAppBuildNumber'; // 0.1.11+1
 1. `pubspec.yaml` 的 `version:`
 2. `lib/core/app_version.dart` 的 `kAppVersion` / `kAppBuildNumber`
 
+**别手改，用脚本** `dist/bump_version.sh`（两处一起改、写完自校验）：
+
+```sh
+dist/bump_version.sh -s            # 显示当前版号（顺带提示两处是否已掉队）
+dist/bump_version.sh               # 修订号 +1（0.7.7 -> 0.7.8），先确认再写
+dist/bump_version.sh -c            # 同上，跳过确认
+dist/bump_version.sh -z 3          # 修订号 +3
+dist/bump_version.sh -y 1          # 次版本号 +1
+dist/bump_version.sh -x            # 主版本号 +1
+dist/bump_version.sh -b 2          # 构建号 +2（+1 -> +3）
+dist/bump_version.sh -c -y 1 -b 1  # 可组合
+```
+
+- 无升版参数（或只有 `-c`）= 修订号 +1；`-c` 之外缺省都要在终端确认。
+- 非交互环境（CI / 脚本里）必须带 `-c`，否则直接退出码 2。
+
 ## 提醒：上架商店时构建号必须递增
 
 仓库历史从 v0.1.5 起每次发版都是 `X.Y.Z+1`，构建号从未变过，桌面端无影响。
