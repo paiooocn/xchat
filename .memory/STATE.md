@@ -1,5 +1,270 @@
 # STATE — 进度交接
 
+## 2026-11-10 · 发布 **0.8.0**（同步 + 未索引文件 + 全局会话兜底 + bump_version 增强）
+
+**本轮改动**（工作区一次提交，未拆分成多个 commit）
+
+1. **端到端同步**：`lib/sync/sync_service.dart`（单向链路 + host 任务队列）、
+   `lib/data/sync_repository.dart`、`lib/models/sync_item.dart`、
+   `lib/ui/pages/sync_page.dart`（左右两栏折叠树 / 窄屏 Tab）；见 ARCHITECTURE 不变量 28、
+   GOTCHAS §30。
+2. **未索引文件**（`sessions/`/`projects/` 里有、`index.json` 里没有的文件）：
+   `lib/data/orphan_repository.dart`、`lib/models/orphan_file.dart`、
+   `lib/ui/pages/orphans_page.dart`，入口在侧栏「☰ 更多 → 未索引文件」。
+3. **全局会话兜底**：`lib/models/archive_group.dart` 的
+   `buildOrphanProjectSessions` / `buildArchivedGlobalSessions(missingProjectIds:)`，
+   `AppState.knownProjectIds`、`archivedGlobalSessions`；项目条目缺失的会话并入
+   「全局会话」只换图标（`folder_off_outlined`）；见 ARCHITECTURE 不变量 13 补注。
+4. **`dist/bump_version.sh`**：`-y/-x` 低位归零、`-f/--frozen`、`-m/--manual`、
+   `-d/--direct`、构建号随版号重置为 1；`VERSIONING.md` 同步。
+5. **`packages/desktop_drop/`（vendored 0.8.4）**：只为消掉 `build apk` 的 KGP 误报
+   （`apply plugin: 'kotlin-android'` → `pluginManager.apply(...)`）；GOTCHAS §31。
+6. 版号：**0.8.0+1**（`pubspec.yaml` + `lib/core/app_version.dart`，用户已自行提升）。
+
+**怎么验证**（本轮按用户要求**不测试不编译**）
+
+```sh
+flutter analyze lib test
+flutter test test/archive_group_test.dart
+dist/build_apk.sh -p     # 真机：同步两端清单、未索引文件恢复/删除、侧栏全局会话里的孤儿条目
+```
+
+**下一步 / 遗留**
+
+- 已知遗留见下面各条（附件/笔记/`.memory` 不随同步传输；`mobile_scanner` 仅
+  Android/iOS/macOS；orphan 项不参与同步）。待办：项目 XML 解析失败时
+  `IndexRepository._matchesDisk` 恒不匹配 → 每次 `load()` 全量重建。
+
+## 2026-11-10 · `dist/bump_version.sh` 新增 `-d/--direct`（参数改绝对值）
+
+**需求**（用户）：`-d` 把 `-z/-y/-x/-b` 的值从「增量」改为「实际值」，
+例：`0.5.3+4` 跑 `-b 1 -d` → `0.5.3+1`。
+
+**做了什么**（`dist/bump_version.sh`）
+
+- 新增状态 `DIRECT` / `SET_MAJOR`；`-x` 改为可选带值（下一位是数字就吞掉，否则默认 1），
+  这样 `-d -x 2` 才有「设为 2」的写法（不带 `-d` 时 `-x 2` = 主版本 +2）。
+- `need_n`（>0）拆出 `need_num`（>=0）供 `-z/-y/-x` 用；解析完再校验：
+  `DIRECT=0` 时 `-z/-y/-x` 给 0 直接 `die`（0 只在 `-d` 下表示「设为 0」）。
+- `-d` 单独出现（没有 `-z/-y/-x/-b`）→ `die`（在默认 `-z 1` 之前判）。
+- 计算段：`DIRECT` 分支下 `NEW_*` 先取原值，再按 `SET_*` 覆盖；归零改成显式布尔
+  `ZERO_MINOR`/`ZERO_PATCH`，`-d` 下用「给出的值 > 原值」判断是否算一次抬升
+  （`-d -y 2` 在 0.5.x 上是降级，不归零）。
+- 构建号：`DIRECT && STEP_BUILD>0` → `NEW_BUILD=STEP_BUILD`（绝对值优先于「版号变→1」）；
+  否则走原来的「版号变→1 / 版号不变→累加」。
+- 计划输出多一行 `（-d 直接赋值：给出的段替换原值，其余保持不变）`；头注释与 usage 同步。
+
+**验证**：`bash -n` 通过；`/tmp/bv3` 假 `pubspec.yaml` + `app_version.dart`
+（`0.5.3+4`）跑：`-b 1 -d` → `0.5.3+1`（用户原例）、`-d -z 5` → `0.5.5+1`、
+`-d -y 2` → `0.2.5+1`（降级不归零）、`-d -y 2 -z 3` → `0.2.3+1`、`-d -x 2` → `2.0.0+1`、
+`-d -x 2 -z 9` → `2.0.9+1`、`-d -x 0 -y 0 -z 0` → `0.0.0+1`、`-d -z 6 -b 3` → `0.0.6+3`、
+`-d`（报错）、`-z 0`（报错）。未在仓库真跑。
+
+## 2026-11-10 · `dist/bump_version.sh` 构建号随版号重置为 1
+
+**需求**（用户）：`x.y.z` 中任一段发生变化，构建号就调回 `1`。
+
+**做了什么**（`dist/bump_version.sh`）：算完 `NEW_VER` 后加一段判定 ——
+`NEW_VER != VER` → `NEW_BUILD=1` 且置 `BUILD_RESET=1`（此时若给了 `-b N` 打印
+「版号已变，构建号重置为 1：忽略 -b N」）；`NEW_VER == VER` → `NEW_BUILD=BUILD+STEP_BUILD`。
+`-m` 也走这条规则（版号真的变了才重置）。头注释 + `-b`/`-m` 的示例同步改写。
+
+**语义总结**（`0.7.7+5` 为例）：`-z 1` → `0.7.8+1`；`-y 1` → `0.8.0+1`；`-x` → `1.0.0+1`；
+`-b 2`（版号不变）→ `0.7.7+7`；`-y 1 -b 3` → `0.9.0+1` 且提示忽略 `-b`。
+想「新版本第 2 次打包」= 先升版（`+1`）再 `-b 1`（`+2`）。
+
+**验证**：`bash -n` 通过；`/tmp/bv2` 里用假 `pubspec.yaml` + `app_version.dart` 跑遍
+`-z 1` / 无参 / `-b 2` / `-y 1` / `-y 1 -b 3` / `-z 2 -b 3` / `-x -f` / `-m 3.0.0` /
+`-m 3.0.0 -b 5`（版号未变 → `+6`）/ `-m` 重复（nothing to do）/ `-b 1`，结果与文档一致。
+**未在仓库真跑**（会改真实版号）。`VERSIONING.md` 的「构建号与版本号绑定」「商店构建号
+必须递增」两段同步改写（后者注明改 `NEW_BUILD=1` 一行即可回到全局计数器）。
+
+## 2026-11-10 · `dist/bump_version.sh` 补「低位归零」+ `-f/--frozen` + `-m/--manual`
+
+**需求**（用户）：`-y` 升次版本时修订号默认归 0；`-x` 升主版本时次/修订默认归 0；
+`-f/--frozen` 关掉归零；`-m x.y.z` 直接把版号设成给定值。
+
+**做了什么**（只改 `dist/bump_version.sh` 与 `VERSIONING.md`）
+
+- 新增 `FROZEN` / `MANUAL` / `SET_MINOR` / `SET_PATCH` / `VER_BUMP` 五个状态；
+  `-z`/`-y` 打 `SET_PATCH`/`SET_MINOR`，`-z/-y/-x` 打 `VER_BUMP`（`-b` 不打）。
+- 计算段：先算 `NEW_*`，再在 `FROZEN -eq 0` 时归零 ——
+  `STEP_MAJOR>0` → `NEW_MINOR=0`（`SET_MINOR` 为 0 时）、`STEP_MAJOR>0||STEP_MINOR>0`
+  → `NEW_PATCH=0`（`SET_PATCH` 为 0 时）。构建号从不归零。
+- `-m V`：剥前导 `v`、正则校验 `x.y.z`，直接取三段；构建号 `= BUILD + STEP_BUILD`；
+  与 `-z/-y/-x` 同用即 `die`（`-b` 允许，所以用 `VER_BUMP` 判）。
+- 无任何升版参数时默认 `-z 1` 的条件加上 `[ -z "$MANUAL" ]`。
+- 计划输出多两行提示：`（低位已归 0，加 -f 可保持递进）` / `（-m 直接指定版号，构建号 …）`。
+- `usage()` 由 `sed -n '2,23p'`（硬编码行号，头部一改就截断）换成
+  `awk` 逐行输出所有 `#` 注释行 —— 以后改头注释不必再同步行号。
+
+**怎么验证**：`bash -n` 通过；在 `/tmp` 造了假 `pubspec.yaml` + `app_version.dart` 跑遍
+`-s` / 无参 / `-z 3` / `-y 1` / `-y 1 -f` / `-x` / `-x -f` / `-b 2` / `-m 1.2.3` /
+`-m 1.2.3 -b 4` / `-m v2.0.0` / `-m … -y 1`（应报错）/ `-y 2 -z 3`（修订号保留 +3），
+结果与文档一致（0.7.7+5 → `-y 1` = 0.8.0+5、`-y 1 -f` = 0.8.7+5、`-x` = 1.0.0+5）。
+**未在本仓库真跑**（会改真实版号）。
+
+**下一步 / 遗留**
+
+- `dist/build_apk.sh` / `build_deb.sh` / gitcode 发布脚本都从 `pubspec.yaml` 读版号，
+  无需跟着改。
+- 发版仍走：`dist/bump_version.sh -c [-z/-y/-x/-b/-m …]` → `flutter test test/app_version_test.dart`
+  → `dist/build_apk.sh -p`。
+
+## 2026-11-10 · 修「索引与 sessions/ 都有的会话在侧栏消失」（项目条目缺失的会话）
+
+**真机现象**：`index.json` 与 `sessions/` 里都存在的会话（如 `aa592f91`「Coder1」、
+`485c9797` 的 Coder/Coder2/Coder3、`b689162c` 的百合小说/NSFW 系列）在会话列表里看不到。
+
+**根因**（不是索引解析）：`_Sidebar._sessionList` 只渲染两类条目 ——
+① `projectId.isEmpty` 的「全局会话」；② `projects` 里**实际存在的项目分组**
+（`visible.where((s) => s.projectId == project.id)`）。这些会话的 `project` 指向的项目
+XML 已不存在（用户那份 index 只有 `130f55a2`/`36af0f0f` 两个项目，而会话里的
+`project` 是 `485c9797`/`b689162c`），于是既不进全局、也落不进任何分组 →
+**在侧栏彻底不可见，但数据完好**。归档页同类逻辑（`buildArchivedGlobalSessions` 只认
+`projectId.isEmpty`）会让"项目已消失 + 已归档"的会话两边都看不到。
+
+**拍板结论**（用户）：**不新增分组** —— 这类会话并入「全局会话」，只换图标标识。
+
+**做了什么**
+
+- `lib/models/archive_group.dart`：新增 `buildOrphanProjectSessions(sessions, projectIds:)`
+  （所属项目不在传入集合内的会话，`projectIds` 由调用方给它**实际渲染**的 id）；
+  `buildArchivedGlobalSessions` 增可选 `missingProjectIds`（默认空集，旧行为不变）。
+- `lib/ui/pages/home_page.dart` `_sessionList`：`orphanIds` 用上面的 helper 算，
+  `global` 改为 `projectId.isEmpty || orphanIds.contains(id)`；全局列表里这类条目的
+  leading 换成 `Icons.folder_off_outlined` + Tooltip「所属项目条目缺失（已删除 /
+  未同步 / 已归档）」，正常条目仍是 `Icons.chat_bubble_outline`。
+  **没有新增分组段**（先前加过的「未归属项目的会话」段已撤回）。
+- `lib/state/app_state.dart`：新增 `knownProjectIds`（活动 + 归档）；
+  `archivedGlobalSessions` 把「项目已不存在的归档会话」并入（归档页「归档·全局」Tab 不再吞掉）。
+- `lib/ui/pages/archive_page.dart`：`_ArchivedGlobalSessions` 文档同步。
+- `test/archive_group_test.dart`：+3 例（缺失项目会话归全局、孤儿筛选、无项目渲染时全孤儿）。
+
+**怎么验证**
+
+```sh
+flutter analyze lib test            # 已跑（相关 3 文件）：No issues found
+flutter test test/archive_group_test.dart   # 已跑：13/13 通过
+dist/build_apk.sh -p                # 真机：全局会话里应出现 Coder1 等 8 个，图标是断开的文件夹
+```
+
+**下一步 / 遗留**
+
+- 数据侧不修（不自动改 `project` 字段）：项目 XML 若以后同步回来，分组会自动恢复。
+- `SessionInfoDialog` 仍是只读，没有「重新归属到某项目」的入口；需要的话再加。
+- 顺带发现：若某个项目 XML 存在但 `ProjectXml.decode` 失败，`IndexRepository._matchesDisk`
+  永远不匹配 → 每次 `load()` 都整体 `rebuild()`（重解析全部会话 XML，慢），值得单独修。
+
+## 2026-11-10 · 局域网同步改为「单向驱动 + 任务队列」（修 PC 端看不到手机清单）
+
+**真机现象**：手机能看到两端清单，PC 端只看到自己的、对端 0 项，状态条报
+`读取对端清单失败：SocketException: 连接被拒绝 (address=192.168.100.48, port=…)`。
+
+**根因**：配对握手只能证明 **guest → host 可达**（扫码/输码的一端主动拨号）。
+原实现要求反向也通（host 主动连 guest 的临时监听端口），而这一方向在真机上常见地
+不通：Android/ROM 防火墙拦入站、页面重建后临时端口失效。诊断要点：
+「一方能看到两栏、另一方反时报连接被拒绝」= 单向可达，不是 token/端口写错。
+
+**改法**（只改 `lib/sync/sync_service.dart`，UI 与仓库层不动）：
+
+- 新增 `_Role { none, host, guest }`。**host = 显示配对码的一端**（保持监听，但**从不
+  主动建连**）；**guest = 扫码/输码的一端**（不需要监听、也不再起服务器）。
+- 统一的动作集合落在 `_execute(action, args)`（`manifest` / `export` / `import`），两侧
+  共用。`_call()` 分派：guest 直接 `POST /xchat-sync/rpc`；host 走任务队列。
+- 任务队列：host 的 `_enqueue()` 生成任务 id + `Completer`（30s 超时）放进 `_tasks`；
+  guest 的 `_pollLoop()` 每 700ms `POST /poll` 取任务 → 本地 `_execute` →
+  `POST /result {id, ok, result|error}`；host 在 `/result` 里 complete 对应 Future。
+  失败时 guest 按 1–5s 退避重试并把「与对端断开（重试中…）」显示在状态条。
+- `/pair` 请求体不再需要 port（`{code, device, token}`）；host 侧 `_peerPort = 0`，
+  `peerAddress` 对 host 只显示 IP。
+- `_deviceLabel()`：Android 的 `Platform.localHostname` 恒为 `localhost`，这种标签没有
+  区分度 → 回落成「Android 设备 / Windows 设备 / Mac / iOS 设备 / Linux 设备」。
+- 断开/关页面时 `_failPending()` 让所有等待中的 host 调用立刻失败（不再干等 30s）。
+
+**改了什么文件**：`lib/sync/sync_service.dart`（重写）、`lib/ui/pages/sync_page.dart`
+（断开按钮的显示条件改为 `paired || listening`）、`.memory/ARCHITECTURE.md`（不变量 28
+改写）、`.memory/GOTCHAS.md`（§30 改写）。
+
+**怎么验证**
+
+```sh
+flutter analyze lib     # 已跑：No issues found
+dist/build_apk.sh -p
+```
+
+- 真机要点：PC 生成配对码 → 手机扫码 → **两端都应显示对端清单**（PC 的「对端」由手机
+  轮询取任务后回传）；PC 勾选后点「同步」→ 手机侧应在 1 秒内开始接收；把手机同步页关掉
+  → PC 端应在 30s 内报「对端没有响应（它可能已离开同步页）」，重新配对即恢复。
+- 只有 guest 需要 `HttpServer`（host 才监听）；Linux/Windows 端的 `mobile_scanner` 仍
+  不可用，靠手输配对码 + 地址。
+
+## 2026-11-10 · 局域网双端配对同步（会话/项目）+ 扫码配对
+
+**做了什么**
+
+- **协议**：两端都跑同一个 `lib/sync/sync_service.dart` 的 `SyncService`（各监听一个
+  临时端口，`InternetAddress.anyIPv4`）。配对：一端 `startPairing()` 生成 6 位配对码 +
+  二维码；另一端 `pair(host, port, code)` 先起自己的监听，再 `POST /xchat-sync/pair`
+  （body: code / device / 自己的 port / 共享 token）——**被配对端用请求的
+  `connectionInfo.remoteAddress` 记住对端地址**，所以不需要猜本机 LAN IP（只有二维码
+  里的地址靠 `NetworkInterface.list` 挑私网 IPv4）。成功后两端共享随机 token，之后的
+  `/manifest`（GET）、`/export`、`/import`（POST）都带 `x-sync-token` 头 —— 链路**对称**，
+  两边都能拉/推。
+- **清单与传输**：`lib/data/sync_repository.dart` 的 `SyncRepository.manifest()` 只读
+  `index.json` 的**活动**桶（归档桶不出现）；`exportItems(keys)` 读原始 XML 发出；
+  `importItems()` 先项目后会话，`updated_at` 不更新的一律跳过（两端跑一遍即收敛）。
+- **两条硬规则落在 repository**：①归档的不接收（清单不含 + 导入时再判一次 `isArchived`）；
+  ②工作目录不同步（项目沿用本机已有 sandbox 或 `paths.projectSandboxDir(id)`；会话用
+  所属项目的 sandbox，项目不同步/不存在时 `paths.sessionSandboxDir(id)` 并把 `projectId`
+  清空；系统提示词里对端的 sandbox 路径字符串被替换成本机路径）。
+- **导入后刷新**：`AppState.refreshAfterSync(ids)` —— 先丢掉这些会话的内存缓存再重载
+  四个列表（缓存里的副本必然过期）。被对端 `/import` 命中的一端也会自动刷新并重算清单。
+- **UI**：新增 `lib/ui/pages/sync_page.dart`（侧栏「☰ 更多 → 局域网同步」进入，
+  `_navigate` 的 `'sync'` 分支）。未配对：左「本机配对码」（大号 6 位数字 + `QrImageView`
+  二维码 + 地址:端口）/ 右「连接另一台设备」（`mobile_scanner` 扫码 + 手输配对码/地址/端口）。
+  已配对：左右两张卡片清单（`CheckboxListTile`），**复选框状态按 `kind:id` 存一份
+  `Set<String> _checked`** —— 同一 id 出现在两栏时勾一边等于勾两边；底部「同步」按
+  勾选集合先拉后推。宽 <760 时两栏改为上下堆叠。
+
+**改了什么文件**
+
+- 新增：`lib/models/sync_item.dart`（`SyncItemSummary` / `SyncItemPayload` /
+  `SyncImportOutcome` / `SyncReport`）、`lib/data/sync_repository.dart`、
+  `lib/sync/sync_service.dart`（含 `SyncPairTarget` 二维码编解码）、
+  `lib/ui/pages/sync_page.dart`（含 `_ScanSheet`）
+- 改：`lib/state/app_state.dart`（新增 `refreshAfterSync`）、
+  `lib/ui/pages/home_page.dart`（☰ 菜单「局域网同步」+ `'sync'` 路由）、
+  `pubspec.yaml`（`qr_flutter ^4.1.0`、`mobile_scanner ^7.4.2`）、
+  `android/app/src/main/AndroidManifest.xml`（`CAMERA`）、
+  `ios/Runner/Info.plist`（`NSCameraUsageDescription`）、
+  `macos/Runner/Release.entitlements`（`network.server`）、`FEATURES.md`（§7 一行）
+- 索引：`ARCHITECTURE.md` 不变量 28、`GOTCHAS.md` §30、`MAP.yaml`（生成器刷新）
+
+**怎么验证**
+
+```sh
+flutter pub get --offline     # 已跑：129 依赖变更，qr_flutter/mobile_scanner 解析成功
+flutter analyze lib           # 已跑：No issues found
+dist/build_apk.sh -p
+```
+
+- 真机要点：两部手机同一 WiFi → A 打开「局域网同步 → 生成配对码」→ B 扫码（或手输
+  6 位码 + A 屏上的地址/端口）→ 两端都出现左右两栏清单 → 勾选 → 「同步」→ 会话出现在
+  另一端侧栏；把一个项目归档后重进同步页 → 该项目与其会话都不在清单里；同步过来的会话
+  的 sandbox 指向**本机**目录，系统提示词里的「工作空间根目录」已改写。
+
+**下一步 / 遗留**
+
+- 附件（`<sandbox>/attachments/` 里的文件）**不随会话传输**，导入端只拿到路径；要同步
+  附件需要再加一层文件传输。
+- `.memory/` 项目记忆文件不同步（项目 XML 走了，记忆目录没走）；导入后下次启动
+  `healProjectMemory` 会补骨架，但内容不会来自对端。
+- 笔记（notes）不在同步范围（本轮只要求会话/项目）。
+- 没有发现协议（mDNS/UDP 广播），跨网段/多网卡时二维码里的地址可能是错的，需要手输。
+- token 只做「同一次配对」的鉴权，没有 TLS；仅限可信局域网。
+- 同步页关闭即断开监听（`SyncService.dispose` 关服务器），没有后台常驻配对。
+
 ## 2026-11-10 · 解除类型限制 + 双体积上限（图片 / 非图片）· 发布 0.7.16
 
 - 版本：`dist/bump_version.sh -z 2 -c` → **0.7.16+1**（`pubspec.yaml` +

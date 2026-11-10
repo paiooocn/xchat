@@ -267,6 +267,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 局域网同步把会话/项目文件直接写进磁盘之后调用。
+  ///
+  /// 内存缓存里的副本必然过期（同步来自外部），所以先丢掉这些缓存再重载
+  /// 四个列表；不 dispose 正在跑的 controller —— 覆盖一份正在生成的会话会
+  /// 由同步侧提前跳过（`SyncService.runSync`）。
+  Future<void> refreshAfterSync(Iterable<String> sessionIds) async {
+    for (final id in sessionIds) {
+      _sessionCache.remove(id);
+    }
+    await refreshSessions();
+    await refreshArchived();
+    await refreshProjects();
+    await refreshArchivedProjects();
+  }
+
   Future<void> refreshArchivedProjects() async {
     archivedProjects = await projectRepository.listArchived();
     notifyListeners();
@@ -479,9 +494,21 @@ class AppState extends ChangeNotifier {
 
   // ------------------------------------------------------------- archives
 
-  /// The archived sessions that belong to no project ("global" sessions).
-  List<Session> get archivedGlobalSessions =>
-      buildArchivedGlobalSessions(archivedSessions);
+  /// Ids of every project the index knows about (active + archived).
+  Set<String> get knownProjectIds => <String>{
+        for (final project in projects) project.id,
+        for (final project in archivedProjects) project.id,
+      };
+
+  /// The archived sessions that belong to no project ("global" sessions) —
+  /// including those whose project file no longer exists.
+  List<Session> get archivedGlobalSessions => buildArchivedGlobalSessions(
+        archivedSessions,
+        missingProjectIds: buildOrphanProjectSessions(
+          archivedSessions,
+          projectIds: knownProjectIds,
+        ).map((s) => s.projectId).toSet(),
+      );
 
   /// The archived sessions grouped by their owning project id.
   Map<String, List<Session>> get archivedSessionsByProject {

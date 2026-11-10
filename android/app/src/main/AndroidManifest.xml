@@ -9,6 +9,8 @@
     <!-- Android 13+: the ongoing "generating" notification. The service runs
          regardless, the notification is just hidden when denied. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 局域网同步的扫码配对（mobile_scanner）。 -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <!-- Shared storage for the data dir (<shared>/com.yimo.xchat/data): legacy
          read/write on Android 10, "all files access" on Android 11+. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"

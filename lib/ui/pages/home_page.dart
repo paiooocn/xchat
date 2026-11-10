@@ -11,6 +11,7 @@ import '../../core/app_activity.dart';
 import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
+import '../../models/archive_group.dart';
 import '../../models/external_doc.dart';
 import '../../models/project.dart';
 import '../../models/note.dart';
@@ -45,9 +46,11 @@ import '../theme/app_fonts.dart';
 import '../theme/app_theme.dart';
 import 'archive_page.dart';
 import 'compress_prompts_page.dart';
+import 'orphans_page.dart';
 import 'providers_page.dart';
 import 'session_wizard_page.dart';
 import 'search_page.dart';
+import 'sync_page.dart';
 import 'settings_page.dart';
 import 'templates_page.dart';
 import 'tools_page.dart';
@@ -808,10 +811,24 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             PopupMenuItem(
+              value: 'sync',
+              child: _MoreMenuItem(
+                icon: Icons.wifi_tethering,
+                label: '局域网同步',
+              ),
+            ),
+            PopupMenuItem(
               value: 'archive',
               child: _MoreMenuItem(
                 icon: Icons.archive_outlined,
                 label: '归档管理',
+              ),
+            ),
+            PopupMenuItem(
+              value: 'orphans',
+              child: _MoreMenuItem(
+                icon: Icons.cleaning_services_outlined,
+                label: '未索引文件',
               ),
             ),
             PopupMenuItem(
@@ -924,6 +941,14 @@ class _HomePageState extends State<HomePage> {
       case 'archive':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const ArchivePage()),
+        );
+      case 'orphans':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const OrphansPage()),
+        );
+      case 'sync':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SyncPage()),
         );
       case 'settings':
         Navigator.of(context).push(
@@ -1557,7 +1582,17 @@ class _Sidebar extends StatelessWidget {
   Widget _sessionList(BuildContext context, ThemeData theme) {
     final scheme = theme.colorScheme;
     final visible = sessions.where(_matchesFilter).toList();
-    final global = visible.where((s) => s.projectId.isEmpty).toList();
+    // 「所属项目条目缺失」的会话：带 project id，但侧栏里没有这个项目分组
+    // （项目 XML 被删 / 没同步过来 / 项目已归档 —— 归档项目不在 `projects` 里）。
+    // 它们既不是全局会话（projectId 非空），也落不进任何项目分组，所以**并入全局
+    // 会话列表**，只换一个断链图标做标识（不新增分组）。
+    final orphanIds = buildOrphanProjectSessions(
+      visible,
+      projectIds: <String>{for (final project in projects) project.id},
+    ).map((s) => s.id).toSet();
+    final global = visible
+        .where((s) => s.projectId.isEmpty || orphanIds.contains(s.id))
+        .toList();
     final allTags = <String>{
       for (final s in sessions) ...s.tags.where((t) => t.trim().isNotEmpty),
     }.toList()
@@ -1603,7 +1638,12 @@ class _Sidebar extends StatelessWidget {
                           selected: session.id == selectedId,
                           running: runningIds.contains(session.id),
                           indent: 12,
-                          leading: const Icon(Icons.chat_bubble_outline, size: 20),
+                          leading: orphanIds.contains(session.id)
+                              ? const Tooltip(
+                                  message: '所属项目条目缺失（已删除 / 未同步 / 已归档）',
+                                  child: Icon(Icons.folder_off_outlined, size: 20),
+                                )
+                              : const Icon(Icons.chat_bubble_outline, size: 20),
                           onTap: () => onSelect(session.id),
                         ),
                       if (global.isEmpty)
@@ -1668,8 +1708,8 @@ class _Sidebar extends StatelessWidget {
                       padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
                       child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
                     ),
-      ],
-    );
+                ],
+              );
   }
 
   /// 笔记 Tab 的列表区（搜索 / 置顶 / 最近 / 标签 / 归档）。

@@ -1,0 +1,41 @@
+name: desktop_drop
+description: A plugin which allows user dragging files to your flutter desktop applications.
+version: 0.8.4
+homepage: https://github.com/MixinNetwork/flutter-plugins/tree/main/packages/desktop_drop
+publish_to: 'none'
+
+# ---------------------------------------------------------------------------
+# Vendored copy of desktop_drop 0.8.4 (see VENDORED.md). Only change against
+# upstream: `android/build.gradle` applies KGP through `pluginManager` instead of
+# `apply plugin: 'kotlin-android'`, so Flutter's static KGP scan stays quiet.
+# ---------------------------------------------------------------------------
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.0.0"
+
+dependencies:
+  dbus: ^0.7.10
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  cross_file: ^0.3.4+2
+  web: ^1.1.1
+  universal_platform: ^1.1.0
+
+flutter:
+  plugin:
+    platforms:
+      macos:
+        pluginClass: DesktopDropPlugin
+      linux:
+        pluginClass: DesktopDropPlugin
+      windows:
+        pluginClass: DesktopDropPlugin
+      android:
+        package: one.mixin.desktop.drop
+        pluginClass: DesktopDropPlugin
+      web:
+        pluginClass: DesktopDropWeb
+        fileName: desktop_drop_web.dart

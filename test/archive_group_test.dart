@@ -45,6 +45,47 @@ void main() {
         <String>['a', 'b'],
       );
     });
+
+    test('sessions of a missing project are global too', () {
+      final sessions = <Session>[
+        _session('g1'),
+        _session('orphan', projectId: 'gone', archived: true),
+        _session('kept', projectId: 'p1', archived: true),
+      ];
+      expect(
+        buildArchivedGlobalSessions(
+          sessions,
+          missingProjectIds: const <String>{'gone'},
+        ).map((s) => s.id).toList(),
+        <String>['g1', 'orphan'],
+      );
+    });
+  });
+
+  group('buildOrphanProjectSessions', () {
+    test('a session whose project is not rendered is orphaned', () {
+      final sessions = <Session>[
+        _session('g1'),
+        _session('known', projectId: 'p1'),
+        _session('gone', projectId: 'p2'),
+      ];
+      expect(
+        buildOrphanProjectSessions(sessions, projectIds: const <String>{'p1'})
+            .map((s) => s.id)
+            .toList(),
+        <String>['gone'],
+      );
+    });
+
+    test('no projects rendered → every project session is orphaned', () {
+      final sessions = <Session>[_session('g1'), _session('s1', projectId: 'p1')];
+      expect(
+        buildOrphanProjectSessions(sessions, projectIds: const <String>{})
+            .map((s) => s.id)
+            .toList(),
+        <String>['s1'],
+      );
+    });
   });
 
   group('buildArchiveProjectGroups', () {

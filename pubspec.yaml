@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.7.16+1
+version: 0.8.0+1
 license: MIT
 
 environment:
@@ -39,6 +39,13 @@ dependencies:
   html: ^0.15.4
   intl: ^0.20.0
 
+  # LAN peer-to-peer sync (局域网同步): the pairing QR code and its scanner.
+  # qr_flutter renders the 6-digit pairing code as a QR; mobile_scanner reads it
+  # back on camera platforms (Android / iOS / macOS). Desktop without a camera
+  # falls back to typing the code (see lib/ui/pages/sync_page.dart).
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.2
+
   # Multimodal input: pick image files to send to the LLM
   # >=10 required: older releases hardcode compileSdk 34 in their own
   # android/build.gradle and fail AAR metadata checks against AGP 9 / SDK 36.
@@ -47,7 +54,14 @@ dependencies:
   # Drag files from the file manager onto the chat area (desktop; also works
   # where the platform delivers drag events). Desktop_drop 0.8.x requires
   # AGP 9+ on Android, which this app already uses.
-  desktop_drop: ^0.8.4
+  #
+  # Vendored copy of 0.8.4: upstream's android/build.gradle still *textually*
+  # contains `apply plugin: 'kotlin-android'` inside an AGP-9 guard, which makes
+  # every build print "plugins that apply Kotlin Gradle Plugin (KGP)". The local
+  # copy applies KGP through `pluginManager` instead — behavior identical, see
+  # packages/desktop_drop/VENDORED.md.
+  desktop_drop:
+    path: packages/desktop_drop
 
   # Web search (multi-engine meta search: DDG/Google/Bing/Brave/…)
 

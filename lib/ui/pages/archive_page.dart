@@ -41,7 +41,8 @@ class ArchivePage extends StatelessWidget {
   }
 }
 
-/// The archived sessions that are not bound to any project.
+/// The archived sessions that are not bound to any existing project
+/// (`projectId` 为空，或指向一个已不存在的项目文件).
 class _ArchivedGlobalSessions extends StatelessWidget {
   const _ArchivedGlobalSessions({required this.state});
 

@@ -101,6 +101,9 @@ UI 发消息
 13. **项目归档是级联的**：归档/恢复项目会连带归档/恢复它名下**全部**会话
     （`AppState.setProjectArchived` → `_setSessionsArchivedOfProject`）。
     侧栏只列活动项目，所以「不级联」会让项目的会话在侧栏与归档页都看不到。
+    **`projectId` 非空不代表一定有分组**：项目条目缺失（XML 被删 / 未同步 / 项目已归档）
+    时，会话按「全局会话」渲染，只换图标（`buildOrphanProjectSessions`）—— 不许让
+    任何会话既不进全局、也落不进分组（那等于从 UI 消失）。
 14. **删除项目连带删除会话**：`AppState.deleteProject` 删项目时**同时删掉它的
     全部会话**（XML + 索引 + 内存态），不再把会话「脱离项目」留下。调用方必须
     先做二次确认（`confirmDeleteProject`）。项目的工作目录不删，只重命名为
@@ -177,3 +180,16 @@ UI 发消息
     `p.isWithin(session.sandbox, path)` 的文件**原地引用**（存绝对路径），其余才复制进
     `<sandbox>/attachments/`。判断必须用 `p.canonicalize` 归一化后的路径，别用
     `startsWith`（`/a/sbx2` 会被 `/a/sbx` 误判）。
+
+28. **局域网同步是「单向连接 + host 任务队列」，只搬 XML**：`lib/sync/sync_service.dart`
+    的 `SyncService` 里 **host（显示配对码的一端）只监听、从不主动建连**，它需要的远端
+    数据全部挂成任务（`_tasks` + `_pending` 的 `Completer`），由 **guest（扫码端）轮询
+    `/poll` 取任务、本地执行、`/result` 回传**。原因：配对握手只证明 guest→host 可达，
+    反方向在真机上经常被 ROM 防火墙/失效端口挡掉 —— 别把链路改回「两端互相拨号」。
+    业务动作只有 `manifest` / `export` / `import` 三种，统一在 `_execute`，两侧共用。
+    传输单位是 `data/xml` 产出的原始 XML；**清单与导入的规则只在
+    `lib/data/sync_repository.dart` 一处**：只列活动桶（归档不可见）、`isArchived` 的
+    导入时再拒一次、新到的 `sandbox` 一律换成本机目录（项目 → 本机项目目录，会话 →
+    所属项目/`sandboxs/<id>`）并替换系统提示词里的旧路径。冲突只看 `updated_at`
+    （新的赢、相等跳过），所以往返跑不会乒乓。导入后必须走
+    `AppState.refreshAfterSync`（先丢 `_sessionCache` 再重载）。

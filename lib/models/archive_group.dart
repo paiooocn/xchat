@@ -49,8 +49,33 @@ class ArchiveProjectGroup {
 
 /// The archived sessions that are not bound to any project ("global"
 /// sessions) — they are listed on their own tab.
-List<Session> buildArchivedGlobalSessions(List<Session> archivedSessions) =>
-    archivedSessions.where((s) => s.projectId.isEmpty).toList(growable: false);
+///
+/// [missingProjectIds] covers the second case of «no project»: the session
+/// still carries a `project` id, but that project no longer exists (its XML was
+/// deleted / never synced). Such a session belongs to no project *group*, so
+/// without this it would be invisible on both tabs.
+List<Session> buildArchivedGlobalSessions(
+  List<Session> archivedSessions, {
+  Set<String> missingProjectIds = const <String>{},
+}) =>
+    archivedSessions
+        .where((s) =>
+            s.projectId.isEmpty || missingProjectIds.contains(s.projectId))
+        .toList(growable: false);
+
+/// Sessions whose owning project is **not** among [projectIds].
+///
+/// Callers pass the project ids they actually render (the sidebar passes the
+/// active ones only — an archived project's sessions have no group there
+/// either), so a session whose project was deleted or archived still shows up
+/// somewhere instead of vanishing from every list.
+List<Session> buildOrphanProjectSessions(
+  List<Session> sessions, {
+  required Set<String> projectIds,
+}) =>
+    sessions
+        .where((s) => s.projectId.isNotEmpty && !projectIds.contains(s.projectId))
+        .toList(growable: false);
 
 /// Builds the project entries of the archive page.
 ///

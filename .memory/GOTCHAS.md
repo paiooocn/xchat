@@ -180,6 +180,12 @@ for (var i = 0; i < 30; i++) {
   否则徽标规则会散落到 UI 层、测试不到。
 - 排序用 `project.name`（空名排末尾）；中文名按码位比较，`已` < `有`，
   写测试断言时别想当然地按插入顺序。
+- **`projectId` 非空 ≠ 一定有项目分组**：项目 XML 可能已被删 / 没同步过来 / 项目已
+  归档（归档项目只在归档页出现，侧栏不渲染）。所以「会话列表」必须把这类会话并入
+  「全局会话」（`buildOrphanProjectSessions(sessions, projectIds: 侧栏实际渲染的项目 id)`
+  + 断开的文件夹图标 `folder_off`），否则它们既不在全局、也落不进任何分组 →
+  **整条从 UI 消失（数据还在 index.json 与 sessions/ 里）**。归档页同理：
+  `buildArchivedGlobalSessions(..., missingProjectIds:)` 收「项目已消失」的归档会话。
 
 ## 16. 写会话后要同时刷新「活动」与「归档」两个列表
 
@@ -450,3 +456,51 @@ data for current backend (SkSL). Found stages: Vulkan
 - **Office 抽取先写临时文件再当文本附件**：`MessageAttachment` 只存路径，抽取结果必须
   落到磁盘（`Directory.systemTemp.createTemp('xchat_doc_')`）才能被发送路径读回；
   这些临时目录不主动清理，靠系统回收。
+
+## §30 局域网同步（`lib/sync/` + `lib/data/sync_repository.dart`）
+
+- **链路是单向的，别再改回双向拨号**：真机上 guest→host 通、host→guest 常被拒
+  （`连接被拒绝` / ROM 入站拦截 / 页面重建后临时端口失效）。host 的需求一律走
+  `_enqueue` 任务队列，guest 轮询 `/poll` 执行后 `/result` 回传。症状识别：一端两栏都
+  有、另一端对端 0 项 + 连接被拒绝 = 单向可达，不是端口或 token 写错。
+- **host 的 `_peerPort` 恒为 0**：它不建连，`peerAddress` 对 host 只显示 IP；
+  `_send` 只在 guest 侧使用。
+- **二维码里的地址靠猜，token 才是真凭据**：`_detectLocalAddress` 取第一个私网 IPv4，
+  多网卡/热点/跨网段时会给出不可达地址 —— 手输「对方地址 + 端口」是兜底路径，别删。
+- **同步清单只读 `index.json`，绝不扫目录**：`SyncRepository.manifest()` 用
+  `IndexRepository.load()` 的活动桶；`sessions/`/`projects/` 里没进索引的文件（中断的
+  删除、手拷进来的、索引重建时解析失败被跳过的）**不参与同步**。它们唯一的入口是
+  「☰ 更多 → 未索引文件」（`lib/data/orphan_repository.dart` + `orphans_page.dart`）：
+  恢复 = 重新解析 → 按**文件名 id** 写回（`orphan_repository.restore` 会顺手
+  `indexRepository.removeSession/Project(旧 id)` 清掉残留，再把换了名字的旧文件删掉），
+  删除 = 只删文件。别把「自动并入清单」的写法加回来（用户明确不要）。
+- **勾项目必须连带它的会话**：`SyncItemSummary.projectId`（服务端由 `manifest()` 填）是
+  联动的唯一依据，UI 的 `_toggle` 会一次性勾上两侧同项目的会话，`SyncService.runSync`
+  还会再展开一遍（防止 UI 与清单不同步，例如对端清单是刚刷新的）。**项目先于会话导入**
+  （`importItems` 的顺序）不能改，否则会话会因为 project 还不存在而丢掉 `project_id`。
+- **`kind:id` 是复选框的唯一键**：左右两栏共用 `_checked`，同一 id 天然联动。若改成
+  「按侧分别勾选」，先确认 `runSync` 的「先拉后推」收敛顺序。
+- **归档项在两层被挡**：`manifest()` 用 `index.sessions/projects`（活动桶），
+  `importItems` 再判 `isArchived`。只做前者的话，对端用旧清单仍能把归档项推过来。
+- **别 dispose 正在跑的 controller**：`runSync` 用 `state.runningSessionIds` 跳过，
+  `refreshAfterSync` 只丢缓存不 dispose —— 否则会掐断别人的 turn。
+- **`mobile_scanner` 只有 Android/iOS/macOS**：`SyncService.canScan` 之外不要实例化
+  `MobileScanner`。macOS 要 `com.apple.security.network.server`（Release entitlements
+  已加），否则 host 监听直接失败。
+- **Android 的 `Platform.localHostname` 是 `localhost`**：设备标签要回落成 OS 名，
+  否则两端显示都叫 localhost。
+
+## §31 `desktop_drop` 是 vendored 的（为了消掉 KGP 警告）
+
+- 每次 `dist/build_apk.sh -p` 会打印
+  `WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): desktop_drop`。
+  **这是误报**：Flutter 的 `detectApplyingKotlinGradlePlugin`
+  （`flutter_tools/gradle/.../FlutterPluginUtils.kt`）是对插件的 `android/build.gradle`
+  **做正则文本扫描**（`kgpRegexGroovy` 匹配行首 `apply plugin: 'kotlin-android'`），
+  不看运行时是否真的 apply。上游 0.8.4 已经把 apply 包在 `if (!builtInKotlin)` 里，文本仍命中。
+- 处理：`packages/desktop_drop/` 是 0.8.4 的 vendored 副本（`pubspec.yaml` 用 `path:`），
+  唯一改动是把那行换成等价的 `pluginManager.apply("kotlin-android")` —— 行为不变，
+  正则不再命中。细节见 `packages/desktop_drop/VENDORED.md`。
+- **升级插件时别退回 pub 版本**，否则警告立刻回来；合并上游新版本后要确认
+  `packages/desktop_drop/android/build.gradle` 里**没有行首的 `apply plugin: 'kotlin-android'`**。
+- 不要放进 `third_party/`：`.gitignore` 把整个 `third_party/` 忽略了（那里是下载的 Python 运行时）。

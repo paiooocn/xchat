@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-10 13:40"
-  git_sha: "b5e7094"
+  generated_at: "2026-11-10 16:41"
+  git_sha: "740cd98"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 139
-  line_count: 37321
+  file_count: 146
+  line_count: 39933
 
 modules:
   - id: "agent"
@@ -59,14 +59,17 @@ modules:
         symbols: ["WebViewTools", "htmlProbeScript", "textProbeScript"]
   - id: "app"
     path: "lib"
-    lines: 140
-    deps: []
+    lines: 975
+    deps: ["core", "data", "models", "state"]
     files:
       - path: "lib/app.dart"
         lines: 56
         symbols: ["XChatApp"]
       - path: "lib/main.dart"
         lines: 84
+      - path: "lib/sync/sync_service.dart"
+        lines: 835
+        symbols: ["SyncPairTarget", "SyncFailure", "SyncService"]
   - id: "core"
     path: "lib/core"
     lines: 1642
@@ -113,7 +116,7 @@ modules:
         symbols: ["applyWindowSize"]
   - id: "data"
     path: "lib/data"
-    lines: 1394
+    lines: 1847
     deps: ["core", "data.xml", "models"]
     files:
       - path: "lib/data/atomic_file.dart"
@@ -143,12 +146,18 @@ modules:
       - path: "lib/data/office_text.dart"
         lines: 219
         symbols: ["extractOfficeText", "extensionOf"]
+      - path: "lib/data/orphan_repository.dart"
+        lines: 194
+        symbols: ["OrphanRepository"]
       - path: "lib/data/project_repository.dart"
         lines: 57
         symbols: ["ProjectRepository"]
       - path: "lib/data/session_repository.dart"
         lines: 93
         symbols: ["SessionRepository"]
+      - path: "lib/data/sync_repository.dart"
+        lines: 259
+        symbols: ["SyncRepository"]
       - path: "lib/data/template_repository.dart"
         lines: 52
         symbols: ["TemplateRepository"]
@@ -200,7 +209,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4390
+    lines: 4610
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -211,7 +220,7 @@ modules:
         lines: 561
         symbols: ["ContinueMode", "AppConfig"]
       - path: "lib/models/archive_group.dart"
-        lines: 116
+        lines: 141
         symbols: ["ArchiveBadge", "ArchiveProjectGroup"]
       - path: "lib/models/catalog_index.dart"
         lines: 348
@@ -236,6 +245,10 @@ modules:
         lines: 177
         doc: "Markdown notes: a note is one `<root>/notes/<id>.md` file with a"
         symbols: ["Note", "NoteSummary", "NoteIndexEntry"]
+      - path: "lib/models/orphan_file.dart"
+        lines: 41
+        doc: "A `sessions/*.xml` / `projects/*.xml` file that the catalog index does not"
+        symbols: ["OrphanFile"]
       - path: "lib/models/project.dart"
         lines: 92
         symbols: ["Project"]
@@ -268,6 +281,9 @@ modules:
         lines: 66
         doc: "Shell command policy: maps a command string to an approval level, or marks"
         symbols: ["ShellMatch", "ShellClassification"]
+      - path: "lib/models/sync_item.dart"
+        lines: 154
+        symbols: ["SyncItemKind", "SyncItemSummary", "SyncItemPayload", "SyncImportOutcome", "SyncReport"]
       - path: "lib/models/task_item.dart"
         lines: 130
         symbols: ["TaskItem", "parseTaskMarkdown"]
@@ -405,22 +421,22 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1379
+    lines: 1406
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 1276
+        lines: 1303
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 10657
-    deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
+    lines: 11734
+    deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
-        lines: 261
+        lines: 262
         symbols: ["ArchivePage"]
       - path: "lib/ui/pages/compress_prompts_page.dart"
         lines: 179
@@ -429,11 +445,14 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3642
+        lines: 3682
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1152
         symbols: ["NotesPanel"]
+      - path: "lib/ui/pages/orphans_page.dart"
+        lines: 213
+        symbols: ["OrphansPage"]
       - path: "lib/ui/pages/pip_packages_page.dart"
         lines: 389
         symbols: ["PipPackagesPage"]
@@ -449,6 +468,9 @@ modules:
       - path: "lib/ui/pages/settings_page.dart"
         lines: 659
         symbols: ["SettingsPage", "PathsSection"]
+      - path: "lib/ui/pages/sync_page.dart"
+        lines: 823
+        symbols: ["SyncPage"]
       - path: "lib/ui/pages/template_wizard_page.dart"
         lines: 592
         symbols: ["TemplateWizardPage"]
@@ -553,8 +575,8 @@ tests:
     lines: 29
     cases: 1
   - path: "test/archive_group_test.dart"
-    lines: 172
-    cases: 10
+    lines: 213
+    cases: 13
   - path: "test/archive_page_test.dart"
     lines: 238
     cases: 8

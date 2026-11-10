@@ -6,6 +6,8 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>扫描局域网同步的配对二维码</string>
 	<key>CFBundleDisplayName</key>
 	<string>Xchat</string>
 	<key>CFBundleExecutable</key>
