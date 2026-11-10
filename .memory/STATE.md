@@ -21,6 +21,9 @@
    （`apply plugin: 'kotlin-android'` → `pluginManager.apply(...)`）；GOTCHAS §31。
 6. 版号：**0.8.0+1**（`pubspec.yaml` + `lib/core/app_version.dart`，用户已自行提升）。
 
+**发布状态**：已提交 `f5f2a67`、打标签 **`v0.8.0`**（annotated）并推送 `origin main` + tag
+（tag 推送会触发三个 build workflow + `publish-gitcode` 串行发布）。
+
 **怎么验证**（本轮按用户要求**不测试不编译**）
 
 ```sh
