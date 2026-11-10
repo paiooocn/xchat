@@ -28,6 +28,7 @@ import '../../state/app_state.dart';
 import '../../state/approval_center.dart';
 import '../../util/editor_launcher.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/file_drop_zone.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/input_area.dart';
 import '../widgets/message_bubble.dart';
@@ -2467,6 +2468,10 @@ class SessionChatPanel extends StatefulWidget {
 class _SessionChatPanelState extends State<SessionChatPanel> {
   SessionController? _controller;
   final _scroll = ScrollController();
+
+  /// Handle on the input card, so a file dropped anywhere in the chat area is
+  /// staged in the same place the picker stages to.
+  final _inputKey = GlobalKey<InputAreaState>();
   final _lastUserKey = GlobalKey();
   bool _wasRunning = false;
   bool _autoNaming = false;
@@ -2756,113 +2761,120 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     final taskDone =
         widget.taskId != null && (session.taskById(widget.taskId)?.done ?? false);
 
-    return Column(
-      children: [
-        if (widget.taskId != null) ...[
-          TaskChatHeader(
-            session: session,
-            taskId: widget.taskId!,
-            running: controller.isRunning,
-            onBack: widget.onBackToTasks,
-          ),
-          const Divider(height: 1),
-        ],
-        if (widget.showHeader) ...[
-          _Header(controller: controller, showControls: widget.mobileLayout),
-          const Divider(height: 1),
-        ],
-        Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            itemCount: messages.length + (live ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index >= messages.length) {
-                return _LiveStream(controller: controller);
-              }
-              final message = messages[index];
-              final globalIndex = session.messages.indexOf(message);
-              final isLastUser = globalIndex == lastUserIndex;
-              return Padding(
-                key: isLastUser ? _lastUserKey : null,
-                padding: const EdgeInsets.only(bottom: 16),
-                child: MessageBubble(
-                  message: message,
-                  isLastUser: isLastUser,
-                  onEdit: () => _editLastUser(context, session),
-                  onDelete: () async {
-                    final ok = await confirmDelete(context, '这条消息');
-                    if (!ok) return;
-                    SessionOps.deleteMessage(session, globalIndex);
-                    await controller.save();
-                    if (mounted) setState(() {});
+    // 从文件管理器把文件拖到对话主区 → 交给输入卡暂存（与「附件」按钮同一条路径）。
+    return FileDropZone(
+      onFiles: (paths) => _inputKey.currentState?.stagePaths(paths),
+        child: Column(
+        children: [
+          if (widget.taskId != null) ...[
+            TaskChatHeader(
+              session: session,
+              taskId: widget.taskId!,
+              running: controller.isRunning,
+              onBack: widget.onBackToTasks,
+            ),
+            const Divider(height: 1),
+          ],
+          if (widget.showHeader) ...[
+            _Header(controller: controller, showControls: widget.mobileLayout),
+            const Divider(height: 1),
+          ],
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              itemCount: messages.length + (live ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index >= messages.length) {
+                  return _LiveStream(controller: controller);
+                }
+                final message = messages[index];
+                final globalIndex = session.messages.indexOf(message);
+                final isLastUser = globalIndex == lastUserIndex;
+                return Padding(
+                  key: isLastUser ? _lastUserKey : null,
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: MessageBubble(
+                    message: message,
+                    isLastUser: isLastUser,
+                    onEdit: () => _editLastUser(context, session),
+                    onDelete: () async {
+                      final ok = await confirmDelete(context, '这条消息');
+                      if (!ok) return;
+                      SessionOps.deleteMessage(session, globalIndex);
+                      await controller.save();
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                );
                   },
                 ),
-              );
-                },
               ),
             ),
           ),
-        ),
-        if (controller.error != null || controller.notice != null)
-          _StatusBar(
-            text: controller.error ?? controller.notice!,
-            isError: controller.error != null,
-            // A broken turn can be resumed: `resend()` replays the history,
-            // which already contains the salvaged (incomplete) answer, so the
-            // model continues from where it stopped instead of starting over.
-            // 任务已完成时不提供（否则绕过发送锁）。
-            onRetry: controller.error != null &&
-                    !controller.isRunning &&
-                    !taskDone
-                ? () => _controller?.resend(taskId: widget.taskId)
-                : null,
+          if (controller.error != null || controller.notice != null)
+            _StatusBar(
+              text: controller.error ?? controller.notice!,
+              isError: controller.error != null,
+              // A broken turn can be resumed: `resend()` replays the history,
+              // which already contains the salvaged (incomplete) answer, so the
+              // model continues from where it stopped instead of starting over.
+              // 任务已完成时不提供（否则绕过发送锁）。
+              onRetry: controller.error != null &&
+                      !controller.isRunning &&
+                      !taskDone
+                  ? () => _controller?.resend(taskId: widget.taskId)
+                  : null,
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: InputArea(
+              key: _inputKey,
+              running: controller.isRunning,
+              // 任务勾了「完成」→ 锁定发送；取消勾选立即恢复。
+              sendLocked: taskDone,
+              lockedHint: taskDone
+                  ? '任务已完成：取消「完成」后才能继续发送'
+                  : null,
+              onSend: (text, attachments) {
+                if (taskDone) return false;
+                controller.send(
+                  text,
+                  attachments: attachments,
+                  taskId: widget.taskId,
+                );
+                return true;
+              },
+              onStop: controller.stop,
+              mode: session.mode,
+              onModeChanged: (value) => controller.setMode(value),
+              maxAttachmentBytes:
+                  context.watch<AppState>().config.maxAttachmentBytes,
+              maxFileAttachmentBytes:
+                  context.watch<AppState>().config.maxFileAttachmentBytes,
+              webSearchAvailable: session.tools.contains('web_search'),
+              webSearchEnabled: session.webSearchEnabled,
+              onWebSearchChanged: (value) => controller.setWebSearch(value),
+              onCompress: _compressSession,
+              onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
+              onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
+              trailing: widget.mobileLayout
+                  ? null
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ModelSelector(controller: controller),
+                        const SizedBox(width: 6),
+                        _ReasoningControls(controller: controller),
+                      ],
+                    ),
+            ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: InputArea(
-            running: controller.isRunning,
-            // 任务勾了「完成」→ 锁定发送；取消勾选立即恢复。
-            sendLocked: taskDone,
-            lockedHint: taskDone
-                ? '任务已完成：取消「完成」后才能继续发送'
-                : null,
-            onSend: (text, attachments) {
-              if (taskDone) return false;
-              controller.send(
-                text,
-                attachments: attachments,
-                taskId: widget.taskId,
-              );
-              return true;
-            },
-            onStop: controller.stop,
-            mode: session.mode,
-            onModeChanged: (value) => controller.setMode(value),
-            maxAttachmentBytes:
-                context.watch<AppState>().config.maxAttachmentBytes,
-            webSearchAvailable: session.tools.contains('web_search'),
-            webSearchEnabled: session.webSearchEnabled,
-            onWebSearchChanged: (value) => controller.setWebSearch(value),
-            onCompress: _compressSession,
-            onScrollToRecent: () => _guardedScroll(_scrollToLastUser),
-            onScrollToBottom: () => _guardedScroll(() async => _scrollToBottom()),
-            trailing: widget.mobileLayout
-                ? null
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _ModelSelector(controller: controller),
-                      const SizedBox(width: 6),
-                      _ReasoningControls(controller: controller),
-                    ],
-                  ),
-          ),
+        ],
         ),
-      ],
     );
   }
 

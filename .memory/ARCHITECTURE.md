@@ -163,3 +163,17 @@ UI 发消息
     时 `<premark>` 随消息一起从 XML 消失；出站层的 `premarkOf` 还做一次归属校验
     ——任务项不存在或 `task_id` 为空 → 一律不发标注（含已落盘的 premark）。
     旧存档没有该字段时回退按任务项当前标题派生，**只读、不迁移、不回写**文件。
+26. **附件分三类，出站方式由 `AttachmentKind` 决定**：`image` → base64
+    `image_url` part（受 `AppConfig.maxAttachmentBytes` 限制）；`text` → 原文内联成
+    `<file name="…">…</file>` 的 `TextPart`（受 `kMaxTextAttachmentChars` 截断），
+    **因此不需要会话开任何工具**；`file` → **不内联**，只发一条说明 + 沙箱相对路径，
+    由 `read_file`/`shell` 去读（受 `AppConfig.maxFileAttachmentBytes` 限制）。
+    体积上限按 kind 分成两个独立设置（图片走 base64 是传输上限，其他文件只落盘是
+    磁盘上限）。分类只在 `lib/data/attachment_intake.dart` 一处做（拖拽与「附件」
+    按钮共用），**不按类型拒绝文件**，只在超限/目录/读不了时拒绝；新增类型别在 UI 里
+    另写分支。`docx/xlsx/pptx` 由 `lib/data/office_text.dart` 抽成文本，再按 `text`
+    处理（落盘成 `.txt`，展示名仍是原文件名）。
+27. **已在 sandbox 内的附件不再复制**：`AgentEngine._storeAttachments` 对
+    `p.isWithin(session.sandbox, path)` 的文件**原地引用**（存绝对路径），其余才复制进
+    `<sandbox>/attachments/`。判断必须用 `p.canonicalize` 归一化后的路径，别用
+    `startsWith`（`/a/sbx2` 会被 `/a/sbx` 误判）。

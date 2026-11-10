@@ -141,12 +141,36 @@ class MessageBubble extends StatelessWidget {
           for (final file in message.attachments)
             if (!file.isAvailable)
               _missingChip(theme, file.name)
+            else if (file.isText || file.isOpaqueFile)
+              _textChip(theme, file)
             else
               _thumbnail(context, file),
         ],
       ),
     );
   }
+
+  /// A dropped non-image file: text goes to the model inline, anything else is
+  /// only referenced, so in both cases there is nothing to preview — just the
+  /// name.
+  Widget _textChip(ThemeData theme, MessageAttachment file) =>
+      Tooltip(
+        message: file.isText ? '文本附件：${file.name}' : '文件附件：${file.name}',
+        child: Chip(
+          avatar: Icon(
+            file.isText
+                ? Icons.description_outlined
+                : Icons.insert_drive_file_outlined,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          label: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: Text(file.name, overflow: TextOverflow.ellipsis),
+          ),
+          visualDensity: VisualDensity.compact,
+        ),
+      );
 
   Widget _missingChip(ThemeData theme, String name) => Tooltip(
         message: name,

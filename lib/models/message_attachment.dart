@@ -1,8 +1,24 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
 import '../core/json_utils.dart';
+
+/// What the payload of an attachment is, which decides how it goes out:
+///
+/// - [image] → an `image_url` part (base64, the only thing every vision model
+///   accepts);
+/// - [text] → a `text` part inlined into the user turn, so even a session with
+///   tools disabled can still "read the file";
+/// - [file] → nothing is inlined: the file is copied into the session sandbox
+///   and the turn only carries its path, so `read_file` / `shell` can open
+///   whatever it is (PDF, archive, video …).
+enum AttachmentKind { image, text, file }
+
+/// Upper bound for the inlined text itself (characters, not bytes) — the token
+/// guard on the `text` path. Longer payloads are truncated with a marker.
+const int kMaxTextAttachmentChars = 200 * 1000;
 
 /// A file (or an inline image blob) sent along with a user message.
 ///
@@ -14,6 +30,7 @@ import '../core/json_utils.dart';
 class MessageAttachment {
   MessageAttachment({
     required this.mimeType,
+    this.kind = AttachmentKind.image,
     this.name = '',
     this.path,
     this.data,
@@ -35,8 +52,32 @@ class MessageAttachment {
     );
   }
 
-  /// `image/png`, …
+  /// Builds a text attachment (source file on disk, read at send time).
+  static MessageAttachment text(String filePath, {String? name}) {
+    return MessageAttachment(
+      kind: AttachmentKind.text,
+      mimeType: 'text/plain',
+      name: name ?? p.basename(filePath),
+      path: filePath,
+    );
+  }
+
+  /// Builds an opaque file attachment: copied to the sandbox, referenced (not
+  /// inlined) in the request.
+  static MessageAttachment file(String filePath, {String? name}) {
+    return MessageAttachment(
+      kind: AttachmentKind.file,
+      mimeType: 'application/octet-stream',
+      name: name ?? p.basename(filePath),
+      path: filePath,
+    );
+  }
+
+  /// `image/png`, `text/plain`, …
   final String mimeType;
+
+  /// Whether the payload is an image or inlined text.
+  final AttachmentKind kind;
 
   /// Original file name, shown in the UI.
   final String name;
@@ -49,6 +90,11 @@ class MessageAttachment {
   /// never need to touch the disk.
   final String? data;
 
+  bool get isText => kind == AttachmentKind.text;
+
+  /// Not inlined at all — the model only learns where the file lives.
+  bool get isOpaqueFile => kind == AttachmentKind.file;
+
   /// Whether [resolve] can actually produce a payload for this attachment.
   bool get isAvailable => data != null || (path != null && File(path!).existsSync());
 
@@ -60,15 +106,32 @@ class MessageAttachment {
     return file.readAsBytes();
   }
 
-  MessageAttachment copyWith({String? path, String? data}) => MessageAttachment(
+  /// Reads a text payload, or `null` when the file is gone.
+  ///
+  /// Decoding never throws: a file that turned out not to be valid UTF-8 (or
+  /// was replaced by a binary) degrades to replacement characters instead of
+  /// sinking the whole turn.
+  Future<String?> readText({int maxChars = kMaxTextAttachmentChars}) async {
+    final bytes = await readBytes();
+    if (bytes == null) return null;
+    var text = utf8.decode(bytes, allowMalformed: true);
+    if (maxChars > 0 && text.length > maxChars) {
+      text = '${text.substring(0, maxChars)}\n…（文件过长，已截断）';
+    }
+    return text;
+  }
+
+  MessageAttachment copyWith({String? path, String? data, AttachmentKind? kind}) =>
+      MessageAttachment(
         mimeType: mimeType,
+        kind: kind ?? this.kind,
         name: name,
         path: path ?? this.path,
         data: data ?? this.data,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
-        'kind': 'image',
+        'kind': kind.name,
         'mime_type': mimeType,
         if (name.isNotEmpty) 'name': name,
         if (path != null) 'path': path,
@@ -78,6 +141,11 @@ class MessageAttachment {
   factory MessageAttachment.fromJson(Object? value) {
     final json = asMap(value);
     return MessageAttachment(
+      kind: switch (asString(json['kind'])) {
+        'text' => AttachmentKind.text,
+        'file' => AttachmentKind.file,
+        _ => AttachmentKind.image,
+      },
       mimeType: asString(json['mime_type']) ?? 'image/png',
       name: asString(json['name']) ?? '',
       path: asString(json['path']),

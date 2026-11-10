@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:llm_api/llm_api.dart' as llm;
+import 'package:path/path.dart' as p;
 
+import '../models/message_attachment.dart';
 import '../models/provider_config.dart';
 import '../models/session.dart';
 import '../models/session_message.dart';
@@ -74,7 +77,7 @@ Future<List<llm.ChatMessage>> buildChatMessages(
     );
     if (premark != null) parts.add(llm.ContentPart.text('$premark\n'));
     for (final message in pendingToolImages) {
-      parts.addAll(await _imageParts(message));
+      parts.addAll(await _attachmentParts(message, sandbox: session.sandbox));
     }
     pendingToolImages.clear();
     out.add(llm.ChatMessage.userParts(parts));
@@ -92,7 +95,7 @@ Future<List<llm.ChatMessage>> buildChatMessages(
       case MessageRole.user:
         await flushToolImages();
         final premark = premarkOf(message.premark, message.taskId);
-        final parts = await _userParts(message);
+        final parts = await _userParts(message, sandbox: session.sandbox);
         if (parts == null) {
           final text = message.content ?? '';
           // 正文为空（消息被清空）时不单独发一行标注。
@@ -181,31 +184,84 @@ List<llm.ChatMessage> _enforceToolProtocol(List<llm.ChatMessage> input) {
 
 /// Builds the parts of a multimodal user turn, or `null` when the message has
 /// no usable attachment and can go out as plain text.
-Future<List<llm.ContentPart>?> _userParts(SessionMessage message) async {
+Future<List<llm.ContentPart>?> _userParts(
+  SessionMessage message, {
+  required String sandbox,
+}) async {
   if (!message.hasAttachments) return null;
-  final parts = await _imageParts(message);
+  final parts = await _attachmentParts(message, sandbox: sandbox);
   // Text goes last: the vendor docs put the prompt *after* the media part.
   final text = message.content?.trim() ?? '';
   if (text.isNotEmpty) parts.add(llm.TextPart(text));
   return parts;
 }
 
-/// The image parts of a turn; a file that vanished degrades to a visible text
-/// marker rather than silently shrinking the request.
-Future<List<llm.ContentPart>> _imageParts(SessionMessage message) async {
+/// The parts for every attachment of a turn, in stored order. A file that
+/// vanished degrades to a visible text marker rather than silently shrinking
+/// the request.
+Future<List<llm.ContentPart>> _attachmentParts(
+  SessionMessage message, {
+  required String sandbox,
+}) async {
   final parts = <llm.ContentPart>[];
   for (final file in message.attachments) {
-    final bytes = await file.readBytes();
-    if (bytes == null) {
-      parts.add(llm.TextPart('[${file.name}: 文件已丢失]'));
-      continue;
-    }
-    parts.add(llm.ContentPart.imageBase64(
-      base64Encode(bytes),
-      mimeType: file.mimeType,
-    ));
+    parts.add(await _attachmentPart(file, sandbox: sandbox));
   }
   return parts;
+}
+
+/// One attachment → one part.
+///
+/// Images ride as `image_url` (base64); text files are **inlined verbatim**
+/// inside a `<file name="…">` wrapper so a plain chat session — one with no
+/// tools at all — can still read what the user dropped. The wrapper keeps the
+/// boundary unambiguous when several files (or a file plus a prompt) share the
+/// same turn.
+///
+/// An opaque [AttachmentKind.file] is **not** inlined: the turn only names the
+/// sandbox-relative path and asks the model to open it with a tool. That is what
+/// makes "any file type" safe — a 20 MB PDF or a zip never enters the prompt.
+Future<llm.ContentPart> _attachmentPart(
+  MessageAttachment file, {
+  required String sandbox,
+}) async {
+  if (file.isOpaqueFile) {
+    final path = file.path;
+    if (path == null) return llm.TextPart('[${file.name}: 文件已丢失]');
+    final where = p.isWithin(p.normalize(sandbox), p.normalize(path))
+        ? p.relative(path, from: sandbox)
+        : path;
+    final size = await _fileSize(path);
+    return llm.TextPart(
+      '[附件文件] ${file.name}${size == null ? '' : '（$size）'}'
+      '：已放在 `$where`。需要内容时请用 read_file 等工具读取（读取大文件请分段），'
+      '无法用文本工具解析的格式可用 shell / python 处理。',
+    );
+  }
+  if (file.isText) {
+    final body = await file.readText();
+    if (body == null) return llm.TextPart('[${file.name}: 文件已丢失]');
+    return llm.TextPart('<file name="${file.name}">\n$body\n</file>');
+  }
+  final bytes = await file.readBytes();
+  if (bytes == null) return llm.TextPart('[${file.name}: 文件已丢失]');
+  return llm.ContentPart.imageBase64(
+    base64Encode(bytes),
+    mimeType: file.mimeType,
+  );
+}
+
+Future<String?> _fileSize(String path) async {
+  try {
+    final length = await File(path).length();
+    if (length >= 1024 * 1024) {
+      return '${(length / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (length >= 1024) return '${(length / 1024).toStringAsFixed(0)} KB';
+    return '$length 字节';
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Whether the session's thinking config requires echoing reasoning back.

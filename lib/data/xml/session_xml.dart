@@ -107,7 +107,7 @@ class SessionXml {
             for (final file in message.attachments) {
               // The path is machine-readable, never prose: plain text, not CDATA.
               out.leafText('attachment', file.path ?? '', _attrs({
-                'kind': 'image',
+                'kind': file.kind.name,
                 'mime': file.mimeType,
                 'name': file.name,
               }));
@@ -281,6 +281,9 @@ class SessionXml {
       final relative = element.innerText.trim();
       if (relative.isEmpty) continue;
       out.add(MessageAttachment(
+        kind: element.getAttribute('kind') == 'text'
+            ? AttachmentKind.text
+            : AttachmentKind.image,
         mimeType: element.getAttribute('mime') ?? 'image/png',
         name: element.getAttribute('name') ?? '',
         path: p.isAbsolute(relative) ? relative : p.join(sandbox, relative),

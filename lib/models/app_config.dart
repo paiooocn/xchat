@@ -62,6 +62,18 @@ const kDefaultMaxAttachmentBytes = 5 * 1024 * 1024;
 /// in a way that silently produces unsendable requests.
 const kMaxAttachmentBytesCap = 64 * 1024 * 1024;
 
+/// Default per-file cap for **non-image** attachments: 25 MB.
+///
+/// These never ride base64-inline in the request: readable text is inlined (and
+/// truncated by the text budget), everything else is copied into the session
+/// sandbox and merely *referenced* by path for the tools to read. So this is a
+/// disk/patience guard, not a transport one — hence a much higher ceiling than
+/// the image cap.
+const kDefaultMaxFileAttachmentBytes = 25 * 1024 * 1024;
+
+/// Sanity ceiling for the non-image cap (512 MB).
+const kMaxFileAttachmentBytesCap = 512 * 1024 * 1024;
+
 class AppConfig {
   AppConfig({
     this.currentProviderId = '',
@@ -77,6 +89,7 @@ class AppConfig {
     this.continuePrompt = kDefaultContinuePrompt,
     this.maxToolCallsPerTurn = 0,
     this.maxAttachmentBytes = kDefaultMaxAttachmentBytes,
+    this.maxFileAttachmentBytes = kDefaultMaxFileAttachmentBytes,
     List<SearchEngineConfig>? searchEngines,
     ProxyConfig? proxy,
     Map<String, int>? toolApprovals,
@@ -133,6 +146,12 @@ class AppConfig {
   /// Per-image transfer cap in bytes; 0 = no limit. Applies both to images the
   /// user picks and to images the agent attaches via `attach_image`.
   int maxAttachmentBytes;
+
+  /// Per-file cap in bytes for non-image attachments (dropped documents, logs,
+  /// archives …); 0 = no limit. Independent of [maxAttachmentBytes] on purpose:
+  /// images go out base64-inline, other files stay on disk and are only
+  /// referenced, so the two limits answer different questions.
+  int maxFileAttachmentBytes;
 
   /// Search engines, in fallback order, with enable toggles.
   List<SearchEngineConfig> searchEngines;
@@ -226,6 +245,7 @@ class AppConfig {
         'continue_prompt': continuePrompt,
         'max_tool_calls_per_turn': maxToolCallsPerTurn,
         'max_attachment_bytes': maxAttachmentBytes,
+        'max_file_attachment_bytes': maxFileAttachmentBytes,
         'search_engines': searchEngines.map((e) => e.toJson()).toList(),
         'proxy': proxy.toJson(),
         'tool_approvals': toolApprovals,
@@ -265,6 +285,9 @@ class AppConfig {
       maxAttachmentBytes:
           (asInt(json['max_attachment_bytes']) ?? kDefaultMaxAttachmentBytes)
               .clamp(0, kMaxAttachmentBytesCap),
+      maxFileAttachmentBytes: (asInt(json['max_file_attachment_bytes']) ??
+              kDefaultMaxFileAttachmentBytes)
+          .clamp(0, kMaxFileAttachmentBytesCap),
       searchEngines: _decodeSearchEngines(json),
       proxy: _decodeProxy(json),
       toolApprovals: _decodeApprovals(json['tool_approvals']),

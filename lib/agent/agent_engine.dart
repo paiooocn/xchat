@@ -498,6 +498,11 @@ class AgentEngine {
   /// the XML is moved or the source file is deleted. Files over the configured
   /// size cap are dropped: the payload goes out base64-inline, so an oversized
   /// image is a transport problem, not a token one.
+  ///
+  /// **Exception:** a file that already lives inside this session's sandbox is
+  /// referenced in place instead of copied. That is the normal case for a file
+  /// dragged out of the project tree — it is already session-owned, and a copy
+  /// would both duplicate the bytes and hide later edits to the original.
   Future<List<MessageAttachment>> _storeAttachments(
     String messageId,
     List<MessageAttachment> picked,
@@ -508,15 +513,29 @@ class AgentEngine {
     var index = 0;
     for (final file in picked) {
       index++;
-      final extension = p.extension(file.name).isNotEmpty
-          ? p.extension(file.name)
-          : _extensionForMime(file.mimeType);
+      final inside = _sandboxPath(file);
+      if (inside != null) {
+        stored.add(file.copyWith(path: inside));
+        continue;
+      }
+      // The extension follows the *source file* — an extracted Word document is
+      // staged as a `.txt` temp file but displayed (and named) as `报告.docx`.
+      final sourcePath = file.path;
+      final extension = sourcePath != null && p.extension(sourcePath).isNotEmpty
+          ? p.extension(sourcePath)
+          : (p.extension(file.name).isNotEmpty
+              ? p.extension(file.name)
+              : _extensionForMime(file.mimeType));
       final target = p.join(dir.path, '$messageId-$index$extension');
       try {
         await dir.create(recursive: true);
         final bytes = await file.readBytes();
         if (bytes == null) continue; // source vanished between pick and send
-        final cap = config.maxAttachmentBytes;
+        // Two independent caps: images ride base64-inline in the request, every
+        // other file just stays on disk and is referenced by path.
+        final cap = file.kind == AttachmentKind.image
+            ? config.maxAttachmentBytes
+            : config.maxFileAttachmentBytes;
         if (cap > 0 && bytes.length > cap) continue;
         await File(target).writeAsBytes(bytes, flush: true);
         stored.add(file.copyWith(path: target));
@@ -526,6 +545,17 @@ class AgentEngine {
       }
     }
     return stored;
+  }
+
+  /// The canonical absolute path of [file] when it already sits inside this
+  /// session's sandbox, else `null`.
+  String? _sandboxPath(MessageAttachment file) {
+    final source = file.path;
+    if (source == null || source.isEmpty) return null;
+    final root = p.canonicalize(session.sandbox);
+    final absolute = p.canonicalize(source);
+    if (absolute == root || !p.isWithin(root, absolute)) return null;
+    return absolute;
   }
 
   static String _extensionForMime(String mimeType) => switch (mimeType) {

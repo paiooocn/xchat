@@ -5,21 +5,21 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-05 14:41"
-  git_sha: "e715cf7"
+  generated_at: "2026-11-10 13:40"
+  git_sha: "b5e7094"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 136
-  line_count: 36584
+  file_count: 139
+  line_count: 37321
 
 modules:
   - id: "agent"
     path: "lib/agent"
-    lines: 645
+    lines: 675
     deps: ["core", "data", "llm", "models", "pkg.llm_api"]
     files:
       - path: "lib/agent/agent_engine.dart"
-        lines: 543
+        lines: 573
         symbols: ["AgentEngine"]
       - path: "lib/agent/agent_events.dart"
         lines: 102
@@ -113,12 +113,15 @@ modules:
         symbols: ["applyWindowSize"]
   - id: "data"
     path: "lib/data"
-    lines: 1018
+    lines: 1394
     deps: ["core", "data.xml", "models"]
     files:
       - path: "lib/data/atomic_file.dart"
         lines: 26
         symbols: ["writeAtomic"]
+      - path: "lib/data/attachment_intake.dart"
+        lines: 157
+        symbols: ["AttachmentIntake"]
       - path: "lib/data/config_repository.dart"
         lines: 38
         symbols: ["ConfigRepository"]
@@ -137,6 +140,9 @@ modules:
       - path: "lib/data/note_repository.dart"
         lines: 74
         symbols: ["NoteRepository"]
+      - path: "lib/data/office_text.dart"
+        lines: 219
+        symbols: ["extractOfficeText", "extensionOf"]
       - path: "lib/data/project_repository.dart"
         lines: 57
         symbols: ["ProjectRepository"]
@@ -148,7 +154,7 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 960
+    lines: 963
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
@@ -162,7 +168,7 @@ modules:
         lines: 97
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
-        lines: 379
+        lines: 382
         symbols: ["SessionXml"]
       - path: "lib/data/xml/template_xml.dart"
         lines: 88
@@ -173,7 +179,7 @@ modules:
         symbols: ["XmlOut"]
   - id: "llm"
     path: "lib/llm"
-    lines: 961
+    lines: 1017
     deps: ["core", "models", "pkg.llm_api"]
     files:
       - path: "lib/llm/llm_factory.dart"
@@ -183,7 +189,7 @@ modules:
         lines: 379
         symbols: ["NoteAiMode", "NoteAiTarget", "NoteAiAction", "NoteContext", "isProviderConfigured", "cleanNoteAiResult"]
       - path: "lib/llm/outbound_adapter.dart"
-        lines: 212
+        lines: 268
         symbols: ["resolveEchoMode"]
       - path: "lib/llm/prompt_assistant.dart"
         lines: 122
@@ -194,7 +200,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4299
+    lines: 4390
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -202,7 +208,7 @@ modules:
         doc: "Session execution mode controlling when tool calls require approval."
         symbols: ["AgentMode", "requiresApproval"]
       - path: "lib/models/app_config.dart"
-        lines: 538
+        lines: 561
         symbols: ["ContinueMode", "AppConfig"]
       - path: "lib/models/archive_group.dart"
         lines: 116
@@ -221,8 +227,8 @@ modules:
         lines: 37
         symbols: ["MemoryStatus"]
       - path: "lib/models/message_attachment.dart"
-        lines: 121
-        symbols: ["MessageAttachment"]
+        lines: 189
+        symbols: ["AttachmentKind", "MessageAttachment"]
       - path: "lib/models/models_dev.dart"
         lines: 518
         symbols: ["ReasoningOption", "ModelsDevModel", "ModelsDevProvider", "ModelsDevSource", "ModelsDevCatalog", "modelsDevPresetFor", "compareModelsDevNewestFirst", "ModelsDevApplyResult", "ModelsDevSyncResult"]
@@ -410,7 +416,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 10613
+    lines: 10657
     deps: ["agent.tools", "core", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -423,7 +429,7 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3630
+        lines: 3642
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1152
@@ -441,7 +447,7 @@ modules:
         lines: 830
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
-        lines: 627
+        lines: 659
         symbols: ["SettingsPage", "PathsSection"]
       - path: "lib/ui/pages/template_wizard_page.dart"
         lines: 592
@@ -469,8 +475,8 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 5186
-    deps: ["core", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
+    lines: 5323
+    deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
         lines: 100
@@ -478,9 +484,12 @@ modules:
       - path: "lib/ui/widgets/confirm_dialog.dart"
         lines: 92
         symbols: ["confirmDelete"]
+      - path: "lib/ui/widgets/file_drop_zone.dart"
+        lines: 111
+        symbols: ["FileDropZone"]
       - path: "lib/ui/widgets/input_area.dart"
-        lines: 602
-        symbols: ["InputArea", "ToolbarPill"]
+        lines: 604
+        symbols: ["InputArea", "InputAreaState", "ToolbarPill"]
       - path: "lib/ui/widgets/markdown_view.dart"
         lines: 230
         symbols: ["markdownView"]
@@ -489,7 +498,7 @@ modules:
         doc: "Math (KaTeX/TeX) support for the markdown renderer."
         symbols: ["normalizeTex"]
       - path: "lib/ui/widgets/message_bubble.dart"
-        lines: 249
+        lines: 273
         symbols: ["MessageBubble"]
       - path: "lib/ui/widgets/note_ai_panel.dart"
         lines: 534
@@ -687,6 +696,3 @@ tests:
   - path: "test/template_max_tokens_test.dart"
     lines: 124
     cases: 4
-  - path: "test/zz_measure_tmp_test.dart"
-    lines: 64
-    cases: 1

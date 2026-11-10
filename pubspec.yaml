@@ -1,7 +1,7 @@
 name: xchat
 description: "XChat - cross-platform LLM agent GUI (ReAct + XML sessions)."
 publish_to: 'none'
-version: 0.7.14+1
+version: 0.7.16+1
 license: MIT
 
 environment:
@@ -23,6 +23,10 @@ dependencies:
   # XML (CDATA support)
   xml: ^6.5.0
 
+  # ZIP reading for the office-document text extraction (docx/xlsx/pptx are
+  # zip containers); see lib/data/office_text.dart.
+  archive: ^4.1.0
+
   # Paths / storage
   path_provider: ^2.1.5
   path: ^1.9.0
@@ -39,6 +43,11 @@ dependencies:
   # >=10 required: older releases hardcode compileSdk 34 in their own
   # android/build.gradle and fail AAR metadata checks against AGP 9 / SDK 36.
   file_picker: ^13.1.0
+
+  # Drag files from the file manager onto the chat area (desktop; also works
+  # where the platform delivers drag events). Desktop_drop 0.8.x requires
+  # AGP 9+ on Android, which this app already uses.
+  desktop_drop: ^0.8.4
 
   # Web search (multi-engine meta search: DDG/Google/Bing/Brave/…)
 

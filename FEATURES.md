@@ -227,10 +227,18 @@ Documents/XChat/                  # 数据根（AppPaths）
   列出所有挂起请求（会话标题/工具/参数/原因），允许/拒绝；会话停止或删除时批量丢弃。
 - 审批弹窗展示「为何要审批」（如 shell 命中哪级名单），可附带一键将命令加入名单放宽。
 
-### 4.4 图片附件链路
+### 4.4 附件链路（图片 / 文本 / 任意文件）
 
-- 用户选图 / Agent `attach_image` 共用同一校验（格式 png/jpg/jpeg/webp/gif/bmp +
-  体积上限 `maxAttachmentBytes`，默认 5MB，0=不限，硬顶 64MB）。
+- **入口**：输入区「附件」按钮（任意类型）、把文件从文件管理器**拖到对话主区**
+  （`FileDropZone` + `desktop_drop`），两者共用 `lib/data/attachment_intake.dart`
+  的 `collectAttachments`。
+- **两类体积上限**（设置页可改）：图片 `maxAttachmentBytes`（默认 5MB，硬顶 64MB，
+  以 base64 内联进请求体）；非图片 `maxFileAttachmentBytes`（默认 25MB，硬顶 512MB，
+  只落盘不内联）。0 = 不限。
+- **分类**：图片 → `image`；`.docx/.xlsx/.pptx` 抽文本 → `text`；按内容判定像文本 →
+  `text`（内联，超过 `kMaxTextAttachmentChars` 截断）；其余**任意文件** → `file`
+  （复制进会话目录，出站只给沙箱相对路径，让 Agent 用 `read_file`/`shell` 读）。
+- 已在 `<sandbox>` 内的源文件**原地引用，不复制**（`AgentEngine._storeAttachments`）。
 - 落盘 `<sandbox>/attachments/<id>-<n>.<ext>`（复制而非引用，保证会话自包含）。
 - 出站编码：base64 内联 image_url，**紧跟一条只含图片的 user 消息**（role:tool 的
   content 只能是字符串）；文本 part 放图片 part 之后。
@@ -438,7 +446,7 @@ Documents/XChat/                  # 数据根（AppPaths）
 | 创建向导 | 分步表单（§7） |
 | 模板页 + 模板向导 | 模板 CRUD；向导分步 + LLM 生成/改写系统提示词（含场景类别）；**模板可显式指定「最大输出 tokens」（留空 = 用模型服务配置；填了则以模板值为准）** |
 | 模型服务页 | provider 列表/编辑（baseUrl/apiKey/headers/预设/思考参数/模型清单/model_specs）、**最大输出 tokens（数值输入，作为请求体的输出上限；留空=不限制；也可按思考档位填 `low:1280/medium:2560/high:3840/xhigh:5120`，未命中的档位=不限制）**、**输出上限参数名（`max_tokens` / `max_completion_tokens`，前者通用、后者为 OpenAI o 系列 / gpt-5 必填）**、测试连接、拉取模型、models.dev 同步/填充/添加向导；API Key 字段支持显示/隐藏切换与「从剪贴板粘贴」（Android 输入法禁止在密码型输入框粘贴，故提供 App 侧剪贴板按钮兜底） |
-| 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、**项目记忆索引（缺少 .memory/ 的项目计数 +「一键补齐全部项目」）**、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、**默认会话模板（从会话模板中选一）**、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
+| 设置页 | 数据目录（展示/打开/迁移/申请外部存储权限）、**项目记忆索引（缺少 .memory/ 的项目计数 +「一键补齐全部项目」）**、外部编辑器、主题、窗口尺寸、默认参数（temperature/top_p/max_tokens/思考开关）、默认工具与工具上限、续判模式与提示词、单张图片上限、**单个非图片文件上限**、**默认会话模板（从会话模板中选一）**、代理（http/https/no_proxy、仅 http_fetch）、搜索引擎管理（增删改排序、选择器、聚合页数）、压缩提示词维护、字体显示测试、本机信息、打开 config.json |
 | 工具管理页 | 每工具审批等级、shell 三名单编辑（正则校验/一键默认）、shell 审批详情、工具配置 JSON 导入/导出 |
 | 手动搜索页 | §6.5 |
 | 归档页 | 两个 Tab：**归档·全局**（无项目归属的归档会话）/ **归档·项目**（项目为父项、默认折叠，其归档会话为子项，父项带「全部」/「部分」徽标）；父项可恢复/删除项目，子项可恢复/删除会话 |
@@ -456,7 +464,8 @@ Documents/XChat/                  # 数据根（AppPaths）
 - **用量角标**（UsageBadge）：单条 in/out/cache；状态栏累计 + 上下文条
   （context / 模型上下文窗口占比，窗口来自 model_specs 或手动配置）。
 - **输入区**：多行编辑；Enter 发送 / Ctrl+Enter 换行（可切换「Enter 换行」模式）；
-  发送/停止按钮；添加图片（多选、格式与体积校验、缩略图、可移除）；
+  发送/停止按钮；添加文件（任意类型、体积校验、按类型显示芯片、可移除）+
+  整区支持拖拽落文件；
   web_search 工具开关（本轮是否携带）；执行模式切换（普通/自动/托管）；
   压缩会话入口；回到底部/回到最近消息按钮。
 

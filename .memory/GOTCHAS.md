@@ -421,3 +421,32 @@ data for current backend (SkSL). Found stages: Vulkan
   是否还断；屏幕常亮放前台是否不断。
 - 用户侧唯一有效设置：允许本应用后台运行 / 关闭电池优化（Android 13+ 还要允许通知，
   否则前台服务的通知不显示，但服务仍然在跑）。
+
+## 29. 文件拖拽 / 附件分类 / Office 文本抽取
+
+- **`desktop_drop` 的 `DropTarget` 在被路由盖住后仍收拖拽事件**（flutter-plugins#2）。
+  `FileDropZone` 因此保留 `enable` 开关；目前会话面板恒为 true，若以后做「模态遮罩
+  期间不许投递」必须传 false，否则会把文件塞进看不见的页面。
+- **OOXML 的命名空间前缀不是可有可无的坑**：Word/PowerPoint 的部件里元素是 `w:p`
+  / `a:p`，而 `XmlElement.findElements('tc')` 比较的是**限定名**，写裸名一个都匹配不到
+  （Excel 的 `row`/`c`/`v` 是裸名反而正常，更容易误判成「逻辑没问题」）。
+  `lib/data/office_text.dart` 一律用 `name.local` 过滤（`_childrenNamed` /
+  `_descendantsNamed`），改这段时别退回 `findElements`。
+- **xlsx 的行在 `<sheetData>` 里**，不是 `<worksheet>` 的直接子元素 —— 用
+  `_descendantsNamed(root, 'row')`；共享字符串在 `<sst><si>`（直接子元素即可）。
+  单元格取值三条分支：`t="s"` → 索引查 `sharedStrings`；`t="inlineStr"` → `<is><t>`；
+  其余取裸 `<v>`。
+- **不按类型拒绝文件**：拖入任何文件都收，只有「超上限 / 目录 / 读不了」才拒绝。
+  未知二进制不该被当成文本内联（会污染请求），走 `AttachmentKind.file`：只发路径 +
+  提示模型用工具读。体积上限有两套（`maxAttachmentBytes` 图片 / 
+  `maxFileAttachmentBytes` 非图片），别把两者合并成一个。
+- **文本判定按内容不按扩展名**：新语言每周都有、`Makefile`/`.env` 没有扩展名。
+  判据是「前 8KB 无 NUL + 可 `utf8.decode(allowMalformed)` + 控制字符占比低」，
+  在 `lib/data/attachment_intake.dart` 一处实现，别再在 UI 里写扩展名白名单。
+- **沙箱内文件不要复制**：拖回一个已经在会话 sandbox 里的文件时，
+  `AgentEngine._storeAttachments` 原地引用（`p.canonicalize` + `p.isWithin`，
+  别用 `startsWith`：`/a/sbx2` 会被 `/a/sbx` 误判）。复制分支取扩展名时优先用**源
+  文件**的（Office 抽取的 `.txt` 临时文件，展示名仍是 `.docx`）。
+- **Office 抽取先写临时文件再当文本附件**：`MessageAttachment` 只存路径，抽取结果必须
+  落到磁盘（`Directory.systemTemp.createTemp('xchat_doc_')`）才能被发送路径读回；
+  这些临时目录不主动清理，靠系统回收。

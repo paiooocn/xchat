@@ -29,6 +29,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _editor = TextEditingController();
   final _limit = TextEditingController();
   final _maxAttachment = TextEditingController();
+  final _maxFileAttachment = TextEditingController();
   final _continuePrompt = TextEditingController();
   final _root = TextEditingController();
   final _httpProxy = TextEditingController();
@@ -43,8 +44,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final config = context.read<AppState>().config;
     _editor.text = config.editorCommand;
     _limit.text = config.defaultToolCallsLimit.toString();
-    _maxAttachment.text = (config.maxAttachmentBytes / (1024 * 1024))
-        .toStringAsFixed(config.maxAttachmentBytes % (1024 * 1024) == 0 ? 0 : 1);
+    _maxAttachment.text = _mbText(config.maxAttachmentBytes);
+    _maxFileAttachment.text = _mbText(config.maxFileAttachmentBytes);
     _continuePrompt.text = config.continuePrompt;
     _root.text = AppPaths.instance.root;
     _httpProxy.text = config.proxy.httpProxy;
@@ -58,6 +59,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _editor.dispose();
     _limit.dispose();
     _maxAttachment.dispose();
+    _maxFileAttachment.dispose();
     _continuePrompt.dispose();
     _root.dispose();
     _httpProxy.dispose();
@@ -66,15 +68,33 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
+  /// bytes → the MB string shown in a cap field (whole MB prints without `.0`).
+  String _mbText(int bytes) =>
+      (bytes / (1024 * 1024)).toStringAsFixed(bytes % (1024 * 1024) == 0 ? 0 : 1);
+
+  /// MB text → bytes, clamped to [cap]; empty / unparsable falls back to
+  /// [fallback], `0` or negative means "no limit".
+  int _parseMb(String text, {required int fallback, required int cap}) {
+    final mb = double.tryParse(text.trim());
+    if (mb == null) return fallback;
+    if (mb <= 0) return 0;
+    return (mb * 1024 * 1024).round().clamp(0, cap);
+  }
+
   Future<void> _save(AppState state) async {
     final config = state.config;
     config.editorCommand = _editor.text.trim();
     config.defaultToolCallsLimit = int.tryParse(_limit.text.trim()) ?? 0;
-    final mb = double.tryParse(_maxAttachment.text.trim());
-    config.maxAttachmentBytes = mb == null
-        ? kDefaultMaxAttachmentBytes
-        : (mb <= 0 ? 0 : (mb * 1024 * 1024).round())
-            .clamp(0, kMaxAttachmentBytesCap);
+    config.maxAttachmentBytes = _parseMb(
+      _maxAttachment.text,
+      fallback: kDefaultMaxAttachmentBytes,
+      cap: kMaxAttachmentBytesCap,
+    );
+    config.maxFileAttachmentBytes = _parseMb(
+      _maxFileAttachment.text,
+      fallback: kDefaultMaxFileAttachmentBytes,
+      cap: kMaxFileAttachmentBytesCap,
+    );
     config.continuePrompt = _continuePrompt.text;
     config.proxy
       ..httpProxy = _httpProxy.text.trim()
@@ -200,6 +220,18 @@ class _SettingsPageState extends State<SettingsPage> {
               helperText: '图片以 base64 内联进请求体，超限的图片会被拒绝'
                   '（用户选图与 Agent 附加图片共用此上限）',
               helperMaxLines: 2,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _maxFileAttachment,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: '单个非图片文件体积上限（MB，0=不限制）',
+              helperText: '拖入/选择的文件（任何类型）按此上限筛选：可读文本与 '
+                  'Word/Excel/PPT 抽成文本内联，其余文件保存到会话目录、'
+                  '由 Agent 用工具读取',
+              helperMaxLines: 3,
             ),
           ),
           const SizedBox(height: 12),

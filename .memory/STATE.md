@@ -1,5 +1,94 @@
 # STATE — 进度交接
 
+## 2026-11-10 · 解除类型限制 + 双体积上限（图片 / 非图片）· 发布 0.7.16
+
+- 版本：`dist/bump_version.sh -z 2 -c` → **0.7.16+1**（`pubspec.yaml` +
+  `lib/core/app_version.dart` 同步；`flutter test test/app_version_test.dart` 通过）。
+- 已提交（含 `.memory/` 与生成的 plugin registrant / `pubspec.lock`）；**未打标签、未推送**。
+
+- **不再按类型拒绝**：`AttachmentKind` 增第三态 `file` —— 图片内联 base64、文本
+  （含 docx/xlsx/pptx 抽取）内联正文、**其余任意文件**只把沙箱相对路径与体积告诉模型，
+  由 `read_file`/`shell` 去读（`outbound_adapter._attachmentPart` 的 `isOpaqueFile` 分支）。
+- **两个体积上限**：新增 `AppConfig.maxFileAttachmentBytes`（默认 25MB，硬顶 512MB，
+  `kDefaultMaxFileAttachmentBytes` / `kMaxFileAttachmentBytesCap`），图片仍用
+  `maxAttachmentBytes`（默认 5MB，硬顶 64MB）。`collectAttachments` 按 kind 选阈值；
+  `AgentEngine._storeAttachments` 的复制上限也按 kind 选。设置页多一个「单个非图片
+  文件体积上限（MB，0=不限制）」输入框（`_maxFileAttachment` + `_mbText` / `_parseMb`）。
+- intake 里删掉了 `kMaxTextAttachmentBytes` 的硬拒绝（文本改为读时截断
+  `kMaxTextAttachmentChars`）；Office 抽取失败降级为 `file` 而不是拒绝。
+- 改：`lib/models/app_config.dart`、`lib/models/message_attachment.dart`、
+  `lib/data/attachment_intake.dart`、`lib/agent/agent_engine.dart`、
+  `lib/llm/outbound_adapter.dart`、`lib/ui/pages/settings_page.dart`、
+  `lib/ui/pages/home_page.dart`、`lib/ui/widgets/input_area.dart`、
+  `lib/ui/widgets/message_bubble.dart`、`lib/ui/widgets/file_drop_zone.dart`、`FEATURES.md`。
+- 验证：`flutter analyze lib` 无问题；`flutter test test/message_attachment_test.dart
+  test/agent_image_attach_test.dart test/task_premark_test.dart test/task_session_test.dart`
+  → 56/56 通过。
+
+## 2026-11-10 · 拖拽文件到主区 → LLM 可读（含 Office 抽取 / 沙箱内不复制）
+
+**做了什么**
+
+- **拖拽入口**：新增 `lib/ui/widgets/file_drop_zone.dart`（`FileDropZone` 包
+  `desktop_drop` 的 `DropTarget`，拖入时半透明高亮 + 文案）。`_SessionChatPanel.build`
+  的整列被它包住，`InputArea` 挂 `key: _inputKey`（`_SessionChatPanelState._inputKey`），
+  拖放回调 → `InputAreaState.stagePaths(paths)`。依赖新增 `desktop_drop: ^0.8.4`
+  （0.8.x 要求 Android AGP 9，本仓库已是）。
+- **附件两类**：`MessageAttachment.kind`（`AttachmentKind.image|text`，默认 image，
+  旧 XML/旧 JSON 语义不变）、`isText`、`readText()`（`utf8.decode(allowMalformed)`）。
+  XML 写 `<attachment kind="image|text" …>`，读回按 kind。
+- **分类只在一处**：`lib/data/attachment_intake.dart` 的 `collectAttachments(paths,
+  maxImageBytes:)` —— 图片按扩展名；`.docx/.xlsx/.pptx` 抽文本；其余按**内容**判文本
+  （前 8KB 无 NUL + 基本可解 UTF-8 + 控制字符占比低）；文件夹/二进制/超限分别记入
+  `unsupported / oversized` 并由 `note` 生成 SnackBar 文案。`InputArea` 的「附件」按钮
+  也从 `FileType.custom(图片)` 改为 `FileType.any`，与拖拽同一条路径。
+- **Office 抽取**：新增 `lib/data/office_text.dart`（`extractOfficeText`，
+  `archive` + `xml`，纯 Dart）。docx 走 `word/document.xml`（`w:p`/`w:t`/`w:tab`/
+  `w:br`/`w:tr`）；xlsx 走 `sharedStrings.xml` + `xl/worksheets/sheetN.xml`（按
+  `t="s"` / `inlineStr` / 裸 `<v>` 三种取法，`--- 工作表：名称 ---` 分段）；
+  pptx 走 `ppt/slides/slideN.xml`（`--- 幻灯片 N ---` 分段）。抽出的文本写入系统临时
+  目录的 `.txt`，附件名仍是原文件名（`报告.docx`），发送时被复制进 `attachments/`。
+  旧二进制格式（`.doc/.xls/.ppt`）与 `.pdf` 不支持，归 `unsupported`。
+- **出站**：`outbound_adapter.dart` 的 `_imageParts` → `_attachmentParts` /
+  `_attachmentPart`：`isText` → `TextPart('<file name="…">\n…\n</file>')`，否则
+  base64 `image_url`；图片仍在正文之前、提问正文最后。
+- **沙箱内不复制**：`AgentEngine._storeAttachments` 新增 `_sandboxPath(file)` ——
+  `p.canonicalize` 后 `p.isWithin(session.sandbox, path)` 成立就**原地引用**（存绝对
+  路径），不再复制进 `attachments/`；复制分支的扩展名改为优先取**源文件**的扩展名
+  （Office 抽取的 `.txt` 临时文件因此不会被存成 `.docx`）。
+- UI：`input_area` 的芯片按类型换图标、按钮换 `Icons.attach_file` 并提示可拖入；
+  `message_bubble` 里文本附件显示文件名芯片（图片仍是缩略图）；依赖新增 `archive: ^4.1.0`。
+
+**改了什么文件**：新增 `lib/data/attachment_intake.dart`、`lib/data/office_text.dart`、
+`lib/ui/widgets/file_drop_zone.dart`；改 `pubspec.yaml`、`lib/models/message_attachment.dart`、
+`lib/data/xml/session_xml.dart`、`lib/llm/outbound_adapter.dart`、`lib/agent/agent_engine.dart`、
+`lib/ui/widgets/input_area.dart`、`lib/ui/widgets/message_bubble.dart`、`lib/ui/pages/home_page.dart`、
+`.memory/ARCHITECTURE.md`（不变量 26/27）、`.memory/GOTCHAS.md`（§29）。
+
+**怎么验证**（已跑部分）
+
+```sh
+flutter pub get --offline        # 已跑：126 依赖变更，desktop_drop/archive 解析成功
+flutter analyze lib              # 已跑：No issues found
+flutter test                     # 未跑（本轮没留测试；Office 抽取用临时脚本验过 docx/xlsx/pptx 各一份样例）
+dist/build_apk.sh -p             # 未跑（改了 pubspec，需要重新出包）
+```
+
+- 临时冒烟脚本已删除：python 造的 `a.docx / b.xlsx / c.pptx` 放在 `/tmp/office_smoke/`，
+  `extractOfficeText` 分别抽出「第一季度报告 / 表格行」「工作表：销售 + 两行」「幻灯片 1/2」。
+- 真机/桌面要点：把 `.md`、`.png`、`.docx` 从文件管理器拖到对话区 → 高亮 → 松手 → 输入卡
+  出现芯片 → 发送后 XML 里 `<attachment kind="text"|"image">`；把 sandbox 里的文件再拖回
+  来 → 不再产生 `attachments/` 副本。
+
+**下一步 / 遗留**
+
+- `home_page.dart` 里 `FileDropZone(child: Column(...))` 那段缩进是手工补的（比同级深两格），
+  该文件本来就不是 `dart format` 干净状态，没有整体格式化。
+- 未支持：`.pdf`、旧二进制 Office（需真解析器）、拖入文件夹的批量导入、把文件直接放进
+  sandbox 让 agent 用 `read_file` 读（当前一律走内联，零工具依赖）。
+- `desktop_drop` 在 Android 上也会注册拖拽监听（少见但可用）；桌面端多窗口/弹窗遮挡时的
+  误投递风险由 `FileDropZone.enable` 预留，目前恒为 true。
+
 ## 2026-11-06 · 任务标注落盘（`<user><premark>`）
 
 **拍板结论**（用户 P1–P7 全接收，**P4 后被推翻**）：P1 存整行 `【任务：标题】`；P2 旧档出站
