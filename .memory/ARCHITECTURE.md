@@ -193,3 +193,19 @@ UI 发消息
     所属项目/`sandboxs/<id>`）并替换系统提示词里的旧路径。冲突只看 `updated_at`
     （新的赢、相等跳过），所以往返跑不会乒乓。导入后必须走
     `AppState.refreshAfterSync`（先丢 `_sessionCache` 再重载）。
+
+29. **消息时间戳是消息上的存档数据，展示层不推导**：`SessionMessage.sentAt` /
+   `receivedAt`（XML 属性 `sent_at` / `received_at`，**只在有值时写**，旧会话文件
+   与普通消息字节不变；旧档读出 `null`）。写入点只有一处集合：`AgentEngine.run`
+   （首条 user / assistant / 预算续判合成 user / 中断抢救的部分 assistant）、
+   `SessionController.seedTaskMessage`、压缩会话的 user/assistant、向导读取消息；
+   `Session._copyMessage` / `_messagesToFirstUser` 必须复制。展示在 `MessageBubble`：
+   user 卡「发送 yyyy-MM-dd HH:mm」，assistant 卡「接收 … · 本轮耗时 …」——耗时 =
+   `receivedAt` − 本轮起始 user 的 `sentAt`，由 `_SessionChatPanelState._turnUserAt`
+   从 assistant 往前找最近一条 user；**找不到 / 旧档就只显示时间不显示耗时**，别用
+   `DateTime.now()` 兜底（旧会话一打开就会多出假时间）。
+30. **侧栏会话列表的搜索 / 筛选是纯函数**（`lib/models/sidebar_filter.dart`）：
+   `文本`=搜项目（名称/说明）、`$文本`=搜全局会话（标题）、`#文本`=搜标签；
+   标签 chips 与 `#标签` **同时作用于项目与会话**（项目标签是 `Project.tags`，
+   与会话同一套筛选）。匹配逻辑别在 widget 里现算，新增模式去 model 里加并配单测。
+   「更多」菜单里**不再有**外部 md 入口（外部区只在笔记列表上方）。

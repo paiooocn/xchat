@@ -18,6 +18,7 @@ import 'xml_writer.dart';
 ///   <provider>...</provider>
 ///   <model>...</model>
 ///   <system_prompt><![CDATA[...]]></system_prompt>
+///   <tags><![CDATA[a,b]]></tags>
 /// </project>
 /// ```
 class ProjectXml {
@@ -35,6 +36,7 @@ class ProjectXml {
     out.leafText('provider', project.provider);
     out.leafText('model', project.model);
     out.leaf('system_prompt', project.systemPrompt);
+    out.leaf('tags', project.tags.join(','));
     // Absent element = "never set" (projects predating the memory index).
     if (project.memoryEnabled != null) {
       out.leafText('memory_enabled', project.memoryEnabled! ? 'true' : 'false');
@@ -78,6 +80,11 @@ class ProjectXml {
       provider: readTextOrEmpty(root, 'provider'),
       model: readTextOrEmpty(root, 'model'),
       systemPrompt: readTextOrEmpty(root, 'system_prompt'),
+      tags: (readText(root, 'tags') ?? '')
+          .split(',')
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList(),
       memoryEnabled: rawMemory == null ? null : rawMemory == 'true',
       archivedAt: DateTime.tryParse(readTextOrEmpty(root, 'archived_at')),
     );

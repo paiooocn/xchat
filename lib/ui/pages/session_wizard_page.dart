@@ -216,10 +216,21 @@ class _SessionWizardPageState extends State<SessionWizardPage> {
     final user = _seedUser.text.trim();
     if (user.isEmpty) return const <SessionMessage>[];
     final assistant = _seedAssistant.text.trim();
+    final stamped = DateTime.now();
     return <SessionMessage>[
-      SessionMessage(role: MessageRole.user, id: newShortId(), content: user),
+      SessionMessage(
+        role: MessageRole.user,
+        id: newShortId(),
+        content: user,
+        sentAt: stamped,
+      ),
       if (assistant.isNotEmpty)
-        SessionMessage(role: MessageRole.assistant, id: newShortId(), content: assistant),
+        SessionMessage(
+          role: MessageRole.assistant,
+          id: newShortId(),
+          content: assistant,
+          receivedAt: DateTime.now(),
+        ),
     ];
   }
 

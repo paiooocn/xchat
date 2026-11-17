@@ -1,5 +1,84 @@
 # STATE — 进度交接
 
+## 2026-11-17 · **0.8.1 修订**（消息时间戳 / 任务查看编辑 / 更多菜单瘦身 / 项目标签 + 侧栏搜索）
+
+**需求**（用户 6 点）
+
+1. user 对话卡底部加**发送日期时间**（精确到分钟）。
+2. assistant 对话卡底部加**接收（最后一个字）日期时间**（精确到分钟）+ **本轮耗时**
+   （= assistant 接收 − 本轮起始 user 发送）。
+3. 任务式会话的**任务列表页可查看/编辑任务标题与内容**。
+4. 移除顶栏「三横线」菜单第 2 段（打开 md 文件 / 打开文件夹 / 输入文件路径 /
+   输入文件夹路径 / 重新扫描外部目录 / 关闭外部目录）。
+5. 会话边栏的**项目 / 全局会话可设标签**；展示标签 badge；可按选中标签 badge 筛选。
+6. 侧栏增加**项目 / 全局会话 / 标签搜索**：`#文本`=搜标签、`$文本`=搜全局会话、
+   `文本`=搜项目。
+
+**做了什么**
+
+- **时间戳**：`SessionMessage` 新增 `sentAt` / `receivedAt`（XML 属性
+  `sent_at` / `received_at`，**只在有值时写**，旧文件字节不变、旧档读出 `null`）。
+  写入点：`AgentEngine.run`（首条 user / assistant / 预算续判合成 user / 中断抢救
+  的部分 assistant）、`SessionController.seedTaskMessage`、压缩会话、向导读取消息；
+  `Session._copyMessage` / `_messagesToFirstUser` 一并复制。展示在
+  `MessageBubble`：user 卡 `发送 yyyy-MM-dd HH:mm`，assistant 卡
+  `接收 … · 本轮耗时 …`（耗时由 `_SessionChatPanelState._turnUserAt` 往前找最近一条
+  user 的 `sentAt`）。
+- **任务查看/编辑**：`showTaskEditorDialog(context, {existing})` 预填并回传同 id 的
+  `TaskItem`；`TaskListView` 每行加「编辑」按钮（tooltip「查看 / 编辑任务标题与内容」），
+  保存即 `persistSession`。
+- **「更多」菜单瘦身**：删掉第 2 段 6 个条目与其分隔线；`_externalMenuActions` /
+  `_onExternalMenu` / `_askExternalPath` 一并删除（`_pickExternalFile` /
+  `_pickExternalDirectory` 仍由笔记列表外部区使用）。
+- **项目标签**：`Project.tags`（XML `<tags>`、`ProjectIndexEntry.tags`）、
+  `AppState.setProjectTags`、项目行菜单「编辑标签」、项目/会话行展示标签 badge
+  （点击 = 按该标签筛选）。
+- **侧栏搜索/筛选**：新增纯函数 `lib/models/sidebar_filter.dart`
+  （`parseSidebarSearch` / `projectMatchesSearch` / `sessionMatchesSearch` /
+  `matchesTagFilter` / `matchesTagQuery`）；`_Sidebar._sessionList` 顶部加搜索框
+  （`Key('sidebar-search')`），三种模式各自决定显示项目段 / 全局段；标签 chips 与
+  `#标签` 同时作用于项目与会话。
+
+**改了哪些文件**
+
+- 改：`lib/models/session_message.dart`、`lib/models/session.dart`、
+  `lib/models/project.dart`、`lib/models/catalog_index.dart`、
+  `lib/data/xml/session_xml.dart`、`lib/data/xml/project_xml.dart`、
+  `lib/agent/agent_engine.dart`、`lib/session/session_controller.dart`、
+  `lib/state/app_state.dart`、`lib/ui/widgets/message_bubble.dart`、
+  `lib/ui/widgets/task_session_view.dart`、`lib/ui/pages/home_page.dart`、
+  `lib/ui/pages/session_wizard_page.dart`、`FEATURES.md`、本索引
+- 新增：`lib/models/sidebar_filter.dart`、`test/sidebar_filter_test.dart`、
+  `test/sidebar_search_test.dart`
+- 测试改动：`test/session_xml_test.dart`（+时间戳往返/旧档）、
+  `test/home_flow_test.dart`（消息时间戳展示）、
+  `test/task_session_flow_test.dart`（+任务编辑）、
+  `test/home_template_dialog_test.dart` / `test/template_default_test.dart`
+  （欢迎页输入改用 `Key('welcome-input')`，因为侧栏多了搜索框，
+  `find.byType(TextField).first` 不再命中）
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：470/470 全绿
+dist/build_apk.sh -p             # 真机：见下
+```
+
+- 真机要点：①发一条消息 → user 卡底部有「发送 日期 时间」、assistant 卡底部有
+  「接收 … · 本轮耗时 …」；②任务列表行点「编辑」→ 改标题/内容 → 保存即生效；
+  ③「☰ 更多」里已无外部 md 6 项；④项目行菜单「编辑标签」，项目/会话行出现 badge，
+  点 badge 或 chips 筛选；⑤侧栏搜索框输入 `文本` / `$文本` / `#文本` 分别收敛。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送、未 bump 版号（`pubspec.yaml` 仍 `0.8.0+1`）。
+  发版时先 `dist/bump_version.sh -c -z 1`（→ `0.8.1+1`）再
+  `flutter test test/app_version_test.dart`。
+- 时间戳只在新消息上产生；旧消息不补（展示层对 `null` 不显示）。
+- 「输入文件路径 / 输入文件夹路径」能力随菜单项删除而**彻底移除**（笔记列表外部区
+  只剩打开 md / 打开文件夹 / 重新扫描 / 关闭目录）；如需保留需另加入口。
+
 ## 2026-11-10 · 发布 **0.8.0**（同步 + 未索引文件 + 全局会话兜底 + bump_version 增强）
 
 **本轮改动**（工作区一次提交，未拆分成多个 commit）

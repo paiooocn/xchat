@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 import '../../models/message_attachment.dart';
 import '../../models/session_message.dart';
@@ -19,6 +20,7 @@ class MessageBubble extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.onRegenerate,
+    this.turnUserAt,
   });
 
   final SessionMessage message;
@@ -26,6 +28,21 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback? onRegenerate;
+
+  /// 本轮起始 user 消息的发送时间（仅 assistant 卡用）：与 [SessionMessage.receivedAt]
+  /// 相减得到「本轮耗时」。为空（旧存档 / 找不到起始 user）时不显示耗时。
+  final DateTime? turnUserAt;
+
+  /// 对话卡底部的时间格式：日期 + 精确到分钟。
+  static final DateFormat _minuteFormat = DateFormat('yyyy-MM-dd HH:mm');
+
+  /// 本轮耗时的紧凑写法：`3 秒` / `2 分 5 秒` / `1 小时 3 分`。
+  static String formatDuration(Duration span) {
+    final d = span.isNegative ? Duration.zero : span;
+    if (d.inHours > 0) return '${d.inHours} 小时 ${d.inMinutes % 60} 分';
+    if (d.inMinutes > 0) return '${d.inMinutes} 分 ${d.inSeconds % 60} 秒';
+    return '${d.inSeconds} 秒';
+  }
 
   /// Copies the message's **raw** text — never the rendered widget — so the
   /// clipboard holds the original Markdown source and can be pasted verbatim
@@ -103,6 +120,22 @@ class MessageBubble extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (message.sentAt != null) ...[
+                  Icon(
+                    Icons.schedule,
+                    size: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '发送 ${_minuteFormat.format(message.sentAt!.toLocal())}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 _copyButton(context, text),
                 if (isLastUser)
                   IconButton(
@@ -265,6 +298,39 @@ class MessageBubble extends StatelessWidget {
                     ),
                 ],
               ),
+            // 接收（最后一个字）时间 + 本轮耗时（与起始 user 的发送时间相减）。
+            if (message.receivedAt != null) ...[
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.schedule,
+                    size: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '接收 ${_minuteFormat.format(message.receivedAt!.toLocal())}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
+                  ),
+                  if (turnUserAt != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '· 本轮耗时 '
+                      '${formatDuration(message.receivedAt!.difference(turnUserAt!))}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ],
         ),
       ),

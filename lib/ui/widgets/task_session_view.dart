@@ -122,6 +122,20 @@ class _TaskListViewState extends State<TaskListView> {
     );
   }
 
+  /// 查看 / 编辑任务标题与内容（任务列表页的「编辑」入口）。
+  Future<void> _editTask(TaskItem task) async {
+    if (_busy) {
+      _toastRunning();
+      return;
+    }
+    final edited = await showTaskEditorDialog(context, existing: task);
+    if (edited == null || !mounted) return;
+    task.title = edited.title;
+    task.content = edited.content;
+    _session.updatedAt = DateTime.now();
+    await _save();
+  }
+
   Future<void> _deleteTask(TaskItem task) async {
     if (_busy) {
       _toastRunning();
@@ -390,6 +404,12 @@ class _TaskListViewState extends State<TaskListView> {
                                   color: theme.colorScheme.primary,
                                 ),
                               IconButton(
+                                tooltip: '查看 / 编辑任务标题与内容',
+                                iconSize: 18,
+                                onPressed: () => _editTask(task),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
                                 tooltip: '删除任务项（连同其对话消息）',
                                 iconSize: 18,
                                 onPressed: () => _deleteTask(task),
@@ -530,13 +550,20 @@ class TaskChatHeader extends StatelessWidget {
 }
 
 /// Prompts for one task item (title + content).
-Future<TaskItem?> showTaskEditorDialog(BuildContext context) {
-  final title = TextEditingController();
-  final content = TextEditingController();
+///
+/// 传 [existing] 即为「查看 / 编辑」：预填标题与内容，返回的 TaskItem 沿用原
+/// id（调用方把它应用回原任务项）。取消或清空返回 `null`。
+Future<TaskItem?> showTaskEditorDialog(
+  BuildContext context, {
+  TaskItem? existing,
+}) {
+  final title = TextEditingController(text: existing?.title ?? '');
+  final content = TextEditingController(text: existing?.content ?? '');
+  final editing = existing != null;
   return showDialog<TaskItem>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('新增任务'),
+      title: Text(editing ? '编辑任务' : '新增任务'),
       content: SizedBox(
         width: 560,
         child: Column(
@@ -578,10 +605,14 @@ Future<TaskItem?> showTaskEditorDialog(BuildContext context) {
             }
             Navigator.pop(
               context,
-              TaskItem(id: newShortId(), title: t, content: c),
+              TaskItem(
+                id: existing?.id ?? newShortId(),
+                title: t,
+                content: c,
+              ),
             );
           },
-          child: const Text('添加'),
+          child: Text(editing ? '保存' : '添加'),
         ),
       ],
     ),

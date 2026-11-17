@@ -147,6 +147,7 @@ class AgentEngine {
           taskId: taskId,
           // 任务标注在写入时定稿（此后冻结，见 SessionMessage.premark）。
           premark: session.taskById(taskId)?.premark,
+          sentAt: DateTime.now(),
         ));
         await _persist();
       }
@@ -198,6 +199,8 @@ class AgentEngine {
                   ))
               .toList(),
           usage: _mapUsage(response.usage),
+          // 最后一个字到达的时刻（本轮耗时由此与起始 user 的 sentAt 相减）。
+          receivedAt: DateTime.now(),
         );
         session.messages.add(assistant);
         if (assistant.usage.isNotEmpty) {
@@ -306,6 +309,7 @@ class AgentEngine {
             taskId: taskId,
             // 同一次 turn 的合成 user 消息，标注与首条一致。
             premark: session.taskById(taskId)?.premark,
+            sentAt: DateTime.now(),
           ));
           await _persist();
           budgetRound = 0;
@@ -355,6 +359,7 @@ class AgentEngine {
       reasoning: reasoning.isEmpty ? null : reasoning,
       reasoningMode: reasoning.isEmpty ? null : _reasoningModeLabel(),
       incomplete: true,
+      receivedAt: DateTime.now(),
     );
   }
 

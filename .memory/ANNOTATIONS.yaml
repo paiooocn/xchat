@@ -14,9 +14,9 @@
 #   - 某功能的文件集合变化 → 改 features[].files（这是本文件最有价值的部分）
 
 meta:
-  updated_at: "2026-11-04"
-  git_sha: "e7712e6"
-  app_version: "0.5.7"
+  updated_at: "2026-11-17"
+  git_sha: "740cd98"
+  app_version: "0.8.0"
 
 risk_levels:
   high: "破坏持久化格式、协议兼容或安全边界 —— 动手前必读 GOTCHAS.md 对应条目 + DESIGN.md 章节"
@@ -391,11 +391,13 @@ features:
       - "lib/models/project.dart"
       - "lib/data/project_repository.dart"
       - "lib/data/xml/project_xml.dart"
+      - "lib/models/sidebar_filter.dart"
       - "lib/ui/pages/home_page.dart"
     design: "FEATURES.md §1.3"
     contracts:
       - "Project.systemPrompt 是项目级提示词，在项目编辑面板里写，新建会话页按开关并入"
       - "Project.memoryEnabled 是三态：null=从未设置（老项目，只有 .memory/ 目录存在才按已启用自愈）/ true / false（显式关掉，目录还在也不注入）"
+      - "Project.tags 与会话标签同一套筛选：侧栏项目行菜单「编辑标签」，badge/chip 点击即按标签过滤（sidebar_filter.dart 的纯函数）"
 
   - id: project_memory
     title: "项目记忆索引（.memory/）"

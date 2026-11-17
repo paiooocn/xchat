@@ -14,6 +14,7 @@ import '../../core/app_version.dart';
 import '../../models/archive_group.dart';
 import '../../models/external_doc.dart';
 import '../../models/project.dart';
+import '../../models/sidebar_filter.dart';
 import '../../models/note.dart';
 import '../../models/session.dart';
 import '../../models/agent_mode.dart';
@@ -100,6 +101,9 @@ class _HomePageState extends State<HomePage> {
   /// Selected session tag filters (empty = show all).
   final Set<String> _tagFilter = <String>{};
 
+  /// 侧栏会话列表的搜索框：`文本`=项目 / `$文本`=全局会话 / `#文本`=标签。
+  final TextEditingController _searchController = TextEditingController();
+
   /// Whether the global sessions section is expanded (persisted).
   bool _globalSessionsExpanded = true;
 
@@ -147,6 +151,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _approvalCenter.removeListener(_onApprovalsChanged);
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -369,62 +374,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 「手动输入路径…」：跨平台兜底（Android 的 SAF 常拿不到真实目录）。
-  Future<void> _askExternalPath({required bool directory}) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(directory ? '输入文件夹路径' : '输入 Markdown 文件路径'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: directory
-                ? '例如 /storage/emulated/0/Documents/docs'
-                : '例如 /storage/emulated/0/Documents/docs/README.md',
-          ),
-          onSubmitted: (value) => Navigator.of(context).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (result == null || result.trim().isEmpty || !mounted) return;
-    if (directory) {
-      await _openExternalRoot(result.trim());
-    } else {
-      await _openExternal(result.trim());
-    }
-  }
-
-  /// 顶行「打开外部 Markdown」菜单的动作分发。
-  Future<void> _onExternalMenu(String action) async {
-    switch (action) {
-      case 'file':
-        await _pickExternalFile();
-      case 'dir':
-        await _pickExternalDirectory();
-      case 'inputFile':
-        await _askExternalPath(directory: false);
-      case 'inputDir':
-        await _askExternalPath(directory: true);
-      case 'refresh':
-        await context.read<AppState>().refreshExternalRoot();
-      case 'close':
-        await _closeExternalRoot();
-    }
-  }
-
   Future<void> _closeExternalRoot() async {
     await context.read<AppState>().closeExternalRoot();
   }
@@ -512,6 +461,50 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 编辑项目标签（逗号分隔），与会话的「编辑标签」同一套写法。
+  Future<void> _editProjectTags(BuildContext context, Project project) async {
+    final text = await _promptText(
+      context,
+      '编辑项目标签（逗号分隔）',
+      project.tags.join(','),
+    );
+    if (text == null || !context.mounted) return;
+    final tags = text
+        .split(RegExp(r'[,，]'))
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+    await context.read<AppState>().setProjectTags(project.id, tags);
+  }
+
+  /// 单行文本输入框（新建/重命名/标签编辑共用）。
+  Future<String?> _promptText(
+    BuildContext context,
+    String title,
+    String initial,
+  ) {
+    final controller = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    // 不在这里 dispose：dialog 关闭动画期间 TextField 仍挂着 controller，
+    // 提前释放会抛「used after being disposed」（与 `_SessionMenu._prompt` 一致）。
+  }
+
   /// Selects a session and reloads its content from disk so the latest
   /// conversation is always shown when (re)opening it.
   Future<void> _openSession(BuildContext context, String id) async {
@@ -591,6 +584,8 @@ class _HomePageState extends State<HomePage> {
                         runningIds: state.runningSessionIds,
                         tagFilter: _tagFilter,
                         onTagToggle: _toggleTag,
+                        searchController: _searchController,
+                        onSearchChanged: () => setState(() {}),
                         globalSessionsExpanded: _globalSessionsExpanded,
                         onGlobalExpandedChanged: (expanded) {
                           setState(() => _globalSessionsExpanded = expanded);
@@ -604,6 +599,7 @@ class _HomePageState extends State<HomePage> {
                             _newSession(context, projectId: projectId),
                         onNewProject: () => _newProject(context),
                         onEditProject: (p) => _editProject(context, p),
+                        onEditProjectTags: (p) => _editProjectTags(context, p),
                         onGoHome: _goHome,
                       ),
                     ),
@@ -662,6 +658,8 @@ class _HomePageState extends State<HomePage> {
                   runningIds: state.runningSessionIds,
                   tagFilter: _tagFilter,
                   onTagToggle: _toggleTag,
+                  searchController: _searchController,
+                  onSearchChanged: () => setState(() {}),
                   globalSessionsExpanded: _globalSessionsExpanded,
                   onGlobalExpandedChanged: (expanded) {
                     setState(() => _globalSessionsExpanded = expanded);
@@ -685,6 +683,7 @@ class _HomePageState extends State<HomePage> {
                       _newSession(context, projectId: projectId),
                   onNewProject: () => _newProject(context),
                   onEditProject: (p) => _editProject(context, p),
+                  onEditProjectTags: (p) => _editProjectTags(context, p),
                   onGoHome: _goHome,
                 ),
         );
@@ -736,16 +735,6 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
-  /// 「更多」菜单里转给 [_onExternalMenu] 的条目（外部 md / 目录相关的动作）。
-  static const _externalMenuActions = <String>{
-    'file',
-    'dir',
-    'inputFile',
-    'inputDir',
-    'refresh',
-    'close',
-  };
-
   /// 侧栏顶行、标题右侧的「更多」菜单（图标为三横线）。
   Widget _moreMenu(BuildContext context) => PopupMenuButton<String>(
         tooltip: '更多',
@@ -753,11 +742,6 @@ class _HomePageState extends State<HomePage> {
         onSelected: (value) {
           if (value == 'theme') {
             _toggleTheme();
-            return;
-          }
-          // 外部 Markdown 的动作原先在顶行的文件夹菜单里，顶行腾空间后并入此处。
-          if (_externalMenuActions.contains(value)) {
-            _onExternalMenu(value);
             return;
           }
           _navigate(context, value);
@@ -845,51 +829,6 @@ class _HomePageState extends State<HomePage> {
                 label: '设置',
               ),
             ),
-            PopupMenuDivider(),
-            const PopupMenuItem(
-              value: 'file',
-              child: _MoreMenuItem(
-                icon: Icons.description_outlined,
-                label: '打开 md 文件…',
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'dir',
-              child: _MoreMenuItem(
-                icon: Icons.folder_open_outlined,
-                label: '打开文件夹…',
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'inputFile',
-              child: _MoreMenuItem(
-                icon: Icons.edit_outlined,
-                label: '输入文件路径…',
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'inputDir',
-              child: _MoreMenuItem(
-                icon: Icons.edit_outlined,
-                label: '输入文件夹路径…',
-              ),
-            ),
-            if (context.read<AppState>().externalRoot != null) ...[
-              const PopupMenuItem(
-                value: 'refresh',
-                child: _MoreMenuItem(
-                  icon: Icons.sync,
-                  label: '重新扫描外部目录',
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'close',
-                child: _MoreMenuItem(
-                  icon: Icons.close,
-                  label: '关闭外部目录',
-                ),
-              ),
-            ],
             PopupMenuDivider(),
             // 最后一项显示应用版本号（只读，不可点击）。
             PopupMenuItem(
@@ -1265,6 +1204,7 @@ class _WelcomeViewState extends State<_WelcomeView> {
               ),
               const SizedBox(height: 26),
               InputArea(
+                key: const Key('welcome-input'),
                 onSend: (text, attachments) => _send(text, attachments),
                 onStop: () {},
                 running: _busy,
@@ -1441,6 +1381,8 @@ class _Sidebar extends StatelessWidget {
     required this.onNewProject,
     required this.tagFilter,
     required this.onTagToggle,
+    required this.searchController,
+    required this.onSearchChanged,
     required this.globalSessionsExpanded,
     required this.onGlobalExpandedChanged,
     required this.onRefreshSessions,
@@ -1467,6 +1409,7 @@ class _Sidebar extends StatelessWidget {
     this.onCloseExternalRoot,
     this.bottomInset = 0,
     this.onEditProject,
+    this.onEditProjectTags,
     this.onGoHome,
     this.toolbarActions = const [],
     this.titleMenu,
@@ -1484,6 +1427,11 @@ class _Sidebar extends StatelessWidget {
   final VoidCallback onNewProject;
   final Set<String> tagFilter;
   final void Function(String tag) onTagToggle;
+
+  /// 会话列表搜索框（`文本`=项目 / `$文本`=全局会话 / `#文本`=标签）。
+  final TextEditingController searchController;
+  final VoidCallback onSearchChanged;
+
   final bool globalSessionsExpanded;
   final void Function(bool expanded) onGlobalExpandedChanged;
 
@@ -1537,6 +1485,9 @@ class _Sidebar extends StatelessWidget {
   final double bottomInset;
   final void Function(Project project)? onEditProject;
 
+  /// 编辑项目标签（侧栏项目行的菜单项）。
+  final void Function(Project project)? onEditProjectTags;
+
   /// Back to the welcome page (clears the selected session).
   final VoidCallback? onGoHome;
 
@@ -1549,9 +1500,6 @@ class _Sidebar extends StatelessWidget {
   /// 窄屏（移动端）：工作区由底部 Tab 切换，侧栏内部的分段 Tab 不再显示
   /// —— 底部 Tab 是唯一入口（D9）。
   final bool compact;
-
-  bool _matchesFilter(Session session) =>
-      tagFilter.isEmpty || session.tags.any(tagFilter.contains);
 
   @override
   Widget build(BuildContext context) {
@@ -1578,138 +1526,202 @@ class _Sidebar extends StatelessWidget {
   }
 
 
-  /// 会话 Tab 的列表区（标签筛选 + 全局会话 + 项目）。
+  /// 会话 Tab 的列表区（搜索 + 标签筛选 + 全局会话 + 项目）。
   Widget _sessionList(BuildContext context, ThemeData theme) {
     final scheme = theme.colorScheme;
-    final visible = sessions.where(_matchesFilter).toList();
+    final query = parseSidebarSearch(searchController.text);
+    final searchActive = !query.isEmpty;
+
+    // 标签筛选：chips 的选中标签 + 搜索框的 `#标签` 都作用在会话与项目上。
+    bool tagOk(List<String> tags) {
+      if (!matchesTagFilter(tags, tagFilter)) return false;
+      if (searchActive &&
+          query.mode == SidebarSearchMode.tag &&
+          !matchesTagQuery(tags, query.text)) {
+        return false;
+      }
+      return true;
+    }
+
+    final taggedSessions = sessions.where((s) => tagOk(s.tags)).toList();
+    final taggedProjects = projects.where((p) => tagOk(p.tags)).toList();
+
     // 「所属项目条目缺失」的会话：带 project id，但侧栏里没有这个项目分组
-    // （项目 XML 被删 / 没同步过来 / 项目已归档 —— 归档项目不在 `projects` 里）。
+    // （项目 XML 被删 / 没同步过来 / 项目已归档 / 被标签筛选隐藏）。
     // 它们既不是全局会话（projectId 非空），也落不进任何项目分组，所以**并入全局
     // 会话列表**，只换一个断链图标做标识（不新增分组）。
     final orphanIds = buildOrphanProjectSessions(
-      visible,
-      projectIds: <String>{for (final project in projects) project.id},
+      taggedSessions,
+      projectIds: <String>{for (final project in taggedProjects) project.id},
     ).map((s) => s.id).toSet();
-    final global = visible
+    final globalPool = taggedSessions
         .where((s) => s.projectId.isEmpty || orphanIds.contains(s.id))
         .toList();
+
+    // 搜索框三种模式各自决定显示哪一段：
+    //   文本  → 只显示名字/说明命中的项目（全局会话段隐藏）；
+    //   $文本 → 只显示标题命中的全局会话（项目段隐藏）；
+    //   #文本 → 上面 tagOk 已按标签过滤，两段都显示。
+    final List<Project> shownProjects;
+    final List<Session> global;
+    if (searchActive && query.mode == SidebarSearchMode.project) {
+      shownProjects = taggedProjects
+          .where((project) => projectMatchesSearch(project, query))
+          .toList();
+      global = const <Session>[];
+    } else if (searchActive &&
+        query.mode == SidebarSearchMode.globalSession) {
+      shownProjects = const <Project>[];
+      global = globalPool
+          .where((session) => sessionMatchesSearch(session, query))
+          .toList();
+    } else {
+      shownProjects = taggedProjects;
+      global = globalPool;
+    }
+
     final allTags = <String>{
       for (final s in sessions) ...s.tags.where((t) => t.trim().isNotEmpty),
+      for (final p in projects) ...p.tags.where((t) => t.trim().isNotEmpty),
     }.toList()
       ..sort();
     return ListView(
-                // Keep the trailing rows clear of the floating「新建会话」button.
-                padding: EdgeInsets.only(bottom: bottomInset),
-                children: [
-                  // ---- 标签筛选 ------------------------------------------
-                  if (allTags.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 2,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text('#', style: theme.textTheme.labelSmall),
-                          for (final tag in allTags)
-                            FilterChip(
-                              label: Text(tag, style: theme.textTheme.labelSmall),
-                              selected: tagFilter.contains(tag),
-                              visualDensity: VisualDensity.compact,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              onSelected: (_) => onTagToggle(tag),
-                            ),
-                        ],
-                      ),
-                    ),
-                  // ---- 全局会话 ------------------------------------------
-                  ExpansionTile(
-                    initiallyExpanded: globalSessionsExpanded,
-                    onExpansionChanged: onGlobalExpandedChanged,
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                    childrenPadding: const EdgeInsets.only(left: 4),
-                    leading: const Icon(Icons.public_outlined, size: 20),
-                    title: const Text('全局会话'),
-                    children: [
-                      for (final session in global)
-                        _SessionTile(
-                          session: session,
-                          selected: session.id == selectedId,
-                          running: runningIds.contains(session.id),
-                          indent: 12,
-                          leading: orphanIds.contains(session.id)
-                              ? const Tooltip(
-                                  message: '所属项目条目缺失（已删除 / 未同步 / 已归档）',
-                                  child: Icon(Icons.folder_off_outlined, size: 20),
-                                )
-                              : const Icon(Icons.chat_bubble_outline, size: 20),
-                          onTap: () => onSelect(session.id),
-                        ),
-                      if (global.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
-                          child: Text(
-                            '暂无全局会话',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                    ],
+      // Keep the trailing rows clear of the floating「新建会话」button.
+      padding: EdgeInsets.only(bottom: bottomInset),
+      children: [
+        // ---- 搜索 ----------------------------------------------------
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: TextField(
+            key: const Key('sidebar-search'),
+            controller: searchController,
+            onChanged: (_) => onSearchChanged(),
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: r'搜索：文本=项目 · $=全局会话 · #=标签',
+              prefixIcon: const Icon(Icons.search, size: 18),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+        // ---- 标签筛选 ------------------------------------------------
+        if (allTags.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('#', style: theme.textTheme.labelSmall),
+                for (final tag in allTags)
+                  FilterChip(
+                    label: Text(tag, style: theme.textTheme.labelSmall),
+                    selected: tagFilter.contains(tag),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize:
+                        MaterialTapTargetSize.shrinkWrap,
+                    onSelected: (_) => onTagToggle(tag),
                   ),
-                  Divider(height: 1, color: scheme.outlineVariant),
-                  // ---- 项目 ----------------------------------------------
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
-                    child: Row(
-                      children: [
-                        Text(
-                          '项目',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: '新建项目',
-                          iconSize: 18,
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.create_new_folder_outlined),
-                          onPressed: onNewProject,
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (final project in projects)
-                    _ProjectGroup(
-                      project: project,
-                      sessions:
-                          visible.where((s) => s.projectId == project.id).toList(),
-                      selectedId: selectedId,
-                      runningIds: runningIds,
-                      onSelect: onSelect,
-                      onNewSession: () => onNewSession(project.id),
-                      onEdit: () => onEditProject?.call(project),
-                      onArchive: () =>
-                          context.read<AppState>().setProjectArchived(project.id, true),
-                      onDelete: () async {
-                        final state = context.read<AppState>();
-                        final ok = await confirmDeleteProject(
-                          context,
-                          '项目「${project.name.isEmpty ? project.id : project.name}」',
-                          state.totalSessionsOfProject(project.id),
-                        );
-                        if (ok && context.mounted) {
-                          await state.deleteProject(project.id);
-                        }
-                      },
-                    ),
-                  if (projects.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-                      child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
-                    ),
-                ],
+              ],
+            ),
+          ),
+        // ---- 全局会话 ------------------------------------------------
+        ExpansionTile(
+          initiallyExpanded: globalSessionsExpanded,
+          onExpansionChanged: onGlobalExpandedChanged,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: const EdgeInsets.only(left: 4),
+          leading: const Icon(Icons.public_outlined, size: 20),
+          title: const Text('全局会话'),
+          children: [
+            for (final session in global)
+              _SessionTile(
+                session: session,
+                selected: session.id == selectedId,
+                running: runningIds.contains(session.id),
+                indent: 12,
+                leading: orphanIds.contains(session.id)
+                    ? const Tooltip(
+                        message: '所属项目不在侧栏（已删除 / 未同步 / 已归档 / 被标签筛选隐藏）',
+                        child: Icon(Icons.folder_off_outlined, size: 20),
+                      )
+                    : const Icon(Icons.chat_bubble_outline, size: 20),
+                onTap: () => onSelect(session.id),
+                onTagToggle: onTagToggle,
+              ),
+            if (global.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(44, 4, 16, 8),
+                child: Text(
+                  '暂无全局会话',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+          ],
+        ),
+        Divider(height: 1, color: scheme.outlineVariant),
+        // ---- 项目 ----------------------------------------------------
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+          child: Row(
+            children: [
+              Text(
+                '项目',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: '新建项目',
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                onPressed: onNewProject,
+              ),
+            ],
+          ),
+        ),
+        for (final project in shownProjects)
+          _ProjectGroup(
+            project: project,
+            sessions: taggedSessions
+                .where((s) => s.projectId == project.id)
+                .toList(),
+            selectedId: selectedId,
+            runningIds: runningIds,
+            onSelect: onSelect,
+            onNewSession: () => onNewSession(project.id),
+            onEdit: () => onEditProject?.call(project),
+            onEditTags: () => onEditProjectTags?.call(project),
+            onTagToggle: onTagToggle,
+            onArchive: () =>
+                context.read<AppState>().setProjectArchived(project.id, true),
+            onDelete: () async {
+              final state = context.read<AppState>();
+              final ok = await confirmDeleteProject(
+                context,
+                '项目「${project.name.isEmpty ? project.id : project.name}」',
+                state.totalSessionsOfProject(project.id),
               );
+              if (ok && context.mounted) {
+                await state.deleteProject(project.id);
+              }
+            },
+          ),
+        if (shownProjects.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Text('暂无项目', style: TextStyle(color: Colors.grey)),
+          ),
+      ],
+    );
   }
 
   /// 笔记 Tab 的列表区（搜索 / 置顶 / 最近 / 标签 / 归档）。
@@ -1901,6 +1913,8 @@ class _ProjectGroup extends StatelessWidget {
     required this.onSelect,
     required this.onNewSession,
     required this.onEdit,
+    required this.onEditTags,
+    required this.onTagToggle,
     required this.onArchive,
     required this.onDelete,
   });
@@ -1912,6 +1926,8 @@ class _ProjectGroup extends StatelessWidget {
   final void Function(String id) onSelect;
   final VoidCallback onNewSession;
   final VoidCallback onEdit;
+  final VoidCallback onEditTags;
+  final void Function(String tag) onTagToggle;
   final VoidCallback onArchive;
   final VoidCallback onDelete;
 
@@ -1923,10 +1939,17 @@ class _ProjectGroup extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       tilePadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: const Icon(Icons.folder_outlined, size: 20),
-      title: Text(
-        project.name.isEmpty ? '(未命名项目)' : project.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            project.name.isEmpty ? '(未命名项目)' : project.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          _TagBadges(tags: project.tags, onTagToggle: onTagToggle),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1944,6 +1967,8 @@ class _ProjectGroup extends StatelessWidget {
               switch (value) {
                 case 'edit':
                   onEdit();
+                case 'tags':
+                  onEditTags();
                 case 'archive':
                   onArchive();
                 case 'delete':
@@ -1952,6 +1977,7 @@ class _ProjectGroup extends StatelessWidget {
             },
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'edit', child: Text('编辑')),
+              PopupMenuItem(value: 'tags', child: Text('编辑标签')),
               PopupMenuItem(value: 'archive', child: Text('归档')),
               PopupMenuItem(value: 'delete', child: Text('删除')),
             ],
@@ -1967,6 +1993,7 @@ class _ProjectGroup extends StatelessWidget {
             indent: 28,
             leading: const Icon(Icons.forum_outlined, size: 18),
             onTap: () => onSelect(session.id),
+            onTagToggle: onTagToggle,
           ),
         if (sessions.isEmpty)
           const Padding(
@@ -1985,6 +2012,7 @@ class _SessionTile extends StatelessWidget {
     required this.selected,
     required this.leading,
     required this.onTap,
+    required this.onTagToggle,
     this.indent = 0,
     this.running = false,
   });
@@ -1993,6 +2021,9 @@ class _SessionTile extends StatelessWidget {
   final bool selected;
   final Widget leading;
   final VoidCallback onTap;
+
+  /// 点击标签 badge = 按该标签筛选。
+  final void Function(String tag) onTagToggle;
   final double indent;
 
   /// Whether the session's agent turn is running — replaces [leading] with a
@@ -2038,8 +2069,58 @@ class _SessionTile extends StatelessWidget {
             ),
         ],
       ),
+      subtitle: session.tags.isEmpty
+          ? null
+          : _TagBadges(tags: session.tags, onTagToggle: onTagToggle),
       trailing: _SessionMenu(session: session, state: context.read<AppState>()),
       onTap: onTap,
+    );
+  }
+}
+
+/// 会话 / 项目行上的标签 badge：点击 = 按该标签筛选。
+class _TagBadges extends StatelessWidget {
+  const _TagBadges({required this.tags, required this.onTagToggle});
+
+  final List<String> tags;
+  final void Function(String tag) onTagToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tags.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 2,
+        children: [
+          for (final tag in tags.take(3))
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => onTagToggle(tag),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  tag,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ),
+          if (tags.length > 3)
+            Text(
+              '+${tags.length - 3}',
+              style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -2765,6 +2846,16 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     );
   }
 
+  /// 本轮起始 user 消息的发送时间：从 [globalIndex] 往前找最近一条 user。
+  /// 找不到（旧存档 / 会话以 assistant 开头）→ `null`，此时不显示耗时。
+  DateTime? _turnUserAt(List<SessionMessage> messages, int globalIndex) {
+    for (var i = globalIndex - 1; i >= 0; i--) {
+      final message = messages[i];
+      if (message.role == MessageRole.user) return message.sentAt;
+    }
+    return null;
+  }
+
   RenderBox? _lastUserBox() {
     final box = _lastUserKey.currentContext?.findRenderObject();
     return (box is RenderBox && box.hasSize) ? box : null;
@@ -2834,12 +2925,17 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
                 final message = messages[index];
                 final globalIndex = session.messages.indexOf(message);
                 final isLastUser = globalIndex == lastUserIndex;
+                // assistant 卡的「本轮耗时」= 接收时间 − 本轮起始 user 的发送时间。
+                final turnUserAt = message.role == MessageRole.assistant
+                    ? _turnUserAt(session.messages, globalIndex)
+                    : null;
                 return Padding(
                   key: isLastUser ? _lastUserKey : null,
                   padding: const EdgeInsets.only(bottom: 16),
                   child: MessageBubble(
                     message: message,
                     isLastUser: isLastUser,
+                    turnUserAt: turnUserAt,
                     onEdit: () => _editLastUser(context, session),
                     onDelete: () async {
                       final ok = await confirmDelete(context, '这条消息');

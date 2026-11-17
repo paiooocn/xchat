@@ -977,16 +977,19 @@ class AppState extends ChangeNotifier {
     );
     final sourceTitle = source.title.trim();
     final title = '${sourceTitle.isEmpty ? '会话' : sourceTitle}（压缩）';
+    final stamped = DateTime.now();
     final extraMessages = <SessionMessage>[
       SessionMessage(
         role: MessageRole.user,
         id: newShortId(),
         content: buildCompressHandoff(sourceTitle, compressed),
+        sentAt: stamped,
       ),
       SessionMessage(
         role: MessageRole.assistant,
         id: newShortId(),
         content: compressed,
+        receivedAt: DateTime.now(),
       ),
     ];
     final created = await createSession(
@@ -1134,6 +1137,17 @@ class AppState extends ChangeNotifier {
     }
     project.updatedAt = DateTime.now();
     await projectRepository.write(project);
+    await refreshProjects();
+  }
+
+  /// Replaces a project's tags (side bar badge / tag filter).
+  Future<void> setProjectTags(String id, List<String> tags) async {
+    final project = await projectRepository.read(id);
+    project.tags = List<String>.of(tags);
+    project.updatedAt = DateTime.now();
+    await projectRepository.write(project);
+    // The project may live in the archive — refresh both lists.
+    await refreshArchivedProjects();
     await refreshProjects();
   }
 

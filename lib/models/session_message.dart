@@ -82,6 +82,8 @@ class SessionMessage {
     this.usage = TokenUsage.empty,
     this.taskId,
     this.premark,
+    this.sentAt,
+    this.receivedAt,
   })  : toolCalls = toolCalls ?? <ToolCallData>[],
         attachments = attachments ?? <MessageAttachment>[];
 
@@ -129,6 +131,17 @@ class SessionMessage {
   /// 出站时仍然回退派生，不回写文件。
   String? premark;
 
+  /// 发送时间（user 消息）：用户发出这条消息的时刻，展示在对话卡底部。
+  ///
+  /// 旧存档没有这个字段（`null`）→ 界面不显示时间，新老文件都能读（不变量 10）。
+  DateTime? sentAt;
+
+  /// 接收时间（assistant 消息）：**最后一个字**到达的时刻，展示在对话卡底部，
+  /// 并与本轮起始 user 消息的 [sentAt] 相减得到「本轮耗时」。
+  ///
+  /// 旧存档没有这个字段（`null`）→ 界面不显示时间。
+  DateTime? receivedAt;
+
   /// Per-turn usage (assistant only).
   TokenUsage usage;
 
@@ -153,6 +166,8 @@ class SessionMessage {
     TokenUsage? usage,
     String? taskId,
     String? premark,
+    DateTime? sentAt,
+    DateTime? receivedAt,
   }) =>
       SessionMessage(
         role: role ?? this.role,
@@ -169,6 +184,8 @@ class SessionMessage {
         usage: usage ?? this.usage,
         taskId: taskId ?? this.taskId,
         premark: premark ?? this.premark,
+        sentAt: sentAt ?? this.sentAt,
+        receivedAt: receivedAt ?? this.receivedAt,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -187,6 +204,9 @@ class SessionMessage {
         if (usage.isNotEmpty) 'usage': usage.toJson(),
         if (taskId != null) 'task_id': taskId,
         if (premark != null) 'premark': premark,
+        if (sentAt != null) 'sent_at': sentAt!.toUtc().toIso8601String(),
+        if (receivedAt != null)
+          'received_at': receivedAt!.toUtc().toIso8601String(),
       });
 
   factory SessionMessage.fromJson(Object? value) {
@@ -206,6 +226,8 @@ class SessionMessage {
       usage: TokenUsage.fromJson(json['usage']),
       taskId: asString(json['task_id']),
       premark: asString(json['premark']),
+      sentAt: DateTime.tryParse(asString(json['sent_at']) ?? ''),
+      receivedAt: DateTime.tryParse(asString(json['received_at']) ?? ''),
     );
   }
 }

@@ -204,6 +204,7 @@ class SessionController extends ChangeNotifier {
       taskId: task.id,
       // 标注与正文分开存：展示层只读 content（见 SessionMessage.premark）。
       premark: task.premark,
+      sentAt: DateTime.now(),
     ));
     session.updatedAt = DateTime.now();
     await save();

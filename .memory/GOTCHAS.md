@@ -504,3 +504,36 @@ data for current backend (SkSL). Found stages: Vulkan
 - **升级插件时别退回 pub 版本**，否则警告立刻回来；合并上游新版本后要确认
   `packages/desktop_drop/android/build.gradle` 里**没有行首的 `apply plugin: 'kotlin-android'`**。
 - 不要放进 `third_party/`：`.gitignore` 把整个 `third_party/` 忽略了（那里是下载的 Python 运行时）。
+
+## §32 消息时间戳（`sent_at` / `received_at`）
+
+- **只在有值时写**：`SessionXml` 的 `_iso()` 返回 `null` → `_attrs` 丢掉属性，
+  所以旧会话文件与普通消息**字节不变**；旧档读出 `null` → 界面不显示时间。
+  别改成「兜底 `DateTime.now()`」——旧会话一打开就会多出假时间。
+- **耗时是展示层算的，不是存档字段**：assistant 卡找它**往前最近一条 user** 的
+  `sentAt`（`_turnUserAt`），别在写入时把耗时存进消息。找不到就只显示接收时间。
+- **写入点**：`AgentEngine.run` 四处（首条 user / assistant / 预算续判合成 user /
+  中断抢救的部分 assistant）+ `SessionController.seedTaskMessage` + 压缩会话 +
+  向导读取消息；`Session._copyMessage` / `_messagesToFirstUser` 要复制，否则克隆丢时间。
+- 展示格式 `yyyy-MM-dd HH:mm`（精确到分钟），用的是 `intl` 的 `DateFormat`。
+
+## §33 侧栏搜索 / 项目标签 / 「更多」菜单
+
+- **匹配是纯函数**：`lib/models/sidebar_filter.dart`。`文本`=项目（名称/说明）、
+  `$文本`=全局会话（标题，且要求 `projectId` 为空）、`#文本`=标签（大小写不敏感子串）。
+  三种模式决定显示哪一段：项目模式隐藏全局段，`$` 模式隐藏项目段，`#` 模式两段都显示
+  （过滤已合并进 `tagOk`）。
+- **标签筛选同时作用于项目与会话**：项目标签 `Project.tags`（XML `<tags>` 逗号分隔，
+  `ProjectIndexEntry.tags` 缺省空 → 老项目无标签，**不需要 bump `CatalogIndex.version`**）。
+  `allTags` 汇总会话 + 项目；点行上的 badge 或顶部 chip 都是 `onTagToggle`。
+- **标签筛选隐藏项目后，它的会话会变「孤儿」**：`buildOrphanProjectSessions` 的
+  `projectIds` 传的是**当前渲染的项目**（`taggedProjects`），所以被标签筛掉的项目
+  其会话会带 `folder_off_outlined` 出现在全局段（tooltip 已同步成「已删除 / 未同步 /
+  已归档 / 被标签筛选隐藏」）。这是刻意的，别改成传全量 `projects`（会话会凭空消失）。
+- **「更多」菜单已删掉外部 md 段**（打开 md / 打开文件夹 / 输入文件路径 / 输入文件夹
+  路径 / 重新扫描 / 关闭目录）：`_externalMenuActions` / `_onExternalMenu` /
+  `_askExternalPath` 都删了。外部区入口现在只在**笔记列表上方**（`NoteList`），
+  且只剩「打开 md 文件 / 打开文件夹 /（已开目录时）重新扫描·关闭目录」。
+- **widget test 的 `find.byType(TextField).first` 不再是欢迎页输入**：会话 Tab 顶部
+  多了搜索框（`Key('sidebar-search')`），它排在欢迎页 `InputArea` 之前。测试请用
+  `Key('welcome-input')` + `find.descendant`（见 `home_template_dialog_test.dart`）。

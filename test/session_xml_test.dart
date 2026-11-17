@@ -78,6 +78,46 @@ void main() {
       expect(decoded.messages[3].role, MessageRole.tool);
     });
 
+    test('round-trips message timestamps (sent_at / received_at)', () {
+      final session = Session(
+        id: 'id-ts',
+        sandbox: '/tmp/s',
+        createdAt: DateTime.utc(2025),
+        updatedAt: DateTime.utc(2025),
+        messages: [
+          SessionMessage(role: MessageRole.system, content: ''),
+          SessionMessage(
+            role: MessageRole.user,
+            id: 'u1',
+            content: 'hi',
+            sentAt: DateTime.utc(2025, 1, 2, 3, 4, 5),
+          ),
+          SessionMessage(
+            role: MessageRole.assistant,
+            id: 'a1',
+            content: 'yo',
+            receivedAt: DateTime.utc(2025, 1, 2, 3, 5, 6),
+          ),
+        ],
+      );
+
+      final xml = SessionXml.encode(session);
+      expect(xml, contains('sent_at="2025-01-02T03:04:05.000Z"'));
+      expect(xml, contains('received_at="2025-01-02T03:05:06.000Z"'));
+
+      final decoded = SessionXml.decode(xml, filePath: '/tmp/s/id-ts.xml');
+      expect(decoded.messages[1].sentAt, DateTime.utc(2025, 1, 2, 3, 4, 5));
+      expect(decoded.messages[2].receivedAt, DateTime.utc(2025, 1, 2, 3, 5, 6));
+    });
+
+    test('旧文件没有时间属性 → null（不显示时间）', () {
+      const xml = '<chat sandbox="/tmp/s"><user id="u">hi</user>'
+          '<assistant id="a">yo</assistant></chat>';
+      final decoded = SessionXml.decode(xml, filePath: '/tmp/s/legacy.xml');
+      expect(decoded.messages[1].sentAt, isNull);
+      expect(decoded.messages[2].receivedAt, isNull);
+    });
+
     test('always keeps a system element even for an empty session', () {
       final session = Session(
         id: 'id-1',

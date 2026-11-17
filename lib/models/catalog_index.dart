@@ -175,7 +175,8 @@ class ProjectIndexEntry {
     this.archivedAt,
     this.systemPrompt = '',
     this.memoryEnabled,
-  });
+    List<String>? tags,
+  }) : tags = tags ?? <String>[];
 
   String id;
   String name;
@@ -196,6 +197,9 @@ class ProjectIndexEntry {
   /// `null` = the project predates the flag (never set) — see `Project`.
   bool? memoryEnabled;
 
+  /// 项目标签（侧栏 badge / 标签筛选）。
+  List<String> tags;
+
   bool get archived => archivedAt != null;
 
   factory ProjectIndexEntry.fromProject(Project project) => ProjectIndexEntry(
@@ -210,6 +214,7 @@ class ProjectIndexEntry {
         archivedAt: project.archivedAt,
         systemPrompt: project.systemPrompt,
         memoryEnabled: project.memoryEnabled,
+        tags: List<String>.of(project.tags),
       );
 
   factory ProjectIndexEntry.fromJson(Object? value) {
@@ -228,6 +233,7 @@ class ProjectIndexEntry {
       memoryEnabled: json.containsKey('memory_enabled')
           ? asBool(json['memory_enabled'], fallback: false)
           : null,
+      tags: asStringList(json['tags']),
     );
   }
 
@@ -243,6 +249,7 @@ class ProjectIndexEntry {
         'system_prompt': systemPrompt,
         if (memoryEnabled != null) 'memory_enabled': memoryEnabled,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
+        if (tags.isNotEmpty) 'tags': tags,
       };
 
   Project toProject() => Project(
@@ -257,6 +264,7 @@ class ProjectIndexEntry {
         archivedAt: archivedAt,
         systemPrompt: systemPrompt,
         memoryEnabled: memoryEnabled,
+        tags: List<String>.of(tags),
       );
 }
 

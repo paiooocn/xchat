@@ -59,7 +59,11 @@ void main() {
     });
     await pumpHome(tester, state);
 
-    await tester.enterText(find.byType(TextField).first, '你好');
+    final input = find.descendant(
+      of: find.byKey(const Key('welcome-input')),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(input, '你好');
     await tester.pump();
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
     await tester.pumpAndSettle();
@@ -85,7 +89,11 @@ void main() {
 
     expect(find.byType(SessionChatPanel), findsNothing);
 
-    await tester.enterText(find.byType(TextField).first, '你好');
+    final input = find.descendant(
+      of: find.byKey(const Key('welcome-input')),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(input, '你好');
     await tester.pump();
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
     // A single frame — the panel must already be showing.

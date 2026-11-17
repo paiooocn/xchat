@@ -96,7 +96,12 @@ class SessionXml {
           out.leaf('content', message.content);
           out.close('system');
         case MessageRole.user:
-          out.open('user', _attrs({'id': message.id, 'task_id': message.taskId}));
+          out.open('user', _attrs({
+            'id': message.id,
+            'task_id': message.taskId,
+            // 发送时间：只在有值时写（旧会话文件与普通会话字节不变）。
+            'sent_at': _iso(message.sentAt),
+          }));
           // 任务标注：独立字段，展示层不读它，出站时插在正文前一行。
           // 为空就不写 —— 旧会话文件与普通会话的字节保持不变。
           if (message.premark?.trim().isNotEmpty ?? false) {
@@ -125,6 +130,8 @@ class SessionXml {
               // Only written when set: existing files stay byte-identical, and
               // old readers simply ignore the attribute (invariant 10).
               'incomplete': message.incomplete ? 'true' : null,
+              // 接收（最后一个字）时间。
+              'received_at': _iso(message.receivedAt),
               ..._usageAttrs(message.usage),
             }),
           );
@@ -171,6 +178,10 @@ class SessionXml {
     if (context != null) attrs['context'] = context.toString();
     return attrs;
   }
+
+  /// ISO-8601 UTC string for an optional timestamp attribute; `null` stays
+  /// `null` so `_attrs` drops it (old files keep byte-identical output).
+  static String? _iso(DateTime? value) => value?.toUtc().toIso8601String();
 
   static Map<String, String> _attrs(Map<String, String?> values) {
     final out = <String, String>{};
@@ -252,6 +263,7 @@ class SessionXml {
             attachments: _decodeAttachments(element, session.sandbox),
             taskId: element.getAttribute('task_id'),
             premark: (premark == null || premark.isEmpty) ? null : premark,
+            sentAt: DateTime.tryParse(element.getAttribute('sent_at') ?? ''),
           ));
         case 'assistant':
           session.messages.add(_decodeAssistant(element));
@@ -315,6 +327,7 @@ class SessionXml {
       incomplete: element.getAttribute('incomplete') == 'true',
       usage: TokenUsage.fromAttrs(_attrsOf(element)),
       taskId: element.getAttribute('task_id'),
+      receivedAt: DateTime.tryParse(element.getAttribute('received_at') ?? ''),
     );
   }
 

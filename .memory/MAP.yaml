@@ -5,21 +5,21 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-10 16:41"
-  git_sha: "740cd98"
+  generated_at: "2026-11-17 15:08"
+  git_sha: "880a24b"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 146
-  line_count: 39933
+  file_count: 147
+  line_count: 40297
 
 modules:
   - id: "agent"
     path: "lib/agent"
-    lines: 675
+    lines: 680
     deps: ["core", "data", "llm", "models", "pkg.llm_api"]
     files:
       - path: "lib/agent/agent_engine.dart"
-        lines: 573
+        lines: 578
         symbols: ["AgentEngine"]
       - path: "lib/agent/agent_events.dart"
         lines: 102
@@ -163,7 +163,7 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 963
+    lines: 982
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
@@ -174,10 +174,10 @@ modules:
         doc: "Serialization of Markdown notes: the front-matter header and the body."
         symbols: ["encodeNote", "titleFromBody", "previewFromBody", "parseTags"]
       - path: "lib/data/xml/project_xml.dart"
-        lines: 97
+        lines: 103
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
-        lines: 382
+        lines: 395
         symbols: ["SessionXml"]
       - path: "lib/data/xml/template_xml.dart"
         lines: 88
@@ -209,7 +209,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4610
+    lines: 4733
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -223,7 +223,7 @@ modules:
         lines: 141
         symbols: ["ArchiveBadge", "ArchiveProjectGroup"]
       - path: "lib/models/catalog_index.dart"
-        lines: 348
+        lines: 356
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
       - path: "lib/models/external_doc.dart"
         lines: 108
@@ -250,7 +250,7 @@ modules:
         doc: "A `sessions/*.xml` / `projects/*.xml` file that the catalog index does not"
         symbols: ["OrphanFile"]
       - path: "lib/models/project.dart"
-        lines: 92
+        lines: 98
         symbols: ["Project"]
       - path: "lib/models/provider_config.dart"
         lines: 303
@@ -262,10 +262,10 @@ modules:
         lines: 187
         symbols: ["SearchEngineConfig"]
       - path: "lib/models/session.dart"
-        lines: 377
+        lines: 380
         symbols: ["SessionKind", "Session"]
       - path: "lib/models/session_message.dart"
-        lines: 211
+        lines: 233
         symbols: ["ThinkingReplyMode", "MessageRole", "ToolCallData", "SessionMessage"]
       - path: "lib/models/session_params.dart"
         lines: 129
@@ -281,6 +281,9 @@ modules:
         lines: 66
         doc: "Shell command policy: maps a command string to an approval level, or marks"
         symbols: ["ShellMatch", "ShellClassification"]
+      - path: "lib/models/sidebar_filter.dart"
+        lines: 84
+        symbols: ["SidebarSearchMode", "SidebarSearch", "parseSidebarSearch", "projectMatchesSearch", "sessionMatchesSearch", "matchesTagQuery"]
       - path: "lib/models/sync_item.dart"
         lines: 154
         symbols: ["SyncItemKind", "SyncItemSummary", "SyncItemPayload", "SyncImportOutcome", "SyncReport"]
@@ -410,29 +413,29 @@ modules:
         symbols: ["TransportRequest", "TransportResponse", "HttpTransport"]
   - id: "session"
     path: "lib/session"
-    lines: 601
+    lines: 602
     deps: ["agent", "core", "data", "models"]
     files:
       - path: "lib/session/session_controller.dart"
-        lines: 496
+        lines: 497
         symbols: ["SessionController"]
       - path: "lib/session/session_ops.dart"
         lines: 105
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1406
+    lines: 1420
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 1303
+        lines: 1317
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 11734
+    lines: 11839
     deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -445,7 +448,7 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3682
+        lines: 3776
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1152
@@ -463,7 +466,7 @@ modules:
         lines: 394
         symbols: ["SearchPage"]
       - path: "lib/ui/pages/session_wizard_page.dart"
-        lines: 830
+        lines: 841
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
         lines: 659
@@ -497,7 +500,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 5323
+    lines: 5420
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -520,7 +523,7 @@ modules:
         doc: "Math (KaTeX/TeX) support for the markdown renderer."
         symbols: ["normalizeTex"]
       - path: "lib/ui/widgets/message_bubble.dart"
-        lines: 273
+        lines: 339
         symbols: ["MessageBubble"]
       - path: "lib/ui/widgets/note_ai_panel.dart"
         lines: 534
@@ -540,8 +543,8 @@ modules:
         lines: 264
         symbols: ["SessionInfoDialog"]
       - path: "lib/ui/widgets/task_session_view.dart"
-        lines: 827
-        symbols: ["TaskListView", "TaskChatHeader", "showTaskEditorDialog", "showTaskImportDialog", "AutoRunOptions"]
+        lines: 858
+        symbols: ["TaskListView", "TaskChatHeader", "showTaskImportDialog", "AutoRunOptions"]
       - path: "lib/ui/widgets/thinking_block.dart"
         lines: 74
         symbols: ["ThinkingBlock"]
@@ -602,10 +605,10 @@ tests:
     lines: 30
     cases: 0
   - path: "test/home_flow_test.dart"
-    lines: 113
+    lines: 136
     cases: 2
   - path: "test/home_template_dialog_test.dart"
-    lines: 98
+    lines: 106
     cases: 2
   - path: "test/index_repository_test.dart"
     lines: 68
@@ -689,14 +692,20 @@ tests:
     lines: 157
     cases: 4
   - path: "test/session_xml_test.dart"
-    lines: 95
-    cases: 2
+    lines: 135
+    cases: 4
   - path: "test/shell_exec_test.dart"
     lines: 202
     cases: 22
   - path: "test/shell_policy_test.dart"
     lines: 53
     cases: 6
+  - path: "test/sidebar_filter_test.dart"
+    lines: 111
+    cases: 10
+  - path: "test/sidebar_search_test.dart"
+    lines: 129
+    cases: 5
   - path: "test/sidebar_tab_test.dart"
     lines: 138
     cases: 6
@@ -707,13 +716,13 @@ tests:
     lines: 217
     cases: 14
   - path: "test/task_session_flow_test.dart"
-    lines: 145
-    cases: 2
+    lines: 180
+    cases: 3
   - path: "test/task_session_test.dart"
     lines: 330
     cases: 26
   - path: "test/template_default_test.dart"
-    lines: 139
+    lines: 143
     cases: 5
   - path: "test/template_max_tokens_test.dart"
     lines: 124

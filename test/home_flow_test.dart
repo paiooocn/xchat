@@ -10,6 +10,7 @@ import 'package:xchat/data/index_repository.dart';
 import 'package:xchat/data/project_repository.dart';
 import 'package:xchat/data/session_repository.dart';
 import 'package:xchat/data/template_repository.dart';
+import 'package:intl/intl.dart';
 import 'package:xchat/models/session_message.dart';
 import 'package:xchat/state/app_state.dart';
 import 'package:xchat/ui/pages/home_page.dart';
@@ -31,8 +32,18 @@ Future<AppState> buildState() async {
   await state.load();
   final project = await state.createProject(name: 'P1');
   final session = await state.createSession(projectId: project.id);
-  session.messages.add(SessionMessage(role: MessageRole.user, id: 'u1', content: 'hello-user'));
-  session.messages.add(SessionMessage(role: MessageRole.assistant, id: 'a1', content: 'hello-assistant'));
+  session.messages.add(SessionMessage(
+    role: MessageRole.user,
+    id: 'u1',
+    content: 'hello-user',
+    sentAt: DateTime.utc(2025, 1, 2, 3, 4),
+  ));
+  session.messages.add(SessionMessage(
+    role: MessageRole.assistant,
+    id: 'a1',
+    content: 'hello-assistant',
+    receivedAt: DateTime.utc(2025, 1, 2, 3, 5, 30),
+  ));
   await state.sessionRepository.write(session);
   await state.refreshSessions();
   return state;
@@ -89,6 +100,18 @@ void main() {
     expect(find.byType(SessionChatPanel), findsOneWidget);
     expect(find.text('hello-user'), findsOneWidget);
     expect(find.text('hello-assistant'), findsOneWidget);
+
+    // 对话卡底部：user 发送时间、assistant 接收时间 + 本轮耗时。
+    final minute = DateFormat('yyyy-MM-dd HH:mm');
+    expect(
+      find.textContaining('发送 ${minute.format(DateTime.utc(2025, 1, 2, 3, 4).toLocal())}'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('接收 ${minute.format(DateTime.utc(2025, 1, 2, 3, 5, 30).toLocal())}'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('本轮耗时'), findsOneWidget);
   });
 
   testWidgets('mobile: opening a project session shows its history', (tester) async {

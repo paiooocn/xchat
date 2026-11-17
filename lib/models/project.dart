@@ -17,7 +17,8 @@ class Project {
     this.archivedAt,
     this.systemPrompt = '',
     this.memoryEnabled,
-  });
+    List<String>? tags,
+  }) : tags = tags ?? <String>[];
 
   String id;
   String name;
@@ -55,6 +56,9 @@ class Project {
   ///     if a `.memory/` directory is still around.
   bool? memoryEnabled;
 
+  /// 项目标签（侧栏展示 badge，可随会话一起按标签筛选）。
+  List<String> tags;
+
   bool get isArchived => archivedAt != null;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -69,6 +73,7 @@ class Project {
         'system_prompt': systemPrompt,
         if (memoryEnabled != null) 'memory_enabled': memoryEnabled,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
+        if (tags.isNotEmpty) 'tags': tags,
       };
 
   factory Project.fromJson(Object? value) {
@@ -87,6 +92,7 @@ class Project {
           ? asBool(json['memory_enabled'], fallback: false)
           : null,
       archivedAt: DateTime.tryParse(asString(json['archived_at']) ?? ''),
+      tags: asStringList(json['tags']),
     );
   }
 }

@@ -271,6 +271,7 @@ class Session {
           role: MessageRole.user,
           id: newShortId(),
           content: message.content,
+          sentAt: message.sentAt,
         ));
         break;
       }
@@ -324,6 +325,8 @@ class Session {
         isError: message.isError,
         usage: message.usage,
         taskId: message.taskId,
+        sentAt: message.sentAt,
+        receivedAt: message.receivedAt,
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{

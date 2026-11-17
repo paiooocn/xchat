@@ -113,6 +113,41 @@ void main() {
     expect(find.text('任务一'), findsOneWidget);
   });
 
+  testWidgets('任务列表：查看 / 编辑任务标题与内容', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    late AppState state;
+    await tester.runAsync(() async => state = await buildState());
+    await pumpHome(tester, state);
+    await tester.tap(find.text('任务会话').first);
+    await pumpUntilFound(tester, find.byType(TaskListView));
+
+    await tester.tap(find.byTooltip('查看 / 编辑任务标题与内容').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑任务'), findsOneWidget);
+    // 标题与内容都已预填（列表行里还有一个「任务一」）。
+    expect(find.text('任务一'), findsWidgets);
+    expect(find.text('做第一件事'), findsOneWidget);
+
+    final dialogFields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(dialogFields.first, '任务一（改）');
+    await tester.tap(find.text('保存'));
+    // 落盘是真实 I/O：假时钟与真实事件循环交替推进（GOTCHAS §14）。
+    await pumpUntilFound(tester, find.widgetWithText(ListTile, '任务一（改）'));
+
+    expect(find.widgetWithText(ListTile, '任务一（改）'), findsOneWidget);
+    // 落盘：重新读盘应看到新标题。
+    final id = state.sessions.first.id;
+    final onDisk = await tester.runAsync(() => state.sessionRepository.read(id));
+    expect(onDisk!.tasks.first.title, '任务一（改）');
+  });
+
   testWidgets('任务列表：勾选完成会落盘', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
