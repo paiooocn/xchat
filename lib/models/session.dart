@@ -185,6 +185,39 @@ class Session {
     contextTokens = sawLast ? last.contextTotal : null;
   }
 
+  /// 会话累计耗时：每个「轮次」的时长之和，一轮 = 一条 user 消息（[sentAt]）
+  /// 到该轮**最后一条** assistant（[receivedAt]）。
+  ///
+  /// 同一轮里的多条 assistant（工具往返会连续产生若干条）只按最后一条计一次，
+  /// 否则前一轮的时间会被后面的 assistant 重复累计。时间戳来自已落盘的
+  /// 消息，旧存档缺时间戳的轮次不计入（不猜）。
+  Duration get totalAssistantDuration {
+    var total = Duration.zero;
+    DateTime? turnStart;
+    DateTime? turnEnd;
+    for (final message in messages) {
+      switch (message.role) {
+        case MessageRole.user:
+          total += _turnSpan(turnStart, turnEnd);
+          turnStart = message.sentAt;
+          turnEnd = null;
+        case MessageRole.assistant:
+          final at = message.receivedAt;
+          if (at != null) turnEnd = at;
+        case MessageRole.system:
+        case MessageRole.tool:
+          break;
+      }
+    }
+    return total + _turnSpan(turnStart, turnEnd);
+  }
+
+  static Duration _turnSpan(DateTime? start, DateTime? end) {
+    if (start == null || end == null) return Duration.zero;
+    final span = end.difference(start);
+    return span.isNegative ? Duration.zero : span;
+  }
+
   /// Counts tool calls from the message list (used after edits).
   void recomputeToolCalls() {
     var count = 0;

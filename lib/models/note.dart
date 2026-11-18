@@ -15,6 +15,7 @@ class Note {
     required this.updatedAt,
     this.pinned = false,
     this.archivedAt,
+    this.folder = '',
     this.body = '',
     Map<String, String>? extra,
   })  : tags = tags ?? <String>[],
@@ -36,6 +37,10 @@ class Note {
   /// Non-null when the note is archived (it then leaves the active list).
   DateTime? archivedAt;
 
+  /// 收纳箱（虚拟文件夹）名；空 = 未归箱。它只是列表分组维度，
+  /// **不对应磁盘目录**（笔记永远只存在 `notes/<id>.md`）。
+  String folder;
+
   /// The Markdown body, stored verbatim (no reformatting on save).
   String body;
 
@@ -52,6 +57,8 @@ class Note {
     bool? pinned,
     DateTime? archivedAt,
     bool clearArchived = false,
+    String? folder,
+    bool clearFolder = false,
     String? body,
     Map<String, String>? extra,
   }) =>
@@ -63,6 +70,7 @@ class Note {
         updatedAt: updatedAt ?? this.updatedAt,
         pinned: pinned ?? this.pinned,
         archivedAt: clearArchived ? null : (archivedAt ?? this.archivedAt),
+        folder: clearFolder ? '' : (folder ?? this.folder),
         body: body ?? this.body,
         extra: extra ?? Map<String, String>.of(this.extra),
       );
@@ -81,6 +89,7 @@ class NoteSummary {
     required this.updatedAt,
     this.pinned = false,
     this.archivedAt,
+    this.folder = '',
     this.preview = '',
   }) : tags = tags ?? <String>[];
 
@@ -91,6 +100,9 @@ class NoteSummary {
   DateTime updatedAt;
   bool pinned;
   DateTime? archivedAt;
+
+  /// 收纳箱名（空 = 未归箱）。列表分区用它，不读正文。
+  String folder;
 
   /// First ~80 characters of the body.
   String preview;
@@ -108,6 +120,7 @@ class NoteIndexEntry {
     required this.updatedAt,
     this.pinned = false,
     this.archivedAt,
+    this.folder = '',
     this.preview = '',
   }) : tags = tags ?? <String>[];
 
@@ -118,6 +131,9 @@ class NoteIndexEntry {
   DateTime updatedAt;
   bool pinned;
   DateTime? archivedAt;
+
+  /// 收纳箱名（空 = 未归箱）。
+  String folder;
   String preview;
 
   bool get archived => archivedAt != null;
@@ -130,6 +146,7 @@ class NoteIndexEntry {
         updatedAt: summary.updatedAt,
         pinned: summary.pinned,
         archivedAt: summary.archivedAt,
+        folder: summary.folder,
         preview: summary.preview,
       );
 
@@ -141,6 +158,7 @@ class NoteIndexEntry {
         updatedAt: updatedAt,
         pinned: pinned,
         archivedAt: archivedAt,
+        folder: folder,
         preview: preview,
       );
 
@@ -158,6 +176,7 @@ class NoteIndexEntry {
       updatedAt: DateTime.tryParse(_str(json['updated_at']) ?? '') ?? DateTime.now(),
       pinned: json['pinned'] == true,
       archivedAt: DateTime.tryParse(_str(json['archived_at']) ?? ''),
+      folder: _str(json['folder']) ?? '',
       preview: _str(json['preview']) ?? '',
     );
   }
@@ -170,6 +189,7 @@ class NoteIndexEntry {
         'updated_at': updatedAt.toUtc().toIso8601String(),
         'pinned': pinned,
         if (archivedAt != null) 'archived_at': archivedAt!.toUtc().toIso8601String(),
+        if (folder.isNotEmpty) 'folder': folder,
         'preview': preview,
       };
 }

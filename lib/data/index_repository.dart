@@ -164,6 +164,7 @@ class IndexRepository {
       updatedAt: note.updatedAt,
       pinned: note.pinned,
       archivedAt: note.archivedAt,
+      folder: note.folder,
       preview: previewFromBody(note.body),
     ));
     await _persist(index);

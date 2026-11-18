@@ -1,5 +1,123 @@
 # STATE — 进度交接
 
+## 2026-11-17 · token 消耗显示栏：累计耗时 + 缓存利用率
+
+**需求**（用户 2 点）
+
+1. 会话里**每个 assistant 的耗时全部累计**，在 token 消耗显示栏显示**总耗时**。
+2. token 消耗的 **cache/input 计算为缓存利用率**，在 token 消耗显示栏显示。
+
+**做了什么**
+
+- **累计耗时**：`Session.totalAssistantDuration`（`lib/models/session.dart`）——
+  各轮「最后一条 assistant.`receivedAt` − 本轮起始 user.`sentAt`」之和。
+  同一轮多条 assistant（工具往返）**只按最后一条计一次**，否则前一轮时间会被
+  重复累计；缺时间戳的旧存档轮次不计入（不猜），负跨度按 0。
+- **正在生成的那一轮**：`SessionController.liveRoundElapsed`
+  （`lib/session/session_controller.dart`）——按 `AgentRoundStarted` 起算、
+  `AgentAssistantCompleted` 落盘后清零，只补未落盘部分，避免与累计值重复。
+- **显示**：`UsageBadge` 新增 `duration` 入参，多一段 `耗时 2 分 5 秒`
+  （`formatDuration` 从 `MessageBubble` 上移到 `usage_badge.dart`，两处共用）；
+  `_Header` 传 `session.totalAssistantDuration + controller.liveRoundElapsed`
+  （为 0 时不显示）。
+- **缓存利用率**：`TokenUsage.cacheRate`（`lib/models/token_usage.dart`）=
+  `cache/input`（0..1，input 缺失/为 0 或 cache 缺失 → `null`，超 1 夹紧）。
+  `UsageBadge` 的 cache 段由原始计数改为显示百分比（`cache 75%`），
+  input 缺失时退回原始计数；悬停 tooltip 给 `cache 800 / in 1,000 = 80.00%`。
+  单条消息气泡与会话状态栏共用同一 badge，两处一致。
+
+**改了哪些文件**
+
+- 改：`lib/models/token_usage.dart`、`lib/models/session.dart`、
+  `lib/session/session_controller.dart`、`lib/ui/widgets/usage_badge.dart`、
+  `lib/ui/widgets/message_bubble.dart`、`lib/ui/pages/home_page.dart`、
+  `test/home_flow_test.dart`（头部新增「耗时 1 分 30 秒」断言）、
+  `FEATURES.md`（§9.2 用量角标）、`DESIGN.md`（§8.2 UI 行）、`.memory/*`
+- 新增：`test/usage_badge_test.dart`（14 例：cacheRate、totalAssistantDuration
+  单轮/多轮/多 assistant/缺时间戳/负跨度、badge 百分比与耗时）
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：494 passed, 1 skipped
+```
+
+- 真机要点：①会话状态栏出现 `耗时 …`，生成过程中会随流式事件跳动，落盘后停在
+  各轮之和；②cache 段显示百分比，悬停可见 `cache / in` 原始值；③旧存档（无时间戳）
+  不显示耗时，不影响原显示。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送。与 0.8.2 修订同批待发版。
+- 「总耗时」按**轮**累计（含工具执行时间）；若要只算模型生成时间需另定义口径。
+- 任务式会话的 `_usageText`（自动执行汇总）仍显示原始 cache 计数，未加百分比。
+
+## 2026-11-17 · **0.8.2 修订**（笔记「最近」改「笔记」/ 自动保存间隔可配 / 收纳箱虚拟文件夹 / 续判默认提示词）
+
+**需求**（用户 4 点）
+
+1. 笔记边栏的 **[最近] 改为「笔记」**。
+2. 笔记自动保存 = **停止输入后 10 秒**，**设置页可改**。
+3. 笔记的**收纳箱 = 虚拟文件夹**：可把笔记归到一起、折叠/展开查看。
+4. **默认自动续判提示词**改为
+   `本轮对话已累计调用工具 {n} 次，若任务已完成请直接输出最终答复，不要再调用工具；若任务仍需继续，请发起对话继续调用工具。`
+   设置页加「**设为默认自动续判提示词**」按钮（升级用户一键同步）。
+
+**做了什么**
+
+- **[最近]→[笔记]**：`NoteList` 分区由 `置顶 / 最近 / 归档` 改为
+  `置顶 / 各收纳箱 / 笔记 / 归档`（`_sectionHeader(context, '笔记')`），每篇只出现一次。
+- **收纳箱**：`Note.folder`（front-matter 白名单新 key `folder`，**非空才写**，旧文件
+  字节不变；旧索引读出 `''`，**未 bump `CatalogIndex.version`**）、`NoteSummary.folder` /
+  `NoteIndexEntry.folder`（`index.json` 里亦只在非空时出现）；`AppState.noteFolders` +
+  `setNoteFolder` / `renameNoteFolder` / `clearNoteFolder`（后两者批量改 front-matter，
+  笔记文件位置不动）。UI：`NoteList` 每个箱子一行标题（箱名 + 篇数，点标题折叠/展开，
+  状态存 `SharedPreferences: notes_folders_collapsed`；右侧菜单「重命名 / 清空」），
+  行菜单与笔记面板菜单都有「收纳箱…」（共用新弹层
+  `lib/ui/widgets/note_folder_dialog.dart`：`showNoteFolderDialog` /
+  `showNoteFolderRenameDialog`，空名 = 移出）。**磁盘上没有箱子目录**。
+- **自动保存间隔**：`AppConfig.noteAutoSaveSeconds`（默认 10，clamp 1–3600，
+  JSON `note_auto_save_seconds`）；设置页新增「笔记」段输入框；`NotesPanel._onBodyChanged`
+  按配置计时（内部笔记与外部 md 写回共用同一条路径）。
+- **续判提示词**：`kDefaultContinuePrompt` 换成新文案（只留 `{n}`，引擎仍替换
+  `{limit}` 兼容老自定义）；设置页提示词下方加「设为默认自动续判提示词」按钮
+  （写回 config 并提示，不覆盖其他字段）；label 改为「（{n} = 累计工具调用次数）」。
+  **不做启动迁移** —— 老 config 保留旧文案，由用户点按钮同步。
+
+**改了哪些文件**
+
+- 改：`lib/models/note.dart`、`lib/data/xml/note_md.dart`、
+  `lib/data/index_repository.dart`、`lib/state/app_state.dart`、
+  `lib/models/app_config.dart`、`lib/ui/widgets/note_list.dart`、
+  `lib/ui/pages/notes_panel.dart`、`lib/ui/pages/settings_page.dart`、
+  `test/note_editor_test.dart`（自动保存用例改按配置推进假时钟）、
+  `test/external_doc_ui_test.dart`（写回等待预算 200→400 轮）、
+  `FEATURES.md`（§4.2 / §7.1 / §8）、`.memory/*`
+- 新增：`lib/ui/widgets/note_folder_dialog.dart`、`test/note_folder_test.dart`
+  （9 例：front-matter 往返/旧档、索引与旧索引、AppState 增删改名、NoteList 分区、
+  折叠持久化、行菜单归箱、箱子改名）
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：480/480 全绿
+dist/build_apk.sh -p             # 真机：见下
+```
+
+- 真机要点：①笔记列表分段标题是「笔记」不是「最近」；②笔记行菜单「收纳箱…」输入
+  名字 → 笔记出现在该箱（标题行显示篇数）；点箱名折叠/展开，切走再回来仍保持；
+  箱子菜单可改名/清空；③编辑笔记停手 10 秒后落盘（状态条 已保存），设置页改成 1 秒
+  后 1 秒即存；④设置页点「设为默认自动续判提示词」→ 提示词框变成新文案并保存。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送；`pubspec.yaml` 仍是 **0.8.1+1**，发版先
+  `dist/bump_version.sh -z 1 -c`（→ `0.8.2+1`）再 `flutter test test/app_version_test.dart`。
+- 收纳箱目前一篇笔记只属于一个箱子（单 `folder` 字段）；要「一篇多箱」需改成列表语义。
+- 外部 md 写回也用 10 秒静默间隔（与笔记共用），如觉得太迟可另加独立配置。
+
 ## 2026-11-17 · **0.8.1 修订**（消息时间戳 / 任务查看编辑 / 更多菜单瘦身 / 项目标签 + 侧栏搜索）
 
 **需求**（用户 6 点）

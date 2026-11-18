@@ -122,6 +122,13 @@ UI 发消息
     （front-matter + 正文），front-matter 的拼装/拆解只写在
     `lib/data/xml/note_md.dart`；正文**逐字保留**（写回时只重写 front-matter 块），
     未知 front-matter key 原样保留（不丢用户/外部工具写的数据）。
+    **收纳箱是虚拟分组**：front-matter 多一个白名单 key `folder`（非空才写，
+    旧文件字节不变），磁盘上永远只有 `notes/<id>.md` —— 不许为箱子建目录、
+    不许把 `folder` 带进同步/备份语义。列表分区（置顶 / 各收纳箱 / 笔记 / 归档）
+    由 `NoteList` 按 `folder` 现算，一篇笔记只出现一次（箱内笔记不再进「笔记」段）；
+    折叠状态存 `SharedPreferences: notes_folders_collapsed`。
+    自动保存间隔是全局配置 `AppConfig.noteAutoSaveSeconds`（默认 10 秒），
+    内部笔记与外部 md 写回共用同一个计时器。
 18. **AI 写回必过 diff**：任何 AI 对笔记正文的修改都要先进 diff 预览（接受/拒绝），
     接受后**先进编辑器缓冲**（可 Ctrl+Z），再走自动保存落盘 —— 不存在静默覆盖。
 19. **笔记中间栏只有一套布局**：固定「上预览 / 下编辑」，没有「编辑/分屏/预览」

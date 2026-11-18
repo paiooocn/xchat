@@ -160,7 +160,7 @@ void main() {
   });
 
   group('NotesPanel', () {
-    testWidgets('改源码 → 停写 800ms 后自动落盘', (tester) async {
+    testWidgets('改源码 → 停止输入 10 秒后自动落盘（默认间隔）', (tester) async {
       final state = (await tester.runAsync(buildState))!;
       final note = (await tester.runAsync(() => state.createNote(title: '测试')))!;
       final file = File(state.paths.noteFile(note.id));
@@ -186,11 +186,49 @@ void main() {
       await tester.enterText(editorField, '# 新内容\n');
       await tester.pump();
 
-      // 假时钟推进 800ms 触发防抖保存，再让真实 I/O 跑完。
+      // 默认间隔是停止输入后 10 秒（AppConfig.noteAutoSaveSeconds）。
+      await tester.pump(const Duration(seconds: 10));
+      // 保存走真实磁盘 I/O：让假时钟与真实事件循环交替推进。
       await pumpAsync(tester, rounds: 80);
 
       final saved = await tester.runAsync(() => file.readAsString());
       expect(saved, contains('# 新内容'));
+    });
+
+    testWidgets('自动保存间隔可在设置里改（改为 1 秒）', (tester) async {
+      final state = (await tester.runAsync(buildState))!;
+      final note = (await tester.runAsync(() => state.createNote(title: '测试')))!;
+      final file = File(state.paths.noteFile(note.id));
+      // 设置页可改的间隔：这里直接用配置值驱动（默认是 10 秒）。
+      state.config.noteAutoSaveSeconds = 1;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AppState>.value(
+          value: state,
+          child: MaterialApp(
+            theme: testTheme(),
+            home: NotesPanel(noteId: note.id),
+          ),
+        ),
+      );
+      await pumpAsync(tester, rounds: 10);
+
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const Key('note-editor')),
+          matching: find.byType(TextField),
+        ),
+        '# 改过的内容\n',
+      );
+      await tester.pump();
+
+      // 不足 1 秒时还没落盘（直接同步读盘，不推进假时钟）。
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(file.readAsStringSync(), isNot(contains('# 改过的内容')));
+
+      await tester.pump(const Duration(milliseconds: 200));
+      await pumpAsync(tester, rounds: 80);
+      expect(file.readAsStringSync(), contains('# 改过的内容'));
     });
 
     testWidgets('档位切换写入 SharedPreferences（40/20/0）', (tester) async {

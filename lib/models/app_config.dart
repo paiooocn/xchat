@@ -16,6 +16,13 @@ const kDefaultWindowSize = '1280x720';
 /// Default character budget for one note when building an AI prompt.
 const int kDefaultNotesContextCharLimit = 12000;
 
+/// 笔记自动保存的静默秒数：停止输入这么久后落盘（设置页可改）。
+const int kDefaultNoteAutoSaveSeconds = 10;
+
+/// 自动保存间隔的上下限（秒），防止填 0 / 负数 / 天文数字。
+const int kMinNoteAutoSaveSeconds = 1;
+const int kMaxNoteAutoSaveSeconds = 3600;
+
 /// Parses a `宽x高` window-size string; returns `null` when malformed.
 ({int width, int height})? parseWindowSize(String value) {
   final parts = value.split('x');
@@ -27,10 +34,11 @@ const int kDefaultNotesContextCharLimit = 12000;
 }
 
 /// Default auto-continue message sent when a session hits its tool budget.
+///
+/// 占位符只有 `{n}`（累计工具次数）；`{limit}` 仍会被替换，但默认文案不用它。
 const kDefaultContinuePrompt =
-    '你本会话已累计调用工具 {n} 次（本轮上限 {limit}）。请判断任务是否已完成：\n'
-        '若已完成，请直接输出最终答复，不要再调用工具；\n'
-        '若仍需继续，请继续调用工具，我会重置本轮工具预算。';
+    '本轮对话已累计调用工具 {n} 次，若任务已完成请直接输出最终答复，不要再调用工具；'
+    '若任务仍需继续，请发起对话继续调用工具。';
 
 /// What happens when a session hits its tool-call budget.
 enum ContinueMode {
@@ -106,6 +114,7 @@ class AppConfig {
     this.pythonTimeoutSeconds = 300,
     this.defaultTemplateId = '',
     this.notesContextCharLimit = kDefaultNotesContextCharLimit,
+    this.noteAutoSaveSeconds = kDefaultNoteAutoSaveSeconds,
   })  : providers = providers ?? defaultProviders(),
         defaultParams = defaultParams ?? SessionParams(),
         defaultTools = defaultTools ?? <String>[],
@@ -204,6 +213,9 @@ class AppConfig {
   /// 选区 + 命中段落」，并在界面上提示已裁剪。
   int notesContextCharLimit;
 
+  /// 笔记停止输入后多少秒自动保存（1–3600）。
+  int noteAutoSaveSeconds;
+
   /// Enabled engines in configured order.
   List<SearchEngineConfig> get enabledSearchEngines =>
       searchEngines.where((e) => e.enabled).toList(growable: false);
@@ -262,6 +274,7 @@ class AppConfig {
         'python_timeout_seconds': pythonTimeoutSeconds,
         'default_template_id': defaultTemplateId,
         'notes_context_char_limit': notesContextCharLimit,
+        'note_auto_save_seconds': noteAutoSaveSeconds,
       };
 
   factory AppConfig.fromJson(Object? value) {
@@ -319,6 +332,9 @@ class AppConfig {
       notesContextCharLimit: (asInt(json['notes_context_char_limit']) ??
               kDefaultNotesContextCharLimit)
           .clamp(1000, 200000),
+      noteAutoSaveSeconds: (asInt(json['note_auto_save_seconds']) ??
+              kDefaultNoteAutoSaveSeconds)
+          .clamp(kMinNoteAutoSaveSeconds, kMaxNoteAutoSaveSeconds),
     );
     if (config.currentProviderId.isEmpty && config.providers.isNotEmpty) {
       config.currentProviderId = config.providers.first.id;

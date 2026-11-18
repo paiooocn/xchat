@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/external_doc.dart';
 import '../../models/note.dart';
 import '../../state/app_state.dart';
 import '../widgets/confirm_dialog.dart';
 import 'note_editor.dart';
+import 'note_folder_dialog.dart';
 
-/// 左栏「笔记」Tab 的列表：搜索 + 置顶 + 最近 + 标签筛选 + 归档。
+/// 左栏「笔记」Tab 的列表：搜索 + 置顶 + 收纳箱（可折叠）+ 笔记 + 标签筛选 + 归档。
+///
+/// 收纳箱是**虚拟文件夹**：只按 front-matter 的 `folder` 分组显示，
+/// 磁盘上仍是一篇一个 `notes/<id>.md`，折叠状态存 SharedPreferences。
 class NoteList extends StatefulWidget {
   const NoteList({
     super.key,
@@ -85,12 +90,45 @@ class NoteList extends StatefulWidget {
 }
 
 class _NoteListState extends State<NoteList> {
+  static const _foldersCollapsedKey = 'notes_folders_collapsed';
+
   final TextEditingController _search = TextEditingController();
   String _query = '';
   String? _tagFilter;
 
   /// 外部文件区是否展开（本次会话内存态，不持久化）。
   bool _externalExpanded = true;
+
+  /// 处于折叠状态的收纳箱名（切 Tab / 重建后仍在，故持久化）。
+  Set<String> _collapsedFolders = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFolderState();
+  }
+
+  Future<void> _loadFolderState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList(_foldersCollapsedKey) ?? const <String>[];
+      if (mounted) setState(() => _collapsedFolders = stored.toSet());
+    } catch (_) {
+      // 读不到偏好就用默认值（全部展开）。
+    }
+  }
+
+  Future<void> _toggleFolder(String name) async {
+    final next = <String>{..._collapsedFolders};
+    if (!next.remove(name)) next.add(name);
+    setState(() => _collapsedFolders = next);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_foldersCollapsedKey, next.toList());
+    } catch (_) {
+      // 存不住也不影响本次使用。
+    }
+  }
 
   @override
   void dispose() {
@@ -178,12 +216,48 @@ class _NoteListState extends State<NoteList> {
     await context.read<AppState>().deleteNote(note.id);
   }
 
+  // ---- 收纳箱（虚拟文件夹）--------------------------------------------
+
+  /// 把笔记放进某个收纳箱：输入新名字或点已有箱子；留空 = 移出。
+  Future<void> _pickFolder(NoteSummary note) async {
+    final result = await showNoteFolderDialog(
+      context,
+      current: note.folder,
+      known: context.read<AppState>().noteFolders,
+    );
+    if (result == null || !mounted) return;
+    final folder = result.trim();
+    if (folder == note.folder) return;
+    await context.read<AppState>().setNoteFolder(note.id, folder);
+  }
+
+  Future<void> _renameFolder(String name) async {
+    final result = await showNoteFolderRenameDialog(context, current: name);
+    if (result == null || !mounted) return;
+    final trimmed = result.trim();
+    if (trimmed.isEmpty || trimmed == name) return;
+    await context.read<AppState>().renameNoteFolder(name, trimmed);
+  }
+
+  Future<void> _clearFolder(String name) async {
+    final ok = await confirmDelete(context, '收纳箱「$name」里的全部笔记（笔记本身保留）');
+    if (!ok || !mounted) return;
+    await context.read<AppState>().clearNoteFolder(name);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final visible = _filtered(widget.notes);
-    final pinned = visible.where((n) => n.pinned).toList();
-    final recent = visible.where((n) => !n.pinned).toList();
+    // 每篇笔记只出现一次：收纳箱优先（含箱内置顶），其后才是「笔记」。
+    final inFolder = visible.where((n) => n.folder.isNotEmpty).toList();
+    final folderNames = inFolder.map((n) => n.folder).toSet().toList()..sort();
+    final pinned = visible
+        .where((n) => n.pinned && n.folder.isEmpty)
+        .toList();
+    final recent = visible
+        .where((n) => !n.pinned && n.folder.isEmpty)
+        .toList();
     final archived = _filtered(widget.archivedNotes);
     final external = _filteredExternal();
     final tags = <String>{
@@ -254,8 +328,14 @@ class _NoteListState extends State<NoteList> {
                 _sectionHeader(context, '置顶'),
                 for (final note in pinned) _row(context, note),
               ],
+              for (final folder in folderNames) ...[
+                _folderHeader(context, theme, folder, _countIn(inFolder, folder)),
+                if (!_collapsedFolders.contains(folder))
+                  for (final note in inFolder.where((n) => n.folder == folder))
+                    _row(context, note),
+              ],
               if (recent.isNotEmpty) ...[
-                _sectionHeader(context, '最近'),
+                _sectionHeader(context, '笔记'),
                 for (final note in recent) _row(context, note),
               ],
               if (archived.isNotEmpty) ...[
@@ -585,6 +665,67 @@ class _NoteListState extends State<NoteList> {
     );
   }
 
+  int _countIn(List<NoteSummary> notes, String folder) =>
+      notes.where((n) => n.folder == folder).length;
+
+  /// 收纳箱标题行：点任意处折叠/展开；右侧菜单改名 / 清空。
+  Widget _folderHeader(BuildContext context, ThemeData theme, String name, int count) {
+    final scheme = theme.colorScheme;
+    final collapsed = _collapsedFolders.contains(name);
+    return InkWell(
+      onTap: () => _toggleFolder(name),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
+        child: Row(
+          children: [
+            Icon(Icons.folder_outlined, size: 16, color: scheme.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Text(
+              '$count 篇',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            Icon(
+              collapsed ? Icons.expand_more : Icons.expand_less,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+            PopupMenuButton<String>(
+              tooltip: '收纳箱操作',
+              iconSize: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              icon: const Icon(Icons.more_horiz),
+              onSelected: (value) async {
+                switch (value) {
+                  case 'rename':
+                    await _renameFolder(name);
+                  case 'clear':
+                    await _clearFolder(name);
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'rename', child: Text('重命名收纳箱')),
+                PopupMenuItem(value: 'clear', child: Text('清空收纳箱')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _row(BuildContext context, NoteSummary note) {
     return NoteSummaryTile(
       note: note,
@@ -601,6 +742,8 @@ class _NoteListState extends State<NoteList> {
               await _rename(note);
             case 'tags':
               await _editTags(note);
+            case 'folder':
+              await _pickFolder(note);
             case 'pin':
               await state.setNotePinned(note.id, !note.pinned);
             case 'archive':
@@ -612,6 +755,7 @@ class _NoteListState extends State<NoteList> {
         itemBuilder: (context) => [
           const PopupMenuItem(value: 'rename', child: Text('重命名')),
           const PopupMenuItem(value: 'tags', child: Text('编辑标签')),
+          const PopupMenuItem(value: 'folder', child: Text('收纳箱…')),
           PopupMenuItem(
             value: 'pin',
             child: Text(note.pinned ? '取消置顶' : '置顶'),

@@ -232,7 +232,9 @@ for (var i = 0; i < 30; i++) {
   多吃一个就会吞掉用户正文开头的空行。
 - **未知 front-matter key 必须原样保留**（存在 `Note.extra` 里），否则外部工具
   （Obsidian 等）写的字段会被清掉。已知 key 是白名单：`id/title/tags/created_at/
-  updated_at/pinned/archived_at`。
+  updated_at/pinned/archived_at/folder`；`folder`（收纳箱）**只在非空时写**，
+  未归箱的笔记文件字节与旧版一致。旧索引条目没有 `folder` → 读出 `''`，
+  **不需要 bump `CatalogIndex.version`**（校验只看 id 集合）。
 - **列表扫描只读文件头 4KB**（`noteHeadBytes`）：front-matter 装不下时才回退读全文；
   头部里 `---` 没闭合会被当成「裸 Markdown」（标题取正文首个 `# ` 标题）。
   → `lib/data/xml/note_md.dart`、`lib/data/index_repository.dart` 的 `_readNoteHead`。
@@ -297,8 +299,11 @@ data for current backend (SkSL). Found stages: Vulkan
 - **分隔条的拖动方向**：分隔条在编辑区**上方**，往下拖 = 编辑区变矮（比例变小），
   往上拖 = 变高。比例公式是 `ratio - delta.dy / totalHeight`（`delta.dy` 向下为正）。
 - **等真实 I/O 的用例在并发下会偶发超时**：全量 `flutter test` 时机器负载高，
-  「停写 800ms 后落盘」「新建笔记后打开」这类用例会超时，但单独跑必绿。
+  「停止输入后自动落盘」「新建笔记后打开」这类用例会超时，但单独跑必绿。
   → 等待预算给足（轮数 ≥ 80、真实延时 20ms），别按「单跑能过」的标准写。
+- **自动保存间隔改成配置项后，测试必须推进假时钟 ≥ `note_auto_save_seconds`**：
+  默认是 10 秒，`pump(const Duration(milliseconds: 800))` 时代的那套写法全部失效；
+  而且 `pumpAsync(step: 50ms)` 每轮也在累计假时间，别把它算成「没推进时钟」。
 
 ## 22. AI 写回笔记的三条纪律
 
@@ -537,3 +542,25 @@ data for current backend (SkSL). Found stages: Vulkan
 - **widget test 的 `find.byType(TextField).first` 不再是欢迎页输入**：会话 Tab 顶部
   多了搜索框（`Key('sidebar-search')`），它排在欢迎页 `InputArea` 之前。测试请用
   `Key('welcome-input')` + `find.descendant`（见 `home_template_dialog_test.dart`）。
+
+## §34 笔记收纳箱 / 自动保存间隔 / 续判提示词
+
+- **收纳箱只是 front-matter 里的 `folder` 字符串**，不是目录：别建文件夹、别把
+  `folder` 加进同步清单（`lib/data/sync_repository.dart` 只搬会话/项目 XML）。
+  列表分区在 `NoteList.build` 现算（置顶=未归箱的置顶 / 各箱 / 笔记=未归箱未置顶 /
+  归档），**一篇只出现一次**；改分区规则时三处（含空态判断）一起看。
+- **折叠状态持久化**：`SharedPreferences: notes_folders_collapsed`（StringList，
+  存箱子名）。切 Tab 会重建 `NoteList`，内存态会丢，所以必须走 prefs。
+- **`enterText` 后要先 `pump()` 再点按钮**：`NoteFolderRenameDialog` 的「保存」
+  可用性由 `ValueListenableBuilder` 驱动，不重建一帧就点，`onPressed` 里读到的还是
+  旧 controller 文本（会静默改名成原名字）。文件夹选择弹层的按钮直接读
+  `_controller.text`，没这个问题。
+- **列表是构造参数，不会随 AppState 自刷新**：`NoteList(notes: state.notes, ...)`
+  必须由外层（`HomePage` / 测试里的 `ListenableBuilder`）在 `notifyListeners` 后重建，
+  否则「归箱后行要换区」这类断言会看到旧 UI。
+- **自动保存间隔是全局的**（`note_auto_save_seconds`，1–3600，默认 10）：内部笔记与
+  外部 md 写回共用。写成 800ms 时代那种「很快落盘」的用例（如
+  `external_doc_ui_test` 的写回等待）要按 10 秒预算轮询。
+- **续判默认文案变了，但老 `config.json` 不会迁移**：`continue_prompt` 一直读用户
+  配置，升级后仍是旧文案 —— 设置页的「设为默认自动续判提示词」按钮就是给用户手动
+  同步用的，别再写「启动时比对默认值并覆盖」的逻辑（会吞掉用户自定义）。

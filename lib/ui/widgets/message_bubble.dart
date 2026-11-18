@@ -36,14 +36,6 @@ class MessageBubble extends StatelessWidget {
   /// 对话卡底部的时间格式：日期 + 精确到分钟。
   static final DateFormat _minuteFormat = DateFormat('yyyy-MM-dd HH:mm');
 
-  /// 本轮耗时的紧凑写法：`3 秒` / `2 分 5 秒` / `1 小时 3 分`。
-  static String formatDuration(Duration span) {
-    final d = span.isNegative ? Duration.zero : span;
-    if (d.inHours > 0) return '${d.inHours} 小时 ${d.inMinutes % 60} 分';
-    if (d.inMinutes > 0) return '${d.inMinutes} 分 ${d.inSeconds % 60} 秒';
-    return '${d.inSeconds} 秒';
-  }
-
   /// Copies the message's **raw** text — never the rendered widget — so the
   /// clipboard holds the original Markdown source and can be pasted verbatim
   /// into another editor/chat.

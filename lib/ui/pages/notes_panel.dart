@@ -15,6 +15,7 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/note_ai_panel.dart';
 import '../widgets/note_diff_dialog.dart';
 import '../widgets/note_editor.dart';
+import '../widgets/note_folder_dialog.dart';
 
 /// 笔记主区面板：上预览 / 下编辑 + 顶栏（标题 / 高度档位 / 收起 AI / 菜单）
 /// + 状态条（已保存 / 保存中 / 未保存 · 字数 · 标签）。
@@ -74,7 +75,7 @@ class _NotesPanelState extends State<NotesPanel> {
   /// 已经确认过「改动会写回原文件」的文件路径（每文件每会话一次）。
   final Set<String> _editConfirmed = <String>{};
 
-  /// 自动保存的防抖计时器（停写 800ms 后落盘）。
+  /// 自动保存的防抖计时器（停止输入 [AppConfig.noteAutoSaveSeconds] 秒后落盘）。
   Timer? _saveTimer;
 
   /// AI 助手与编辑器之间的通道（读选区 / 写回缓冲）。
@@ -289,9 +290,11 @@ class _NotesPanelState extends State<NotesPanel> {
     if (_status != _SaveStatus.dirty) {
       setState(() => _status = _SaveStatus.dirty);
     }
-    // 自动保存：停写 800ms 后落盘。
+    // 自动保存：停止输入 N 秒后落盘（N 在设置页可改，默认 10）。
+    final seconds =
+        context.read<AppState>().config.noteAutoSaveSeconds.clamp(1, 3600);
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 800), () {
+    _saveTimer = Timer(Duration(seconds: seconds), () {
       if (mounted) _save();
     });
   }
@@ -581,6 +584,22 @@ class _NotesPanelState extends State<NotesPanel> {
         .where((t) => t.isNotEmpty)
         .toList();
     await context.read<AppState>().setNoteTags(note.id, tags);
+    await _loadNote();
+  }
+
+  /// 收纳箱（虚拟文件夹）：与列表行菜单共用一个弹层。
+  Future<void> _pickFolder() async {
+    final note = _note;
+    if (note == null) return;
+    final result = await showNoteFolderDialog(
+      context,
+      current: note.folder,
+      known: context.read<AppState>().noteFolders,
+    );
+    if (result == null || !mounted) return;
+    final folder = result.trim();
+    if (folder == note.folder) return;
+    await context.read<AppState>().setNoteFolder(note.id, folder);
     await _loadNote();
   }
 
@@ -989,6 +1008,8 @@ class _NotesPanelState extends State<NotesPanel> {
             await _rename();
           case 'tags':
             await _editTags();
+          case 'folder':
+            await _pickFolder();
           case 'pin':
             await _togglePin();
           case 'archive':
@@ -1000,6 +1021,7 @@ class _NotesPanelState extends State<NotesPanel> {
       itemBuilder: (context) => [
         const PopupMenuItem(value: 'rename', child: Text('重命名')),
         const PopupMenuItem(value: 'tags', child: Text('编辑标签')),
+        const PopupMenuItem(value: 'folder', child: Text('收纳箱…')),
         PopupMenuItem(
           value: 'pin',
           child: Text(_note?.pinned == true ? '取消置顶' : '置顶'),

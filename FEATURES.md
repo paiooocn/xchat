@@ -215,6 +215,9 @@ Documents/XChat/                  # 数据根（AppPaths）
 - 达到上限 → 自动追加一条用户侧消息（模板可配，`{n}` 累计次数 / `{limit}` 本轮上限占位），
   请求**仍携带工具定义**，由模型自判：直接答复（结束）或继续调工具（预算重置新一轮）。
 - 续判模式三选一（设置项）：模型自判（默认）/ 询问用户 / 直接结束。
+- **默认续判文案**：`本轮对话已累计调用工具 {n} 次，若任务已完成请直接输出最终答复，不要再调用工具；若任务仍需继续，请发起对话继续调用工具。`
+  设置页可编辑（`{n}` = 累计次数），并有「设为默认自动续判提示词」按钮 —— 升级前生成的 `config.json`
+  里仍是旧文案，不会自动覆盖，需要用户自己点一下同步。
 - 另有 `maxToolCallsPerTurn`（单轮硬上限，0=由预算推导）。
 
 ### 4.3 执行模式与审批 ★
@@ -383,19 +386,20 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 | 功能 | 说明 |
 | --- | --- |
-| 存储 | 一篇笔记 = `<root>/notes/<id>.md`：**front-matter + Markdown 正文**（不是 XML）；front-matter 白名单 key：`id / title / tags / created_at / updated_at / pinned / archived_at`，**未知 key 原样保留** |
+| 存储 | 一篇笔记 = `<root>/notes/<id>.md`：**front-matter + Markdown 正文**（不是 XML）；front-matter 白名单 key：`id / title / tags / created_at / updated_at / pinned / archived_at / folder`，**未知 key 原样保留**；`folder` 只在非空时写入 |
 | 正文保真 | 写回时只重写 front-matter 块，正文**逐字保留**（空行、缩进、代码围栏都不动）；没有 front-matter 的裸 `.md` 会被导入为笔记（标题取正文首个 `# ` 标题） |
-| 列表 | 列表只带摘要（标题/标签/时间/置顶/归档/正文前 80 字 preview）；正文**按需读取**（打开笔记时才读文件）；扫描只读文件头 4KB；左栏列表含搜索 + 置顶/最近/归档分区 + 标签筛选 |
+| 列表 | 列表只带摘要（标题/标签/时间/置顶/归档/收纳箱/正文前 80 字 preview）；正文**按需读取**（打开笔记时才读文件）；扫描只读文件头 4KB；左栏列表含搜索 + **置顶 / 收纳箱 / 笔记** / 归档分区 + 标签筛选 |
+| 收纳箱 | **虚拟文件夹**：只按 front-matter `folder` 分组显示，磁盘上仍是一篇一个 `notes/<id>.md`（没有真目录、不参与同步/备份语义）；列表里每个箱子一行可折叠标题（箱名 + 篇数，点标题折叠/展开，状态存 `SharedPreferences: notes_folders_collapsed`），右侧菜单改名 / 清空（清空 = 笔记全部移出，笔记保留）；笔记行菜单与面板菜单都有「收纳箱…」，留空 = 移出；一篇笔记只属于一个箱子（箱内笔记不再重复出现在「笔记」段） |
 | 索引 | `index.json` 第五桶 `notes`（版本号 5）；只放摘要不放正文；磁盘是事实，索引损坏/过期透明重建 |
-| 状态 | `AppState.notes` / `AppState.archivedNotes`（`NoteSummary` 列表）+ `createNote / readNote / saveNote / setNoteArchived / deleteNote / refreshNotes` |
+| 状态 | `AppState.notes` / `AppState.archivedNotes`（`NoteSummary` 列表）+ `createNote / readNote / saveNote / setNoteArchived / deleteNote / refreshNotes` + 收纳箱三件套 `setNoteFolder / renameNoteFolder / clearNoteFolder`（`noteFolders` 汇总名字） |
 | AI 助手 | 右侧边栏两态：**展开 320px**（模型名 + 模型服务入口 / Tab「改写·生成·问答」/ 快捷动作 / 对话流 / 输入区 + 「包含全文」开关 + 停止）/ **收起 44px 竖轨**（AI 图标 + 生成中角标 + 竖排文字），收起状态存 `SharedPreferences: notes_ai_collapsed`，**生成中不允许收起** |
 | AI 能力 | 改写 7（润色/扩写/缩写/语气/翻译/纠错/格式，作用于选区）、生成 7（续写/摘要/标题/标签/大纲/纪要模板/复习卡片）、问答 1（只读）；温度 0.3/0.7/0.2；上下文：选区前后各 200 字，正文超 `notes_context_char_limit`（默认 12000）时降级为「大纲+选区+命中段落」并提示 |
 | AI 写回 | **任何改正文都先过 diff 弹层**（桌面宽 720 居中；窄屏 `< 820` 走**全屏路由**，关闭 = 拒绝；红删绿增 + 「省略 N 行」折叠 + `[复制结果][拒绝][接受并应用]`）；接受后写进**编辑器缓冲**（`Ctrl+Z` 可撤销）再走自动保存；拒绝只关窗 |
-| 界面 | 桌面：笔记页是左栏「会话 \| 笔记」Tab（**不新增路由**）；主区**上预览 / 下编辑**（唯一一套布局），下区高度三档 **40% / 20% / 0%（收起）**、分隔条可拖并吸附到最近档位（全局存 `SharedPreferences: notes_editor_split_ratio`）；语法工具栏（粗体/斜体/H1-H3/列表/任务列表/代码块/行内码/链接/表格/引用/公式/图片，有选区则包裹、无选区则插模板）；停写 800ms 自动保存 + `Ctrl+S`；外部改动（mtime 变化）弹窗让用户选「重新加载 / 保留本地」 |
+| 界面 | 桌面：笔记页是左栏「会话 \| 笔记」Tab（**不新增路由**）；主区**上预览 / 下编辑**（唯一一套布局），下区高度三档 **40% / 20% / 0%（收起）**、分隔条可拖并吸附到最近档位（全局存 `SharedPreferences: notes_editor_split_ratio`）；语法工具栏（粗体/斜体/H1-H3/列表/任务列表/代码块/行内码/链接/表格/引用/公式/图片，有选区则包裹、无选区则插模板）；**停止输入 N 秒后自动保存**（`note_auto_save_seconds`，默认 **10**，设置页可改 1–3600）+ `Ctrl+S`；外部改动（mtime 变化）弹窗让用户选「重新加载 / 保留本地」 |
 | 移动端 | 底部 Tab **`会话 \| 笔记`** 是唯一工作区切换入口（侧栏内部的分段 Tab 在窄屏隐藏）；笔记内部是**栈**：列表 → 编辑页（同一套上下分屏，档位标签压成 `40%｜20%｜0`）→ **AI 底部抽屉**（`DraggableScrollableSheet` 初值 70%、可上拉全屏、可拖到 40% 关闭；抽屉内的 diff 以全屏路由打开）；编辑页顶栏左侧是返回按钮 |
 | 窄窗口降级 | 窗口宽度 `< 1080`（侧栏 + 主区 + AI 边栏放不下）时 AI 边栏**强制收起成 44px 竖轨**，展开按钮置灰，tooltip「窗口太窄，AI 边栏已收起」 |
 | 外部 md 文件 | 侧栏笔记 Tab **最上方**「外部文件」区的入口 = 打开 md 文件 / 打开文件夹 /（已开目录时）重新扫描·关闭目录（**不在「☰ 更多」菜单里**）；其下列出所选目录内的 `.md`（递归 ≤3 层、≤800 个，跳过隐藏项与符号链接，只 `stat` 不读正文），点击在主区查看；单独打开且不在该目录内的文件多一行「单独打开」 |
-| 外部文件只读 | 外部文件**默认只读**（纯预览、无编辑区、无档位控件，顶栏「只读」徽标 + 状态条路径）；点「开启编辑」需确认一次（每文件每会话），之后按 800ms 自动保存**写回原文件**；写回**不加 front-matter**、BOM/CRLF 原样还原；保存前比对 mtime（冲突弹窗）；文件被删时可选「另存为笔记」；AI 的「应用」在只读态被拦下 |
+| 外部文件只读 | 外部文件**默认只读**（纯预览、无编辑区、无档位控件，顶栏「只读」徽标 + 状态条路径）；点「开启编辑」需确认一次（每文件每会话），之后按**同一个自动保存间隔**写回原文件；写回**不加 front-matter**、BOM/CRLF 原样还原；保存前比对 mtime（冲突弹窗）；文件被删时可选「另存为笔记」；AI 的「应用」在只读态被拦下 |
 | 外部文件边界 | `<root>/notes/` 内的文件一律按**内部笔记**打开（同一文件不能有两个真相）；系统选择器给的**临时副本**（缓存目录内）不可写、禁用「开启编辑」；>4 MiB 或含 NUL 的文件不预览；外部目录/单文件的路径存 `SharedPreferences: notes_external_root / notes_external_file` |
 
 ---
@@ -407,7 +411,8 @@ Documents/XChat/                  # 数据根（AppPaths）
 | `providers[]` + `current_provider` + `current_model` | 服务列表与当前选择 |
 | `default_params` | 默认模型参数（SessionParams） |
 | `default_tools` / `default_tool_calls_limit` | 新会话默认工具与预算 |
-| `continue_mode` / `continue_prompt` / `max_tool_calls_per_turn` | 续判模式/模板/单轮上限 |
+| `continue_mode` / `continue_prompt` / `max_tool_calls_per_turn` | 续判模式/模板/单轮上限；设置页有「设为默认自动续判提示词」按钮（升级后一键同步新默认文案，`{n}` = 累计工具调用次数） |
+| `note_auto_save_seconds` | 笔记停止输入后多少秒自动保存（1–3600，默认 10；内部笔记与外部 md 写回共用） |
 | `editor_command` | 外部编辑器命令 |
 | `theme_mode` | system/light/dark |
 | `window_size` | 桌面窗口尺寸预设（下次启动生效） |
@@ -465,7 +470,9 @@ Documents/XChat/                  # 数据根（AppPaths）
   精确到分钟（旧存档无时间字段则不显示）。
 - **思考块**：可折叠，默认折叠，流式时自动展开；标注来源模式（reasoning_content/think_tag）。
 - **工具调用块**：命令 + 参数 + 结果摘要，可展开全文；错误态样式；流式参数增量展示。
-- **用量角标**（UsageBadge）：单条 in/out/cache；状态栏累计 + 上下文条
+- **用量角标**（UsageBadge）：单条 in/out/cache（cache 显示**缓存利用率** = `cache/input`，
+  悬停可见原始计数）；状态栏累计 + **累计耗时**（各轮「接收 − 本轮起始 user 发送」之和，
+  正在生成的那一轮也实时计入）+ 上下文条
   （context / 模型上下文窗口占比，窗口来自 model_specs 或手动配置）。
 - **输入区**：多行编辑；Enter 发送 / Ctrl+Enter 换行（可切换「Enter 换行」模式）；
   发送/停止按钮；添加文件（任意类型、体积校验、按类型显示芯片、可移除）+

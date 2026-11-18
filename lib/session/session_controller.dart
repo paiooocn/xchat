@@ -84,6 +84,12 @@ class SessionController extends ChangeNotifier {
   String? _error;
   String? _notice;
 
+  /// 当前这一轮（最近一次 [AgentRoundStarted]）的开始时刻。
+  ///
+  /// 每轮 assistant 落盘后清空；用于把「正在生成、还没落盘」的时间也计入
+  /// 总耗时（[liveRoundElapsed]），已落盘的轮次不再重复计。
+  DateTime? _roundStartedAt;
+
   Session? get session => _session;
   bool get isRunning => _running;
 
@@ -398,6 +404,7 @@ class SessionController extends ChangeNotifier {
       _running = false;
       _runningTaskId = null;
       _engine = null;
+      _roundStartedAt = null;
       notifyListeners();
     }
   }
@@ -407,6 +414,7 @@ class SessionController extends ChangeNotifier {
       case AgentRoundStarted():
         // Keep accumulated buffers only within a single assistant message;
         // a new round means the previous assistant was persisted.
+        _roundStartedAt = DateTime.now();
         _reasoning.clear();
         _content.clear();
       case AgentReasoningDelta(:final text):
@@ -420,6 +428,8 @@ class SessionController extends ChangeNotifier {
       case AgentToolResult(:final name, :final content, :final isError):
         _toolResults.add('${isError ? '✗' : '✓'} $name: ${_preview(content)}');
       case AgentAssistantCompleted():
+        // 这一轮已落盘（计入 Session.totalAssistantDuration），不再重复计。
+        _roundStartedAt = null;
         _reasoning.clear();
         _content.clear();
         _liveToolCalls.clear();
@@ -444,6 +454,7 @@ class SessionController extends ChangeNotifier {
   }
 
   void _clearStream() {
+    _roundStartedAt = null;
     _reasoning.clear();
     _content.clear();
     _liveToolCalls.clear();
@@ -494,4 +505,12 @@ class SessionController extends ChangeNotifier {
       _session?.cumulativeUsage ?? TokenUsage.empty;
 
   int? get contextTokens => _session?.contextTokens;
+
+  /// 正在生成的这一轮已经过去的时间（未落盘部分）；没在跑 → 0。
+  Duration get liveRoundElapsed {
+    final startedAt = _roundStartedAt;
+    if (startedAt == null || !_running) return Duration.zero;
+    final elapsed = DateTime.now().difference(startedAt);
+    return elapsed.isNegative ? Duration.zero : elapsed;
+  }
 }

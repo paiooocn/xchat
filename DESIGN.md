@@ -370,7 +370,9 @@ SessionModel(messages) ──► OutboundAdapter ──► llm_api ChatMessage[]
   → 原子写盘
 ```
 
-UI：单条消息底部 `UsageBadge`（in/out/cache），会话状态栏累计 + `ContextBar`
+UI：单条消息底部 `UsageBadge`（in/out/cache，cache 显示缓存利用率 `cache/input`），
+会话状态栏累计 + 累计耗时（各轮「接收 − 本轮起始 user 发送」之和；同一轮多条
+assistant 只按最后一条计一次，正在生成的那一轮实时计入）+ `ContextBar`
 （`context / 模型上下文窗口` 占比，窗口值来自预设或手动配置）。
 
 ---

@@ -25,6 +25,18 @@ class TokenUsage {
     return (input ?? 0) + (output ?? 0);
   }
 
+  /// 缓存利用率 = `cache / input`（0..1），即 prompt 里命中缓存的比例。
+  ///
+  /// `input` 未知 / 为 0、或 `cache` 未知 → `null`（无法计算，不显示）。
+  /// 结果收敛到 0..1：正常 provider 不会让 cache 超过 input，但宁可夹紧
+  /// 也不让界面出现 `>100%` 的怪值。
+  double? get cacheRate {
+    final inCount = input;
+    final cacheCount = cache;
+    if (inCount == null || inCount <= 0 || cacheCount == null) return null;
+    return (cacheCount / inCount).clamp(0.0, 1.0);
+  }
+
   TokenUsage merge(TokenUsage other) => TokenUsage(
         input: _add(input, other.input),
         output: _add(output, other.output),

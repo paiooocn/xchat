@@ -16,7 +16,7 @@
 meta:
   updated_at: "2026-11-17"
   git_sha: "740cd98"
-  app_version: "0.8.0"
+  app_version: "0.8.1"
 
 risk_levels:
   high: "破坏持久化格式、协议兼容或安全边界 —— 动手前必读 GOTCHAS.md 对应条目 + DESIGN.md 章节"
@@ -127,6 +127,7 @@ features:
       - "lib/core/app_paths.dart"
       - "lib/ui/widgets/note_editor.dart"
       - "lib/ui/widgets/note_list.dart"
+      - "lib/ui/widgets/note_folder_dialog.dart"
       - "lib/ui/pages/notes_panel.dart"
       - "lib/llm/note_assistant.dart"
       - "lib/ui/widgets/note_ai_panel.dart"
@@ -219,10 +220,15 @@ features:
     files:
       - "lib/models/token_usage.dart"
       - "packages/llm_api/lib/src/core/usage.dart"
+      - "lib/models/session.dart"
+      - "lib/session/session_controller.dart"
       - "lib/ui/widgets/usage_badge.dart"
+      - "lib/ui/pages/home_page.dart"
     design: "DESIGN.md §8"
     contracts:
       - "单次用量写进 assistant 消息；累计用量写进 system 消息的 input/output/cache 与 context"
+      - "缓存利用率 = cache/input（TokenUsage.cacheRate），badge 里 cache 段显示百分比、悬停给原始计数"
+      - "会话累计耗时 = 各轮「最后一条 assistant.receivedAt − 本轮起始 user.sentAt」之和（Session.totalAssistantDuration）；正在生成的那一轮由 SessionController.liveRoundElapsed 实时补上"
 
   - id: react_budget
     title: "ReAct 主循环、工具次数预算与自动续判"

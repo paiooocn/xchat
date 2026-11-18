@@ -68,7 +68,9 @@ Future<void> waitForFileContent(
   WidgetTester tester,
   File file,
   String expected, {
-  int rounds = 200,
+  // 自动保存是「停止输入后 N 秒」（默认 10 秒）：轮数要覆盖一个完整间隔，
+  // 否则并发跑全套时会偶发假失败（GOTCHAS §21）。
+  int rounds = 400,
 }) async {
   for (var i = 0; i < rounds; i++) {
     if (file.existsSync() && file.readAsStringSync() == expected) return;

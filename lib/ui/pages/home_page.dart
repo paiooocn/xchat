@@ -3117,6 +3117,9 @@ class _Header extends StatelessWidget {
     final usage = controller.cumulativeUsage;
     final contextWindow = controller.activeProvider.contextWindowFor(session.model);
     final contextTokens = controller.contextTokens;
+    // 累计耗时 = 已落盘的各轮之和 + 正在生成的这一轮（未落盘部分）。
+    final totalDuration =
+        session.totalAssistantDuration + controller.liveRoundElapsed;
     final ratio = (contextWindow != null && contextWindow > 0 && contextTokens != null)
         ? (contextTokens / contextWindow).clamp(0.0, 1.0)
         : null;
@@ -3141,7 +3144,11 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 4),
           Row(
             children: [
-              UsageBadge(usage: usage, contextTokens: contextTokens),
+              UsageBadge(
+                usage: usage,
+                contextTokens: contextTokens,
+                duration: totalDuration.inSeconds > 0 ? totalDuration : null,
+              ),
               const Spacer(),
               Text(
                 '工具 ${session.toolCalls}/${session.toolCallsLimit == 0 ? '禁用' : session.toolCallsLimit}',

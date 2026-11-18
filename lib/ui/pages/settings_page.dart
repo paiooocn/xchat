@@ -30,6 +30,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _limit = TextEditingController();
   final _maxAttachment = TextEditingController();
   final _maxFileAttachment = TextEditingController();
+  final _noteAutoSave = TextEditingController();
   final _continuePrompt = TextEditingController();
   final _root = TextEditingController();
   final _httpProxy = TextEditingController();
@@ -46,6 +47,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _limit.text = config.defaultToolCallsLimit.toString();
     _maxAttachment.text = _mbText(config.maxAttachmentBytes);
     _maxFileAttachment.text = _mbText(config.maxFileAttachmentBytes);
+    _noteAutoSave.text = config.noteAutoSaveSeconds.toString();
     _continuePrompt.text = config.continuePrompt;
     _root.text = AppPaths.instance.root;
     _httpProxy.text = config.proxy.httpProxy;
@@ -60,6 +62,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _limit.dispose();
     _maxAttachment.dispose();
     _maxFileAttachment.dispose();
+    _noteAutoSave.dispose();
     _continuePrompt.dispose();
     _root.dispose();
     _httpProxy.dispose();
@@ -95,6 +98,9 @@ class _SettingsPageState extends State<SettingsPage> {
       fallback: kDefaultMaxFileAttachmentBytes,
       cap: kMaxFileAttachmentBytesCap,
     );
+    config.noteAutoSaveSeconds = (int.tryParse(_noteAutoSave.text.trim()) ??
+            kDefaultNoteAutoSaveSeconds)
+        .clamp(kMinNoteAutoSaveSeconds, kMaxNoteAutoSaveSeconds);
     config.continuePrompt = _continuePrompt.text;
     config.proxy
       ..httpProxy = _httpProxy.text.trim()
@@ -103,6 +109,18 @@ class _SettingsPageState extends State<SettingsPage> {
     await state.saveConfig();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存')));
+    }
+  }
+
+  /// 升级用户一键把续判提示词同步成新默认（默认文案变过，老配置里还是旧的）。
+  Future<void> _resetContinuePrompt(AppState state) async {
+    setState(() => _continuePrompt.text = kDefaultContinuePrompt);
+    state.config.continuePrompt = kDefaultContinuePrompt;
+    await state.saveConfig();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已把自动续判提示词设为默认')),
+      );
     }
   }
 
@@ -268,7 +286,25 @@ class _SettingsPageState extends State<SettingsPage> {
             minLines: 3,
             maxLines: 6,
             decoration: const InputDecoration(
-              labelText: '自动续判提示词（{n} 累计次数，{limit} 本轮上限）',
+              labelText: '自动续判提示词（{n} = 累计工具调用次数）',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _resetContinuePrompt(state),
+              icon: const Icon(Icons.restart_alt, size: 18),
+              label: const Text('设为默认自动续判提示词'),
+            ),
+          ),
+          _section('笔记'),
+          TextField(
+            controller: _noteAutoSave,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '笔记自动保存间隔（秒，停止输入后）',
+              helperText: '停止输入这么久后自动落盘；默认 10 秒，可填 1–3600',
             ),
           ),
           _section('搜索引擎（按顺序依次回退）'),

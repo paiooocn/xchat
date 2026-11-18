@@ -112,6 +112,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('本轮耗时'), findsOneWidget);
+    // token 消耗显示栏：累计耗时（user 发送 → assistant 接收 = 90 秒）。
+    expect(find.text('耗时 1 分 30 秒'), findsOneWidget);
   });
 
   testWidgets('mobile: opening a project session shows its history', (tester) async {

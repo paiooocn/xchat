@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-17 15:08"
-  git_sha: "880a24b"
+  generated_at: "2026-11-17 17:42"
+  git_sha: "1e821b7"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 147
-  line_count: 40297
+  file_count: 148
+  line_count: 40868
 
 modules:
   - id: "agent"
@@ -116,7 +116,7 @@ modules:
         symbols: ["applyWindowSize"]
   - id: "data"
     path: "lib/data"
-    lines: 1847
+    lines: 1848
     deps: ["core", "data.xml", "models"]
     files:
       - path: "lib/data/atomic_file.dart"
@@ -132,7 +132,7 @@ modules:
         lines: 213
         symbols: ["isTransientCopyPath", "ExternalDocRepository"]
       - path: "lib/data/index_repository.dart"
-        lines: 295
+        lines: 296
         symbols: ["IndexRepository"]
       - path: "lib/data/memory_repository.dart"
         lines: 74
@@ -163,18 +163,18 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 982
+    lines: 991
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
         lines: 28
         symbols: ["readText", "readTextTrim"]
       - path: "lib/data/xml/note_md.dart"
-        lines: 298
+        lines: 306
         doc: "Serialization of Markdown notes: the front-matter header and the body."
         symbols: ["encodeNote", "titleFromBody", "previewFromBody", "parseTags"]
       - path: "lib/data/xml/project_xml.dart"
-        lines: 103
+        lines: 104
         symbols: ["ProjectXml"]
       - path: "lib/data/xml/session_xml.dart"
         lines: 395
@@ -209,7 +209,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4733
+    lines: 4814
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -217,7 +217,7 @@ modules:
         doc: "Session execution mode controlling when tool calls require approval."
         symbols: ["AgentMode", "requiresApproval"]
       - path: "lib/models/app_config.dart"
-        lines: 561
+        lines: 577
         symbols: ["ContinueMode", "AppConfig"]
       - path: "lib/models/archive_group.dart"
         lines: 141
@@ -242,7 +242,7 @@ modules:
         lines: 518
         symbols: ["ReasoningOption", "ModelsDevModel", "ModelsDevProvider", "ModelsDevSource", "ModelsDevCatalog", "modelsDevPresetFor", "compareModelsDevNewestFirst", "ModelsDevApplyResult", "ModelsDevSyncResult"]
       - path: "lib/models/note.dart"
-        lines: 177
+        lines: 197
         doc: "Markdown notes: a note is one `<root>/notes/<id>.md` file with a"
         symbols: ["Note", "NoteSummary", "NoteIndexEntry"]
       - path: "lib/models/orphan_file.dart"
@@ -262,7 +262,7 @@ modules:
         lines: 187
         symbols: ["SearchEngineConfig"]
       - path: "lib/models/session.dart"
-        lines: 380
+        lines: 413
         symbols: ["SessionKind", "Session"]
       - path: "lib/models/session_message.dart"
         lines: 233
@@ -291,7 +291,7 @@ modules:
         lines: 130
         symbols: ["TaskItem", "parseTaskMarkdown"]
       - path: "lib/models/token_usage.dart"
-        lines: 79
+        lines: 91
         symbols: ["TokenUsage"]
   - id: "pkg.llm_api"
     path: "packages/llm_api/lib"
@@ -413,29 +413,29 @@ modules:
         symbols: ["TransportRequest", "TransportResponse", "HttpTransport"]
   - id: "session"
     path: "lib/session"
-    lines: 602
+    lines: 621
     deps: ["agent", "core", "data", "models"]
     files:
       - path: "lib/session/session_controller.dart"
-        lines: 497
+        lines: 516
         symbols: ["SessionController"]
       - path: "lib/session/session_ops.dart"
         lines: 105
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1420
+    lines: 1464
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 1317
+        lines: 1361
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 11839
+    lines: 11906
     deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -448,10 +448,10 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3776
+        lines: 3785
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
-        lines: 1152
+        lines: 1174
         symbols: ["NotesPanel"]
       - path: "lib/ui/pages/orphans_page.dart"
         lines: 213
@@ -469,7 +469,7 @@ modules:
         lines: 841
         symbols: ["SessionWizardPage"]
       - path: "lib/ui/pages/settings_page.dart"
-        lines: 659
+        lines: 695
         symbols: ["SettingsPage", "PathsSection"]
       - path: "lib/ui/pages/sync_page.dart"
         lines: 823
@@ -500,7 +500,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 5420
+    lines: 5770
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -523,7 +523,7 @@ modules:
         doc: "Math (KaTeX/TeX) support for the markdown renderer."
         symbols: ["normalizeTex"]
       - path: "lib/ui/widgets/message_bubble.dart"
-        lines: 339
+        lines: 331
         symbols: ["MessageBubble"]
       - path: "lib/ui/widgets/note_ai_panel.dart"
         lines: 534
@@ -533,8 +533,11 @@ modules:
       - path: "lib/ui/widgets/note_editor.dart"
         lines: 518
         symbols: ["NoteEditorController", "NoteEditor", "NoteSaveIntent", "NoteSaveShortcut", "NoteSummaryTile"]
+      - path: "lib/ui/widgets/note_folder_dialog.dart"
+        lines: 154
+        symbols: ["NoteFolderDialog", "NoteFolderRenameDialog"]
       - path: "lib/ui/widgets/note_list.dart"
-        lines: 628
+        lines: 772
         symbols: ["NoteList"]
       - path: "lib/ui/widgets/project_dialog.dart"
         lines: 215
@@ -552,8 +555,8 @@ modules:
         lines: 165
         symbols: ["ToolCallBlock", "ToolResultBlock"]
       - path: "lib/ui/widgets/usage_badge.dart"
-        lines: 68
-        symbols: ["formatTokensCompact", "formatTokensFull", "UsageBadge"]
+        lines: 128
+        symbols: ["formatTokensCompact", "formatTokensFull", "formatDuration", "UsageBadge"]
   - id: "util"
     path: "lib/util"
     lines: 306
@@ -593,7 +596,7 @@ tests:
     lines: 264
     cases: 19
   - path: "test/external_doc_ui_test.dart"
-    lines: 250
+    lines: 252
     cases: 8
   - path: "test/extract_script_test.dart"
     lines: 221
@@ -605,7 +608,7 @@ tests:
     lines: 30
     cases: 0
   - path: "test/home_flow_test.dart"
-    lines: 136
+    lines: 138
     cases: 2
   - path: "test/home_template_dialog_test.dart"
     lines: 106
@@ -641,8 +644,11 @@ tests:
     lines: 339
     cases: 13
   - path: "test/note_editor_test.dart"
-    lines: 232
-    cases: 7
+    lines: 270
+    cases: 8
+  - path: "test/note_folder_test.dart"
+    lines: 295
+    cases: 9
   - path: "test/note_mobile_test.dart"
     lines: 264
     cases: 8
@@ -704,8 +710,8 @@ tests:
     lines: 111
     cases: 10
   - path: "test/sidebar_search_test.dart"
-    lines: 129
-    cases: 5
+    lines: 173
+    cases: 6
   - path: "test/sidebar_tab_test.dart"
     lines: 138
     cases: 6
@@ -727,3 +733,6 @@ tests:
   - path: "test/template_max_tokens_test.dart"
     lines: 124
     cases: 4
+  - path: "test/usage_badge_test.dart"
+    lines: 203
+    cases: 14

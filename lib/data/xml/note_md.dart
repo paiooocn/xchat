@@ -14,10 +14,13 @@
 /// updated_at: 2026-11-04T10:02:11Z
 /// pinned: false
 /// archived_at: null
+/// folder: 会议
 /// ---
 ///
 /// # 正文从这里开始
 /// ```
+///
+/// `folder`（收纳箱 / 虚拟文件夹）只在非空时写入；没有这一行的旧文件读出 `''`。
 ///
 /// Rules:
 /// * the body is stored **verbatim** — no reformatting (except the single
@@ -39,6 +42,7 @@ const Set<String> noteFrontMatterKeys = <String>{
   'updated_at',
   'pinned',
   'archived_at',
+  'folder',
 };
 
 /// How many characters of the body end up in the list preview.
@@ -61,6 +65,8 @@ String encodeNote(Note note) {
     ..writeln(
       'archived_at: ${note.archivedAt == null ? 'null' : _scalar(note.archivedAt!.toUtc().toIso8601String())}',
     );
+  // 空收纳箱不写（旧文件与未归箱的笔记字节不变）。
+  if (note.folder.isNotEmpty) buffer.writeln('folder: ${_scalar(note.folder)}');
   for (final entry in note.extra.entries) {
     buffer.writeln('${entry.key}: ${entry.value}');
   }
@@ -132,6 +138,7 @@ Note decodeNote(
         DateTime.now().toUtc(),
     pinned: (fields['pinned'] ?? '').toLowerCase() == 'true',
     archivedAt: _parseTime(fields['archived_at']),
+    folder: _unquote(fields['folder'] ?? ''),
     body: body,
     extra: extra,
   );
@@ -160,6 +167,7 @@ NoteSummary decodeNoteSummary(
     updatedAt: note.updatedAt,
     pinned: note.pinned,
     archivedAt: note.archivedAt,
+    folder: note.folder,
     preview: previewFromBody(note.body),
   );
 }

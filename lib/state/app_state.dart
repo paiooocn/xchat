@@ -370,6 +370,50 @@ class AppState extends ChangeNotifier {
     await saveNote(note);
   }
 
+  /// 收纳箱名列表（活动 + 归档），按名称排序、去重。
+  List<String> get noteFolders {
+    final names = <String>{
+      for (final n in notes) n.folder,
+      for (final n in archivedNotes) n.folder,
+    }.where((name) => name.isNotEmpty).toList()
+      ..sort();
+    return names;
+  }
+
+  /// 把笔记放进收纳箱（[folder] 为空 = 移出收纳箱）。
+  ///
+  /// 收纳箱是**虚拟分组**：只改 front-matter 的 `folder`，不动文件位置。
+  Future<void> setNoteFolder(String id, String folder) async {
+    final note = await readNote(id);
+    if (note == null) return;
+    note.folder = folder.trim();
+    await saveNote(note);
+  }
+
+  /// 重命名收纳箱：箱内全部笔记跟着改（与其他箱同名 = 合并）。
+  Future<void> renameNoteFolder(String oldName, String newName) async {
+    final target = newName.trim();
+    if (target.isEmpty || target == oldName) return;
+    await _rewriteFolder(oldName, target);
+  }
+
+  /// 清空收纳箱：箱内笔记全部移出（笔记本身保留）。
+  Future<void> clearNoteFolder(String name) => _rewriteFolder(name, '');
+
+  Future<void> _rewriteFolder(String oldName, String newFolder) async {
+    final ids = <String>{
+      for (final n in notes) if (n.folder == oldName) n.id,
+      for (final n in archivedNotes) if (n.folder == oldName) n.id,
+    };
+    for (final id in ids) {
+      final note = await readNote(id);
+      if (note == null || note.folder != oldName) continue;
+      note.folder = newFolder;
+      await noteRepository.write(note);
+    }
+    await refreshNotes();
+  }
+
   /// Last modification time of a note file (null when missing).
   ///
   /// The UI uses it to notice edits made outside the app.
