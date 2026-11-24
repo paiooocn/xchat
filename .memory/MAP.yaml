@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-17 17:42"
-  git_sha: "1e821b7"
+  generated_at: "2026-11-24 15:37"
+  git_sha: "8e90456"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 148
-  line_count: 40868
+  file_count: 152
+  line_count: 41956
 
 modules:
   - id: "agent"
@@ -72,7 +72,7 @@ modules:
         symbols: ["SyncPairTarget", "SyncFailure", "SyncService"]
   - id: "core"
     path: "lib/core"
-    lines: 1642
+    lines: 1645
     deps: ["models", "pkg.llm_api"]
     files:
       - path: "lib/core/app_activity.dart"
@@ -82,7 +82,7 @@ modules:
         lines: 33
         doc: "应用显示名的**唯一来源**。"
       - path: "lib/core/app_paths.dart"
-        lines: 367
+        lines: 370
         symbols: ["AppPaths"]
       - path: "lib/core/app_version.dart"
         lines: 14
@@ -116,7 +116,7 @@ modules:
         symbols: ["applyWindowSize"]
   - id: "data"
     path: "lib/data"
-    lines: 1848
+    lines: 1988
     deps: ["core", "data.xml", "models"]
     files:
       - path: "lib/data/atomic_file.dart"
@@ -128,6 +128,9 @@ modules:
       - path: "lib/data/config_repository.dart"
         lines: 38
         symbols: ["ConfigRepository"]
+      - path: "lib/data/expertise_repository.dart"
+        lines: 140
+        symbols: ["ExpertiseRepository"]
       - path: "lib/data/external_doc_repository.dart"
         lines: 213
         symbols: ["isTransientCopyPath", "ExternalDocRepository"]
@@ -163,7 +166,7 @@ modules:
         symbols: ["TemplateRepository"]
   - id: "data.xml"
     path: "lib/data/xml"
-    lines: 991
+    lines: 1008
     deps: ["core", "models"]
     files:
       - path: "lib/data/xml/cdata.dart"
@@ -180,7 +183,7 @@ modules:
         lines: 395
         symbols: ["SessionXml"]
       - path: "lib/data/xml/template_xml.dart"
-        lines: 88
+        lines: 105
         symbols: ["TemplateXml"]
       - path: "lib/data/xml/xml_writer.dart"
         lines: 70
@@ -209,7 +212,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 4814
+    lines: 5001
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -225,6 +228,10 @@ modules:
       - path: "lib/models/catalog_index.dart"
         lines: 356
         symbols: ["SessionIndexEntry", "ProjectIndexEntry", "CatalogIndex"]
+      - path: "lib/models/expertise.dart"
+        lines: 161
+        doc: "系统提示词的两种配置方式（会话模板）。"
+        symbols: ["SystemPromptMode", "Expertise", "sortExpertiseLibrary", "composeExpertisePrompt", "selectedExpertises", "hasUsableExpertiseSelection"]
       - path: "lib/models/external_doc.dart"
         lines: 108
         doc: "外部 Markdown 文件（笔记目录之外、用户磁盘上的 `.md`）。"
@@ -271,7 +278,7 @@ modules:
         lines: 129
         symbols: ["ThinkingSwitch", "SessionParams"]
       - path: "lib/models/session_template.dart"
-        lines: 87
+        lines: 113
         symbols: ["SessionTemplate"]
       - path: "lib/models/shell_exec.dart"
         lines: 239
@@ -424,18 +431,18 @@ modules:
         symbols: ["SessionOps"]
   - id: "state"
     path: "lib/state"
-    lines: 1464
+    lines: 1493
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session"]
     files:
       - path: "lib/state/app_state.dart"
-        lines: 1361
+        lines: 1390
         symbols: ["AppState"]
       - path: "lib/state/approval_center.dart"
         lines: 103
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 11906
+    lines: 12404
     deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -444,11 +451,14 @@ modules:
       - path: "lib/ui/pages/compress_prompts_page.dart"
         lines: 179
         symbols: ["showCompressDialog", "CompressPromptsPage"]
+      - path: "lib/ui/pages/expertise_page.dart"
+        lines: 431
+        symbols: ["ExpertisePage", "ExpertiseEditPage"]
       - path: "lib/ui/pages/font_test_page.dart"
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3785
+        lines: 3797
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1174
@@ -475,10 +485,10 @@ modules:
         lines: 823
         symbols: ["SyncPage"]
       - path: "lib/ui/pages/template_wizard_page.dart"
-        lines: 592
+        lines: 618
         symbols: ["TemplateWizardPage"]
       - path: "lib/ui/pages/templates_page.dart"
-        lines: 407
+        lines: 436
         symbols: ["TemplatesPage"]
       - path: "lib/ui/pages/tools_page.dart"
         lines: 804
@@ -500,7 +510,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 5770
+    lines: 5984
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -545,6 +555,9 @@ modules:
       - path: "lib/ui/widgets/session_info_dialog.dart"
         lines: 264
         symbols: ["SessionInfoDialog"]
+      - path: "lib/ui/widgets/system_prompt_config.dart"
+        lines: 214
+        symbols: ["SystemPromptConfig"]
       - path: "lib/ui/widgets/task_session_view.dart"
         lines: 858
         symbols: ["TaskListView", "TaskChatHeader", "showTaskImportDialog", "AutoRunOptions"]
@@ -592,6 +605,12 @@ tests:
   - path: "test/compress_test.dart"
     lines: 113
     cases: 7
+  - path: "test/expertise_manage_test.dart"
+    lines: 208
+    cases: 3
+  - path: "test/expertise_test.dart"
+    lines: 228
+    cases: 13
   - path: "test/external_doc_test.dart"
     lines: 264
     cases: 19
@@ -729,6 +748,9 @@ tests:
     cases: 26
   - path: "test/template_default_test.dart"
     lines: 143
+    cases: 5
+  - path: "test/template_expertise_test.dart"
+    lines: 236
     cases: 5
   - path: "test/template_max_tokens_test.dart"
     lines: 124

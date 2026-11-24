@@ -161,6 +161,9 @@ class AppPaths {
   /// Catalog index of sessions/projects (active + archived).
   String get indexFile => p.join(root, 'index.json');
 
+  /// 用户维护的 AI 专长库（内置库的覆盖/新增/删除；见 ExpertiseRepository）。
+  String get expertiseFile => p.join(root, 'expertises.json');
+
   /// Cached models.dev provider/model catalog snapshot.
   String get modelsDevFile => p.join(root, 'models_dev.json');
 

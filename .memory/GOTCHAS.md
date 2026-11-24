@@ -564,3 +564,38 @@ data for current backend (SkSL). Found stages: Vulkan
 - **续判默认文案变了，但老 `config.json` 不会迁移**：`continue_prompt` 一直读用户
   配置，升级后仍是旧文案 —— 设置页的「设为默认自动续判提示词」按钮就是给用户手动
   同步用的，别再写「启动时比对默认值并覆盖」的逻辑（会吞掉用户自定义）。
+
+## §35 模板系统提示词的两种模式（文本输入 / AI专长）
+
+- **`systemPrompt` 是解析后的生效值，不是编辑中的草稿**：模板 XML 同时存
+  `system_prompt`（保存时按当前模式算好）、`prompt_mode`、`manual_prompt`、
+  `expertise_ids`。编辑页打开时手动框取 `manualPrompt`（旧档回退 `systemPrompt`），
+  专长模式则把已选 id 映射回 badge；保存时再写回 `systemPrompt`。别让消费方
+  自己判断 `prompt_mode` 再拼一次（创建会话 / 同步只读 `systemPrompt`）。
+- **组合顺序只认专长库 `sort`**（同序号按 id）：用户在 UI 上的点击顺序存在
+  `Set` 里、没有顺序语义，`composeExpertisePrompt` 内部重新排序。往库里加专长时
+  只调 `sort` 就能改最终提示词顺序，不要改组合函数。
+- **专长库缺失 = 空列表 + 空状态**：内置 asset 读失败返回 `[]`，模板页显示
+  「暂无可用的 AI 专长。」。widget test 里可以直接
+  `state.expertises = []` 构造空态（`AppState.load()` 会真的读内置 asset）。
+- **专长改动走 `<root>/expertises.json`**：管理页把**整表**写回
+  （`ExpertiseRepository.save(effective)`），同 id 覆盖、新 id 追加；被删的内置 id
+  必须进 `deleted` 墓碑，否则下次 load 又会从内置库复活。内置 id 集合只在
+  `AppState.refreshExpertises` 时通过 `ExpertiseRepository.loadBundled()` 算一次。
+- **停用（`enabled=false`）不是删除**：停用项仍存于列表与用户文件里，但
+  `SystemPromptConfig` 不展示、`composeExpertisePrompt` / `hasUsableExpertiseSelection`
+  都跳过；保存校验用后者而不是 `selectedIds.isEmpty`（否则全选停用项会被误判可保存）。
+- **旧版 id 靠 `aliases` 兼容**：内置库从细粒度改成领域级后，旧模板引用的
+  `code_review` / `debugging` / `sql_data` 等只能通过 `Expertise.aliases` 命中
+  （`composeExpertisePrompt` / `hasUsableExpertiseSelection` 都按本体 id 或别名匹配）。
+  以后合并专长时必须把被合并的旧 id 挂到新专长的 `aliases` 上，否则旧模板会静默
+  丢内容（未知 id 直接跳过）。
+- **复制提示词只写不读**：管理页用 `Clipboard.setData`（Android 上 `Clipboard.getData`
+  会被逐应用权限挡掉，见 §27），详情弹层与行内图标共用同一份文案。
+- **badge 视觉约定**：装在描边容器里（与提示词输入框同宽、同款 OutlineInputBorder），
+  选中绿色填充 `#43A047`、白字、**无对勾图标**，badge 间距约 12px；改样式时同步
+  `test/template_expertise_test.dart` 里的颜色断言。
+- **切换模式不清数据**：模式与已选 id 都在父页面 state，`SystemPromptConfig`
+  只做展示；文本控制器常驻，条件渲染 TextField 不会丢文本。
+- **未选专长要拦住保存**：两个编辑入口（模板直接编辑页 / 向导第 2 步）各自校验，
+  提示文案统一用 `SystemPromptConfig.emptySelectionText`。

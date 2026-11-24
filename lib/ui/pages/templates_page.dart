@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../agent/tools/builtin_tools.dart';
 import '../../core/ids.dart';
+import '../../models/expertise.dart';
 import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
 import '../../state/app_state.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/system_prompt_config.dart';
 import 'template_wizard_page.dart';
 
 /// Lists, edits and creates session templates.
@@ -63,6 +65,7 @@ class TemplatesPage extends StatelessWidget {
                 '${template.provider} · ${template.model} · '
                 'limit=${template.toolCallsLimit} · tools=${template.tools.length}'
                 '${template.quickEnabled ? ' · 快捷会话' : ''}'
+                '${template.promptMode == SystemPromptMode.expertise ? ' · AI专长 ${template.expertiseIds.length}' : ''}'
                 '${template.id == state.config.defaultTemplateId ? ' · 默认模板' : ''}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -193,6 +196,11 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
   final _limit = TextEditingController();
   final _maxTokens = TextEditingController();
   final Set<String> _tools = <String>{};
+
+  /// 系统提示词配置方式（文本输入 / AI专长），与已选专长。
+  SystemPromptMode _promptMode = SystemPromptMode.text;
+  final Set<String> _expertiseIds = <String>{};
+
   late String _providerId;
   ThinkingSwitch _thinking = ThinkingSwitch.auto;
   ThinkingReplyMode _replyMode = ThinkingReplyMode.auto;
@@ -207,7 +215,12 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
     final state = context.read<AppState>();
     _name.text = template.name;
     _description.text = template.description;
-    _system.text = template.systemPrompt;
+    // 旧模板没有 manual_prompt：文本模式下 systemPrompt 就是手动内容。
+    _system.text = template.manualPrompt.isNotEmpty
+        ? template.manualPrompt
+        : (template.promptMode == SystemPromptMode.text ? template.systemPrompt : '');
+    _promptMode = template.promptMode;
+    _expertiseIds.addAll(template.expertiseIds);
     _model.text = template.model;
     _limit.text = template.toolCallsLimit.toString();
     _maxTokens.text = template.params.maxTokens?.toString() ?? '';
@@ -263,10 +276,24 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
 
   Future<void> _save() async {
     final state = context.read<AppState>();
+    if (_promptMode == SystemPromptMode.expertise &&
+        !hasUsableExpertiseSelection(_expertiseIds, state.expertises)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(SystemPromptConfig.emptySelectionText)),
+      );
+      return;
+    }
+    // 最终系统提示词只由当前启用模式生成；另一侧内容原样保留。
+    final systemPrompt = _promptMode == SystemPromptMode.expertise
+        ? composeExpertisePrompt(_expertiseIds, state.expertises)
+        : _system.text;
     final template = widget.template
       ..name = _name.text.trim()
       ..description = _description.text.trim()
-      ..systemPrompt = _system.text
+      ..systemPrompt = systemPrompt
+      ..manualPrompt = _system.text
+      ..promptMode = _promptMode
+      ..expertiseIds = _expertiseIds.toList()
       ..provider = _providerId
       ..model = _model.text.trim()
       ..toolCallsLimit = int.tryParse(_limit.text.trim()) ?? 0
@@ -320,13 +347,15 @@ class _TemplateEditorPageState extends State<_TemplateEditorPage> {
             onChanged: (value) => setState(() => _model.text = value ?? ''),
           ),
           const SizedBox(height: 12),
-          TextField(
+          SystemPromptConfig(
+            mode: _promptMode,
+            onModeChanged: (mode) => setState(() => _promptMode = mode),
             controller: _system,
-            minLines: 3,
-            maxLines: 8,
-            decoration: const InputDecoration(
-              labelText: '系统提示词（{sandbox} 自动替换为会话 sandbox 路径）',
-            ),
+            expertises: state.expertises,
+            selectedIds: _expertiseIds,
+            onToggleExpertise: (id) => setState(() {
+              if (!_expertiseIds.remove(id)) _expertiseIds.add(id);
+            }),
           ),
           const SizedBox(height: 12),
           TextField(

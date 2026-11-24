@@ -1,5 +1,191 @@
 # STATE — 进度交接
 
+## 2026-11-17 · 0.9.0 续：专长改为领域级（8 个）+ 管理页查看/复制
+
+**需求**（用户）
+
+1. 内置专长粒度太细：专长应「能胜任一个小领域多种工作」，重新划分覆盖
+   编程 / 运维 / 办公 / 商业 / 生活等场景。
+2. 补「教育与学习」。
+3. 接受旧 id 别名兼容方案，替换为新版专长。
+4. 专长管理页提供查看 / 复制专长提示词，供编写参考或提供给 Agent 使用。
+
+**做了什么**
+
+- **新版内置库**（`assets/expertises.json`，8 个领域级，sort 10–80）：
+  编程开发 `programming`(10)、数据与数据库 `data_analysis`(20)、
+  运维与基础设施 `devops`(30)、办公与写作 `office`(40)、商业与产品 `business`(50)、
+  生活顾问 `life`(60)、教育与学习 `education`(70)、翻译 `translation`(80)。
+  每个 prompt 改成「领域能力声明 + 任务类型清单 + 处理流程 + 输出规范 + 边界」，
+  段内不再出现 `---`。
+- **别名兼容**：`Expertise` 新增 `aliases`（旧 id 列表）与 `matchesId()`；
+  `composeExpertisePrompt` / `selectedExpertises` / `hasUsableExpertiseSelection`
+  按本体 id 或别名命中；`mergeExpertiseLibraries` 支持用别名覆盖到当前内置项。
+  映射：`programming←code_review/refactoring/debugging/architecture/testing`、
+  `data_analysis←sql_data`、`office←technical_writing/productivity`；`translation` 不变。
+- **管理页查看/复制**（`expertise_page.dart`）：点行打开详情弹层（ID / 别名 /
+  排序 / 状态 / 说明 / 完整提示词 SelectableText），操作含「复制提示词」；
+  列表行内新增复制图标按钮。复制走 `Clipboard.setData`（只写不受 Android
+  读取权限影响），SnackBar 反馈。
+
+**改了哪些文件**
+
+- 改：`assets/expertises.json`、`lib/models/expertise.dart`、
+  `lib/data/expertise_repository.dart`、`lib/ui/pages/expertise_page.dart`、
+  `test/expertise_test.dart`（+别名例）、`test/template_expertise_test.dart`
+  （改用新 id/名称）、`test/expertise_manage_test.dart`（+查看详情/复制例）、
+  `FEATURES.md`、`DESIGN.md`、`.memory/*`
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：515 passed, 1 skipped
+```
+
+- 新增断言：旧 id 经别名命中且顺序仍按 sort、行内/详情复制到剪贴板、
+  管理页增删改停持久化、模板页 8 个 badge 与绿色选中态。
+- 真机要点：①「AI专长管理」共 8 个内置 + 自定义；②点任一专长看完整提示词并复制；
+  ③模板页切 AI专长，选「编程开发」后保存，最终提示词是其完整段落；
+  ④旧模板若引用 `code_review` 等旧 id，保存时会被别名解析到新专长。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送；版本仍 0.9.0+1。
+- 内置专长文案后续可继续打磨（当前每段 ~200–300 字）；如再合并/改名，
+  **必须把旧 id 加进 `aliases`**，否则旧模板会静默丢内容。
+- 专长库不参与局域网同步；两端各自维护。
+
+## 2026-11-17 · 0.9.0 续：AI专长管理页 + badge 样式调整
+
+**需求**（用户）
+
+1. 新增「AI专长」管理页：查看 / 添加 / 编辑 / 停用 / 删除专长，入口在边栏顶部
+   「☰ 更多」菜单。
+2. 模板页专长 badge 用一个框围起来，尺寸与提示词文本框一致；选中改为**绿色背景、
+   去掉对勾图标**；间距约 12px。
+
+**做了什么**
+
+- **持久化**：专长库从「只读内置 asset」升级为
+  `assets/expertises.json` ⊕ `<root>/expertises.json`（`AppPaths.expertiseFile`）。
+  `ExpertiseRepository.save(effective)` 整表原子写入：同 id 覆盖、新 id 追加、
+  被删的内置 id 记入 `deleted` 墓碑；`load()` / `mergeExpertiseLibraries()`
+  按 基础库 ⊕ 改动 合并。损坏的用户文件退化为纯内置库。
+- **模型**：`Expertise` 增 `enabled`（默认 true）+ `copyWith`；`composeExpertisePrompt`
+  与 `selectedExpertises` 跳过停用项；新增 `hasUsableExpertiseSelection()` 供保存校验。
+- **管理页**：`lib/ui/pages/expertise_page.dart` —— 列表显示名称、说明、排序/字数、
+  「内置 / 自定义 / 已停用」徽标；行内 Switch 停用启用、编辑、删除（二次确认）；
+  FAB 添加；编辑页字段 = 名称 / 说明 / 提示词 / 排序序号 / 启用开关，已有 id 只读。
+  经 `AppState.saveExpertises()` 落盘并刷新。
+- **入口**：`home_page._moreMenu` 第一项「AI专长管理」（value `expertises`），
+  `_navigate` 路由到 `ExpertisePage`。
+- **AppState**：`expertiseBuiltinIds`（refreshExpertises 时由内置库算出，管理页徽标用）；
+  `saveExpertises`；`ExpertiseRepository` 改为带 `AppPaths`。
+- **badge 样式**：badge 包进与提示词输入框同宽、同款 `OutlineInputBorder`（圆角 4）、
+  `minHeight: 96` 的容器；选中绿色 `#43A047` 填充 + 白字、无对勾；未选
+  `surfaceContainerHighest` + outlineVariant 描边；`Wrap spacing/runSpacing: 12`。
+  待选项过滤 `enabled`。
+
+**改了哪些文件**
+
+- 新增：`lib/ui/pages/expertise_page.dart`、`test/expertise_manage_test.dart`（2 例）
+- 改：`lib/models/expertise.dart`、`lib/data/expertise_repository.dart`、
+  `lib/core/app_paths.dart`、`lib/state/app_state.dart`、
+  `lib/ui/widgets/system_prompt_config.dart`、`lib/ui/pages/home_page.dart`、
+  `lib/ui/pages/templates_page.dart`、`lib/ui/pages/template_wizard_page.dart`、
+  `test/expertise_test.dart`（+3 例）、`test/template_expertise_test.dart`（+1 例，
+  选中态断言改颜色）、`FEATURES.md`（§7 / §9.1）、`DESIGN.md`（§11.2）、`.memory/*`
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：512 passed, 1 skipped
+```
+
+- 新增用例：用户改动重载（编辑/新增/墓碑/停用）、merge 规则、坏用户文件降级；
+  管理页添加→编辑→停用→删除→重读不复活；空库空状态；模板页停用项隐藏；
+  badge 选中绿色、无对勾。
+- 真机要点：①「☰ 更多 → AI专长管理」可增删改专长并停用；②回到模板页切 AI专长，
+  停用项消失、选中项绿底无对勾；③删除内置专长后重启 App 不复活；④管理页改动即时
+  影响模板可选专长。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送。
+- 专长库随 App 目录走（`<root>/expertises.json`），但**不参与局域网同步**（同步只搬
+  会话/项目 XML）；两端专长需各自维护。
+- 编辑已有专长时不校验 id 冲突（id 不可改）；新增 id 用 `custom_<8位随机>`，理论碰撞
+  可忽略。
+
+## 2026-11-17 · **0.9.0**：会话模板「AI专长」系统提示词配置
+
+**需求**（用户）
+
+在会话模板的系统提示词配置区提供两种互斥方式：**文本输入** / **AI专长**。
+专长库多选 badge，按库内 `sort` 升序组合成系统提示词；切换模式不清空另一侧；
+未选专长 / 专长库为空都要有明确提示。版本提到 **v0.9.0**。
+
+**做了什么**
+
+- **模型**：新增 `lib/models/expertise.dart` —— `SystemPromptMode`（text/expertise，
+  wire=`name`，未知/缺失按 text）、`Expertise`（id/name/description/prompt/sort）、
+  `composeExpertisePrompt(ids, library)`（过滤未知 id、跳过空提示词、按 `sort` 升序
+  同序号按 id、段间 `\n\n---\n\n`，与点击顺序无关）、`sortExpertiseLibrary`。
+- **专长库**：`assets/expertises.json`（10 个内置专长，id/name/description/prompt/sort），
+  `lib/data/expertise_repository.dart` 的 `ExpertiseRepository.load()` 读 asset，
+  损坏/缺失返回空列表（UI 走空状态）；支持顶层数组或 `{expertises:[…]}` 包装。
+- **模板字段**：`SessionTemplate` 新增 `promptMode` / `manualPrompt` / `expertiseIds`
+  （XML：`prompt_mode` 恒写、`manual_prompt` 与 `expertise_ids` 非空才写；旧档读出
+  text / ''，字节不变）。`systemPrompt` 仍是**解析后的生效值**。`copyWith`/JSON 同步。
+- **UI**：新增共享组件 `lib/ui/widgets/system_prompt_config.dart` ——
+  `SegmentedButton`（文本输入 / AI专长）+ 文本框 + 专长说明 + badge `Wrap`
+  （选中填充主题色 + 对勾，悬停/长按 Tooltip 显示说明，未选时红字
+  「请至少选择一个 AI 专长。」，库空显示「暂无可用的 AI 专长。」）。
+  接进 `templates_page` 编辑页与 `template_wizard_page` 第 2 步（向导的 AI 调整控件
+  只在文本模式展示；`_generate` 成功后自动切回文本模式）。
+- **保存规则**：两个入口都校验「专长模式未选专长」→ 拦下保存并提示；保存时
+  `systemPrompt` 只由当前模式生成，另一侧写入 `manualPrompt`/`expertiseIds`。
+- **AppState**：可选 `ExpertiseRepository` + `expertises` 列表（`load()` 时读取，
+  `refreshExpertises()`）；模板列表副标题显示「AI专长 n」。
+- **版号**：`dist/bump_version.sh -m 0.9.0 -c` → **0.9.0+1**
+  （`pubspec.yaml` + `lib/core/app_version.dart`）。
+
+**改了哪些文件**
+
+- 新增：`lib/models/expertise.dart`、`lib/data/expertise_repository.dart`、
+  `lib/ui/widgets/system_prompt_config.dart`、`assets/expertises.json`、
+  `test/expertise_test.dart`（9 例）、`test/template_expertise_test.dart`（4 例）
+- 改：`lib/models/session_template.dart`、`lib/data/xml/template_xml.dart`、
+  `lib/state/app_state.dart`、`lib/ui/pages/templates_page.dart`、
+  `lib/ui/pages/template_wizard_page.dart`、`pubspec.yaml`、
+  `lib/core/app_version.dart`、`FEATURES.md`（§1.3 / §7 模板行）、
+  `DESIGN.md`（§11.2）、`.memory/*`
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：507 passed, 1 skipped
+```
+
+- 新增用例覆盖：asset 解析与排序、组合顺序与点击顺序无关、未知/空条目跳过、
+  模板 XML 往返与旧档兼容、编辑页两模式互斥与数据保留、保存按 sort 组合、
+  未选拦截、空库空状态。
+- 真机要点：①模板新建/编辑 → 系统提示词区顶部有「文本输入 | AI专长」，默认文本；
+  ②切 AI专长 → 文本框消失、出现全部专长 badge，点击多选（再点取消），悬停/长按看说明；
+  ③先写手动文本再切专长、选几个后保存 → 切回编辑仍能看到原文与勾选；最终提示词按
+  专长库顺序拼接；④不选专长直接保存 → 提示且不保存。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送（按惯例等批次一起发版）。
+- 专长库目前只有内置 asset，**没有用户自定义专长的入口**；如需扩展可加
+  `<root>/expertises.json` 覆盖/追加（当前 `ExpertiseRepository.load` 只读 asset）。
+- 冲突检测按需求未做（仅固定顺序拼接）；`session_wizard` 直接读模板已解析的
+  `systemPrompt`，不感知模式。
+
 ## 2026-11-17 · token 消耗显示栏：累计耗时 + 缓存利用率
 
 **需求**（用户 2 点）

@@ -10,6 +10,7 @@ import '../core/ids.dart';
 import '../core/prompt_utils.dart';
 import '../data/config_repository.dart';
 import '../data/external_doc_repository.dart';
+import '../data/expertise_repository.dart';
 import '../data/index_repository.dart';
 import '../data/memory_repository.dart';
 import '../data/models_dev_repository.dart';
@@ -23,6 +24,7 @@ import '../models/agent_mode.dart';
 import '../models/app_config.dart';
 import '../models/archive_group.dart';
 import '../models/external_doc.dart';
+import '../models/expertise.dart';
 import '../models/memory_status.dart';
 import '../models/models_dev.dart';
 import '../models/note.dart';
@@ -53,12 +55,15 @@ class AppState extends ChangeNotifier {
     MemoryRepository? memoryRepository,
     NoteRepository? noteRepository,
     ExternalDocRepository? externalDocRepository,
+    ExpertiseRepository? expertiseRepository,
   }) : memoryRepository = memoryRepository ?? const MemoryRepository() {
     this.indexRepository = indexRepository ?? IndexRepository(paths);
     this.noteRepository =
         noteRepository ?? NoteRepository(paths, this.indexRepository);
     this.externalDocRepository =
         externalDocRepository ?? ExternalDocRepository();
+    this.expertiseRepository =
+        expertiseRepository ?? ExpertiseRepository(paths);
   }
 
   final AppPaths paths;
@@ -79,10 +84,19 @@ class AppState extends ChangeNotifier {
   /// Reads/initialises the `.memory/` index inside a project sandbox.
   final MemoryRepository memoryRepository;
 
+  /// 预设 AI 专长库（会话模板「AI专长」模式）。
+  late final ExpertiseRepository expertiseRepository;
+
   AppConfig config = AppConfig();
   List<Session> sessions = <Session>[];
   List<Session> archivedSessions = <Session>[];
   List<SessionTemplate> templates = <SessionTemplate>[];
+
+  /// 预设 AI 专长库（模板「AI专长」模式可选的候选项，已按 sort 升序）。
+  List<Expertise> expertises = <Expertise>[];
+
+  /// 其中属于内置资源的 id（管理页显示「内置 / 自定义」徽标）。
+  Set<String> expertiseBuiltinIds = <String>{};
   List<Project> projects = <Project>[];
   List<Project> archivedProjects = <Project>[];
 
@@ -210,6 +224,7 @@ class AppState extends ChangeNotifier {
     await refreshSessions();
     await refreshArchived();
     await refreshTemplates();
+    await refreshExpertises();
     await refreshProjects();
     await refreshArchivedProjects();
     await refreshNotes();
@@ -260,6 +275,20 @@ class AppState extends ChangeNotifier {
   Future<void> refreshTemplates() async {
     templates = await templateRepository.list();
     notifyListeners();
+  }
+
+  /// 重新读取 AI 专长库（随 [load] 一起调用；资源缺失时为空列表）。
+  Future<void> refreshExpertises() async {
+    final base = await ExpertiseRepository.loadBundled();
+    expertiseBuiltinIds = base.map((item) => item.id).toSet();
+    expertises = await expertiseRepository.load();
+    notifyListeners();
+  }
+
+  /// 保存管理页编辑后的完整专长列表（原子写入，随后刷新内存态）。
+  Future<void> saveExpertises(List<Expertise> next) async {
+    await expertiseRepository.save(next);
+    await refreshExpertises();
   }
 
   Future<void> refreshProjects() async {

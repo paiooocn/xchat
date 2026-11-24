@@ -1,5 +1,6 @@
 import '../core/ids.dart';
 import '../core/json_utils.dart';
+import 'expertise.dart';
 import 'session_message.dart';
 import 'session_params.dart';
 
@@ -18,9 +19,13 @@ class SessionTemplate {
     List<String>? tools,
     List<String>? tags,
     this.quickEnabled = false,
+    this.promptMode = SystemPromptMode.text,
+    this.manualPrompt = '',
+    List<String>? expertiseIds,
   })  : params = params ?? SessionParams(),
         tools = tools ?? <String>[],
-        tags = tags ?? <String>[];
+        tags = tags ?? <String>[],
+        expertiseIds = expertiseIds ?? <String>[];
 
   String id;
   String name;
@@ -29,10 +34,22 @@ class SessionTemplate {
   String model;
   ThinkingReplyMode thinkingReplyMode;
   int toolCallsLimit;
+
+  /// 生效的系统提示词正文（保存时已按 [promptMode] 解析好）。
   String systemPrompt;
   SessionParams params;
   List<String> tools;
   List<String> tags;
+
+  /// 系统提示词的配置方式。[current mode][SystemPromptMode] 决定
+  /// [systemPrompt] 是「手动文本」还是「专长组合结果」。
+  SystemPromptMode promptMode;
+
+  /// 「文本输入」一侧的内容，切到 AI 专长后仍保留，便于切回时还原。
+  String manualPrompt;
+
+  /// 已选专长 id（仅 [SystemPromptMode.expertise] 生效；顺序以专长库为准）。
+  List<String> expertiseIds;
 
   /// Whether the template is exposed as a quick session on the home page.
   bool quickEnabled;
@@ -50,6 +67,9 @@ class SessionTemplate {
         tools: List<String>.of(tools),
         tags: List<String>.of(tags),
         quickEnabled: quickEnabled,
+        promptMode: promptMode,
+        manualPrompt: manualPrompt,
+        expertiseIds: List<String>.of(expertiseIds),
       );
 
   Map<String, Object?> toJson() => pruneNulls(<String, Object?>{
@@ -65,6 +85,9 @@ class SessionTemplate {
         if (tools.isNotEmpty) 'tools': tools,
         if (tags.isNotEmpty) 'tags': tags,
         if (quickEnabled) 'quick_enabled': true,
+        'prompt_mode': promptMode.wire,
+        if (manualPrompt.isNotEmpty) 'manual_prompt': manualPrompt,
+        if (expertiseIds.isNotEmpty) 'expertise_ids': expertiseIds,
       });
 
   factory SessionTemplate.fromJson(Object? value) {
@@ -82,6 +105,9 @@ class SessionTemplate {
       tools: asStringList(json['tools']),
       tags: asStringList(json['tags']),
       quickEnabled: json['quick_enabled'] == true,
+      promptMode: SystemPromptMode.parse(asString(json['prompt_mode'])),
+      manualPrompt: asString(json['manual_prompt']) ?? '',
+      expertiseIds: asStringList(json['expertise_ids']),
     );
   }
 }

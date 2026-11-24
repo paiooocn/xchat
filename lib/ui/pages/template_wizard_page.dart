@@ -7,11 +7,13 @@ import 'package:provider/provider.dart';
 import '../../agent/tools/builtin_tools.dart';
 import '../../core/ids.dart';
 import '../../llm/prompt_assistant.dart';
+import '../../models/expertise.dart';
 import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
 import '../../state/app_state.dart';
+import '../widgets/system_prompt_config.dart';
 
 /// Guided ("wizard") creation of a session template:
 /// 1. scenario/requirement → one-click LLM system prompt (preset categories),
@@ -35,6 +37,10 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
   final _limit = TextEditingController();
   final _maxTokens = TextEditingController();
   final Set<String> _tools = <String>{};
+
+  /// 系统提示词配置方式（文本输入 / AI专长），与已选专长。
+  SystemPromptMode _promptMode = SystemPromptMode.text;
+  final Set<String> _expertiseIds = <String>{};
 
   /// 「最大输出 tokens」输入值：空 = 用模型服务配置；非法或 ≤0 按不限制处理。
   int? get _maxTokensValue {
@@ -150,6 +156,8 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
       if (!mounted) return;
       setState(() {
         _system.text = text;
+        // 生成结果属于「文本输入」一侧。
+        _promptMode = SystemPromptMode.text;
         _step = 1;
       });
     } catch (e) {
@@ -208,6 +216,15 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
 
   Future<void> _save() async {
     final state = context.read<AppState>();
+    if (_promptMode == SystemPromptMode.expertise &&
+        !hasUsableExpertiseSelection(_expertiseIds, state.expertises)) {
+      setState(() => _error = SystemPromptConfig.emptySelectionText);
+      return;
+    }
+    // 最终系统提示词只由当前启用模式生成；手动文本原样保留到 manualPrompt。
+    final systemPrompt = _promptMode == SystemPromptMode.expertise
+        ? composeExpertisePrompt(_expertiseIds, state.expertises)
+        : _system.text;
     final template = SessionTemplate(
       id: newId(),
       name: _name.text.trim(),
@@ -216,7 +233,10 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
       model: _model.text.trim(),
       thinkingReplyMode: _replyMode,
       toolCallsLimit: int.tryParse(_limit.text.trim()) ?? 0,
-      systemPrompt: _system.text,
+      systemPrompt: systemPrompt,
+      manualPrompt: _system.text,
+      promptMode: _promptMode,
+      expertiseIds: _expertiseIds.toList(),
       params: SessionParams(
         thinking: _thinking,
         reasoningEffort: _effort.isEmpty ? null : _effort,
@@ -330,47 +350,53 @@ class _TemplateWizardPageState extends State<TemplateWizardPage> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
-        TextField(
+        SystemPromptConfig(
+          mode: _promptMode,
+          onModeChanged: (mode) => setState(() => _promptMode = mode),
           controller: _system,
-          minLines: 6,
-          maxLines: 14,
-          decoration: const InputDecoration(
-            labelText: '系统提示词（{sandbox} 自动替换为会话 sandbox 路径）',
-            border: OutlineInputBorder(),
+          expertises: state.expertises,
+          selectedIds: _expertiseIds,
+          onToggleExpertise: (id) => setState(() {
+            if (!_expertiseIds.remove(id)) _expertiseIds.add(id);
+          }),
+          textMinLines: 6,
+          textMaxLines: 14,
+        ),
+        // 「AI 调整」只作用于手动文本，专长模式下不展示。
+        if (_promptMode == SystemPromptMode.text) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final entry in _quickPolish.entries)
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _refine(entry.value),
+                  icon: const Icon(Icons.auto_fix_high, size: 16),
+                  label: Text(entry.key),
+                ),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final entry in _quickPolish.entries)
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => _refine(entry.value),
-                icon: const Icon(Icons.auto_fix_high, size: 16),
-                label: Text(entry.key),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _instruction,
-          minLines: 2,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: 'AI 调整要求（例如：加上输出格式约束）',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            FilledButton.icon(
-              onPressed: _busy ? null : () => _refine(_instruction.text),
-              icon: const Icon(Icons.auto_fix_high),
-              label: const Text('按要求调整/润色'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _instruction,
+            minLines: 2,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'AI 调整要求（例如：加上输出格式约束）',
+              border: OutlineInputBorder(),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : () => _refine(_instruction.text),
+                icon: const Icon(Icons.auto_fix_high),
+                label: const Text('按要求调整/润色'),
+              ),
+            ],
+          ),
+        ],
         if (_busy) ...[
           const SizedBox(height: 16),
           _BusyPanel(text: _liveText, onStop: _stop, label: '正在调整系统提示词…'),

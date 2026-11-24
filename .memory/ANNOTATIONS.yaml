@@ -357,8 +357,18 @@ features:
       - "lib/data/template_repository.dart"
       - "lib/data/xml/template_xml.dart"
       - "lib/models/session_template.dart"
+      - "lib/models/expertise.dart"
+      - "lib/data/expertise_repository.dart"
+      - "lib/ui/widgets/system_prompt_config.dart"
+      - "lib/ui/pages/expertise_page.dart"
+      - "assets/expertises.json"
     design: "DESIGN.md §11.1"
-    contracts: []
+    contracts:
+      - "模板系统提示词两种互斥模式：prompt_mode=text 用 manual_prompt；expertise 按专长库 sort 升序组合进 system_prompt（与点击顺序无关），停用/未知 id 不参与组合"
+      - "保存模板时解析出 systemPrompt（当前模式生效值），另一侧内容保留在 manual_prompt/expertise_ids；无可用已选专长不允许保存"
+      - "专长库 = 内置 assets/expertises.json（8 个领域级专长）⊕ <root>/expertises.json（整表覆盖+删除墓碑），唯一入口 ExpertiseRepository；缺失/损坏内置资源为空列表（UI 显示空状态）"
+      - "旧版细粒度内置 id 通过 Expertise.aliases 兼容：组合/选中按本体 id 或别名命中（composeExpertisePrompt / hasUsableExpertiseSelection）"
+      - "专长管理入口在侧栏「☰ 更多 → AI专长管理」，提供查看（完整提示词）/复制提示词/添加/编辑/停用/删除，改动经 AppState.saveExpertises 原子写入"
 
   - id: session_ops
     title: "会话操作：编辑重发、克隆、归档、多会话并行"

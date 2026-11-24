@@ -138,6 +138,7 @@ ds-xchat/
 Documents/XChat/
 ├── config.json          # 应用配置（provider、默认参数、编辑器命令、主题、语言…）
 ├── models_dev.json      # models.dev 目录快照（提供商/模型元数据缓存）
+├── expertises.json      # AI专长用户改动（内置库 ⊕ 覆盖/新增 + 删除墓碑）
 ├── sessions/            # 默认 sandbox：会话 XML 文件（<uuid>.xml）
 │   ├── 550e8400-....xml
 │   └── ...
@@ -511,6 +512,20 @@ shell 产出 PNG → attach_image 校验（沙箱/格式/体积）→ 落盘 att
   或含预置 system/few-shot）。
 - 字段：名称、说明、provider/model、params、tools、tool_calls_limit、
   system prompt、`thinking_reply_mode`、标签。
+- **系统提示词两种互斥配置**（`prompt_mode`）：
+  - `text`：多行手动输入，内容存 `manual_prompt`；
+  - `expertise`：从专长库多选（模板页 badge），保存时按专长
+    `sort` 升序组合成 `system_prompt`（段间 `\n\n---\n\n`），已选 id 存 `expertise_ids`。
+    组合顺序只由专长库决定，与点击顺序无关；未选**可用**专长不允许保存。切换模式不清空另一侧，
+    最终只使用当前启用模式对应的内容。
+- **专长库管理**（侧栏「☰ 更多 → AI专长管理」）：内置 8 个**领域级**专长
+  （编程开发 / 数据与数据库 / 运维与基础设施 / 办公与写作 / 商业与产品 /
+  生活顾问 / 教育与学习 / 翻译，每个覆盖该领域多种工作；旧版细粒度 id 作为
+  `aliases` 保留兼容），叠加用户文件 `<root>/expertises.json`（整表保存：同 id 覆盖、
+  新 id 追加、被删的内置 id 记入 `deleted` 墓碑）。页面支持查看（详情含完整提示词）、
+  复制提示词、添加 / 编辑（名称、说明、提示词、排序序号；id 不可改）/ 停用启用 /
+  删除；停用项不进模板待选项也不参与组合。模板页专长 badge 装在与提示词输入框同宽、
+  同款描边的容器内，选中为绿色填充、无对勾图标，间距约 12px。
 - 操作：新建 / 编辑 / 复制 / 删除 / 「用此模板新建会话」。
 - 会话创建向导第 1 步即可选用。
 

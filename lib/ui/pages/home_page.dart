@@ -47,6 +47,7 @@ import '../theme/app_fonts.dart';
 import '../theme/app_theme.dart';
 import 'archive_page.dart';
 import 'compress_prompts_page.dart';
+import 'expertise_page.dart';
 import 'orphans_page.dart';
 import 'providers_page.dart';
 import 'session_wizard_page.dart';
@@ -767,6 +768,13 @@ class _HomePageState extends State<HomePage> {
           };
           return [
             PopupMenuItem(
+              value: 'expertises',
+              child: _MoreMenuItem(
+                icon: Icons.auto_awesome,
+                label: 'AI专长管理',
+              ),
+            ),
+            PopupMenuItem(
               value: 'search',
               child: _MoreMenuItem(
                 icon: Icons.travel_explore,
@@ -857,6 +865,10 @@ class _HomePageState extends State<HomePage> {
   /// 侧边栏入口 / 溢出菜单的统一路由。
   void _navigate(BuildContext context, String destination) {
     switch (destination) {
+      case 'expertises':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ExpertisePage()),
+        );
       case 'search':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const SearchPage()),

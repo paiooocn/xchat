@@ -216,3 +216,14 @@ UI 发消息
    标签 chips 与 `#标签` **同时作用于项目与会话**（项目标签是 `Project.tags`，
    与会话同一套筛选）。匹配逻辑别在 widget 里现算，新增模式去 model 里加并配单测。
    「更多」菜单里**不再有**外部 md 入口（外部区只在笔记列表上方）。
+31. **模板系统提示词的有效值在保存时解析，专长组合只认 sort**：`SessionTemplate.promptMode`
+   为 `text` 时 `systemPrompt` = 手动文本；为 `expertise` 时由
+   `composeExpertisePrompt(expertiseIds, library)` 生成 —— 顺序恒为专长库 `sort` 升序
+   （同序号按 id），**与点击顺序无关**，未知 / 停用 / 空提示词的 id 跳过，无可用已选
+   专长时不允许保存。另一侧数据必须保留（手动文本存 `manualPrompt`、已选 id 存
+   `expertiseIds`），切换模式不清空；消费方（创建会话 / 同步 / 列表）一律读已解析好的
+   `systemPrompt`，不要在别处重新拼一次。
+   专长库唯一来源是 `ExpertiseRepository`：内置 `assets/expertises.json` ⊕ 用户文件
+   `<root>/expertises.json`（整表覆盖 + `deleted` 墓碑）；管理入口「☰ 更多 → AI专长管理」
+   （查看 / 添加 / 编辑 / 停用 / 删除，改动经 `AppState.saveExpertises` 原子写入）。
+   内置资源缺失/损坏返回空列表 → UI 显示「暂无可用的 AI 专长。」，不得让模板页崩溃。

@@ -1,5 +1,6 @@
 import 'package:xml/xml.dart';
 
+import '../../models/expertise.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
 import '../../models/session_template.dart';
@@ -30,6 +31,15 @@ class TemplateXml {
     out.leafText('thinking_reply_mode', template.thinkingReplyMode.wire);
     out.leafText('tool_calls_limit', template.toolCallsLimit.toString());
     out.leaf('system_prompt', template.systemPrompt);
+    // 系统提示词的配置方式与「另一侧」的内容：新字段只在有值时写，旧文件
+    // 字节不变；旧档读出 text / ''（见 decode）。
+    out.leafText('prompt_mode', template.promptMode.wire);
+    if (template.manualPrompt.isNotEmpty) {
+      out.leaf('manual_prompt', template.manualPrompt);
+    }
+    if (template.expertiseIds.isNotEmpty) {
+      out.leafText('expertise_ids', template.expertiseIds.join(','));
+    }
     out.leaf('tags', template.tags.join(','));
     out.leafText('quick_enabled', template.quickEnabled ? 'true' : 'false');
     out.open('params');
@@ -70,6 +80,13 @@ class TemplateXml {
       toolCallsLimit: int.tryParse(readText(root, 'tool_calls_limit') ?? '') ?? 0,
       systemPrompt: readTextOrEmpty(root, 'system_prompt'),
       params: SessionParams.fromElements(elements),
+      promptMode: SystemPromptMode.parse(readText(root, 'prompt_mode')),
+      manualPrompt: readTextOrEmpty(root, 'manual_prompt'),
+      expertiseIds: (readText(root, 'expertise_ids') ?? '')
+          .split(',')
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toList(),
       tags: (readText(root, 'tags') ?? '')
           .split(',')
           .map((t) => t.trim())
