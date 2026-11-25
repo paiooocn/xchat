@@ -1,5 +1,29 @@
 # STATE — 进度交接
 
+## 2026-11-25 · 修：GitHub Actions Android 构建失败（Flutter 3.50 抬高 Gradle 最低版本）
+
+**现象**：tag 触发的 `Build Android (apk)` 在 flutter-gradle-plugin 处失败：
+`Your project's Gradle version (9.1.0) is lower than Flutter's minimum supported
+version of 9.3.1`。
+
+**根因**：workflow 里写的是 `channel: stable`，CI 自己拉到了 **Flutter 3.50.0**；
+它的 `DependencyVersionChecker.kt` 把最低门槛抬到 Gradle ≥ 9.3.1、AGP ≥ 9.1.1、
+KGP ≥ 2.4.10，而本项目 `android/` 是**按本地 Flutter 3.47.7 的基线**生成的
+（gradle 9.1.0 / AGP 9.0.1 / KGP 2.3.20，正好是 3.47.7 的 warn 阈值）。
+即「CI 与本地工具链不同版」导致的漂移，不是代码问题。
+
+**改了什么**：三个构建 workflow（android / linux-deb / windows）的
+`subosito/flutter-action` 由 `channel: stable` 改为 `flutter-version: '3.47.7'`，
+并在文件内注明升级时须同步 gradle wrapper 与 AGP/KGP。未改 `android/` 任何文件
+（不升 gradle，避免与本地 3.47.7 不一致，也不去用 `--android-skip-build-dependency-validation`）。
+
+**验证**：仅改 YAML；重跑 tag/workflow_dispatch 时 Android job 应直接过校验。
+本地 `bash dist/build_apk.sh -p` 行为不变（版本/依赖一字未动）。
+
+**下一步 / 遗留**：想跟进新稳定版 Flutter 时，按 GOTCHAS §36 的三处一起升级
+（gradle ≥ 9.5.0、AGP ≥ 9.3.1、KGP ≥ 2.4.20 才不会连告警都出）。
+
+
 ## 2026-11-25 · 修：移动端首页发送后**立即**跳会话页（不再等首轮生成完成）
 
 **真机现象**：Android 首页发送消息后没有跳转到对应会话页。

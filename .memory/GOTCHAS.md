@@ -615,3 +615,26 @@ data for current backend (SkSL). Found stages: Vulkan
   只做展示；文本控制器常驻，条件渲染 TextField 不会丢文本。
 - **未选专长要拦住保存**：两个编辑入口（模板直接编辑页 / 向导第 2 步）各自校验，
   提示文案统一用 `SystemPromptConfig.emptySelectionText`。
+
+## §36 CI 的 Flutter 版本必须与 `android/` 目录同版（gradle 9.1.0 / AGP 9.0.1 / KGP 2.3.20）
+
+- **症状**：tag 推送后 Android job 在 `dev.flutter.flutter-gradle-plugin` 处失败，
+  报 `Your project's Gradle version (9.1.0) is lower than Flutter's minimum supported
+  version of 9.3.1`。这不是代码问题 —— 是 CI 上的 Flutter 涨到了 3.50.0，而
+  `flutter-gradle-plugin` 的 `DependencyVersionChecker.kt` 有一套**最低版本硬校验**
+  （低于 `error*Version` 直接抛异常，低于 `warn*Version` 只告警）：
+  - Flutter **3.47.7**（本项目 `android/` 的实际基准，三个阈值正好取等）：
+    Gradle warn 9.1.0 / error 8.14.0；AGP warn 9.0.1 / error 8.11.1；
+    KGP warn 2.3.20 / error 2.2.20。
+  - Flutter **3.50.0**：Gradle warn 9.5.0 / error **9.3.1**；AGP warn 9.3.1 /
+    error **9.1.1**；KGP warn 2.4.20 / error **2.4.10**。
+- **处理**：workflow 里 `subosito/flutter-action@v2` 由 `channel: stable` 改为
+  **`flutter-version: '3.47.7'`**（三个构建 workflow 同值）。不要只加
+  `--android-skip-build-dependency-validation` 绕过 —— 那会把校验关掉，
+  真不兼容时炸在更深的编译期。
+- **要升级 Flutter 时三处一起改**：workflow 的 `flutter-version`、
+  `android/gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl`、
+  `android/settings.gradle.kts` 的 AGP（`com.android.application`）与
+  Kotlin（`org.jetbrains.kotlin.android`）版本；否则同一套 CI 立刻复现本坑。
+- 想临时确认本地基线：`grep -n "Version(" \
+  $FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/DependencyVersionChecker.kt`。
