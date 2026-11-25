@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/expertise.dart';
+import '../theme/app_theme.dart';
 
 /// 会话模板「系统提示词」配置区：文本输入 / AI专长 两种互斥方式。
 ///
@@ -91,8 +92,8 @@ class SystemPromptConfig extends StatelessWidget {
     // 停用项不进模板的待选项（仍可去「AI专长管理」启用 / 编辑）。
     final library =
         sortExpertiseLibrary(expertises).where((item) => item.enabled).toList();
-    final hasSelection = selectedIds.any(
-      (id) => library.any((item) => item.id == id),
+    final hasSelection = library.any(
+      (item) => selectedIds.any(item.matchesId),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,26 +118,10 @@ class SystemPromptConfig extends StatelessWidget {
           )
         else
           // 与上方系统提示词输入框同宽、同款描边；badge 间距约 12px。
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 96),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: scheme.outlineVariant),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final expertise in library)
-                  _ExpertiseBadge(
-                    expertise: expertise,
-                    selected: selectedIds.contains(expertise.id),
-                    onTap: () => onToggleExpertise(expertise.id),
-                  ),
-              ],
-            ),
+          ExpertiseBadges(
+            expertises: expertises,
+            selectedIds: selectedIds,
+            onToggle: onToggleExpertise,
           ),
         if (!hasSelection) ...[
           const SizedBox(height: 8),
@@ -156,27 +141,92 @@ class SystemPromptConfig extends StatelessWidget {
   }
 }
 
+/// 专长 badge 组：与提示词输入框同宽、同款描边，只展示启用的专长。
+class ExpertiseBadges extends StatelessWidget {
+  const ExpertiseBadges({
+    super.key,
+    required this.expertises,
+    required this.selectedIds,
+    required this.onToggle,
+    this.framed = true,
+    this.centered = false,
+    this.dense = false,
+  });
+
+  final List<Expertise> expertises;
+  final Set<String> selectedIds;
+  final ValueChanged<String> onToggle;
+
+  /// 是否套用与输入框同款的描边外框（模板页用，首页欢迎页用紧凑居中版）。
+  final bool framed;
+
+  /// badge 是否整体居中排布。
+  final bool centered;
+
+  /// 紧凑样式：背景/字号与输入栏下区「项目文件夹」胶囊一致（首页用）。
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final library =
+        sortExpertiseLibrary(expertises).where((item) => item.enabled).toList();
+    final wrap = Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      alignment: centered ? WrapAlignment.center : WrapAlignment.start,
+      children: [
+        for (final expertise in library)
+          ExpertiseBadge(
+            expertise: expertise,
+            selected: selectedIds.any(expertise.matchesId),
+            onTap: () => onToggle(expertise.id),
+            dense: dense,
+          ),
+      ],
+    );
+    if (!framed) return wrap;
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 96),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: wrap,
+    );
+  }
+}
+
 /// 单个专长标签胶囊：选中时绿色填充（无对勾），悬停 / 长按展示说明。
-class _ExpertiseBadge extends StatelessWidget {
-  const _ExpertiseBadge({
+class ExpertiseBadge extends StatelessWidget {
+  const ExpertiseBadge({
+    super.key,
     required this.expertise,
     required this.selected,
     required this.onTap,
+    this.dense = false,
   });
 
   final Expertise expertise;
   final bool selected;
   final VoidCallback onTap;
 
+  /// 紧凑样式（首页）：背景 / 字号对齐输入栏下区胶囊。
+  final bool dense;
+
   static const Color _selectedColor = Color(0xFF43A047);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final description = expertise.description.trim();
     final tooltip = description.isEmpty
         ? expertise.name
         : '${expertise.name}\n\n$description';
+    final selectedColor = selected ? _selectedColor : null;
     return Tooltip(
       message: tooltip,
       triggerMode: TooltipTriggerMode.longPress,
@@ -188,23 +238,41 @@ class _ExpertiseBadge extends StatelessWidget {
         child: InkWell(
           key: Key('expertise-badge-${expertise.id}'),
           onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(
+            dense ? AppTheme.radiusMedium : 18,
+          ),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding: EdgeInsets.symmetric(
+              horizontal: dense ? 10 : 12,
+              vertical: dense ? 7 : 7,
+            ),
             decoration: BoxDecoration(
-              color: selected ? _selectedColor : theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: selected ? _selectedColor : theme.colorScheme.outlineVariant,
+              color: selectedColor ??
+                  (dense
+                      ? scheme.surfaceContainerHigh.withValues(alpha: 0.7)
+                      : scheme.surfaceContainerHighest),
+              borderRadius: BorderRadius.circular(
+                dense ? AppTheme.radiusMedium : 18,
               ),
+              border: dense
+                  ? null
+                  : Border.all(
+                      color: selectedColor ?? scheme.outlineVariant,
+                    ),
             ),
             child: Text(
               expertise.name,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: selected ? Colors.white : theme.colorScheme.onSurfaceVariant,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
+              style: dense
+                  ? theme.textTheme.labelMedium?.copyWith(
+                      color: selected ? Colors.white : scheme.onSurfaceVariant,
+                    )
+                  : theme.textTheme.bodyMedium?.copyWith(
+                      color:
+                          selected ? Colors.white : scheme.onSurfaceVariant,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
             ),
           ),
         ),

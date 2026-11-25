@@ -590,6 +590,12 @@ data for current backend (SkSL). Found stages: Vulkan
   （`composeExpertisePrompt` / `hasUsableExpertiseSelection` 都按本体 id 或别名匹配）。
   以后合并专长时必须把被合并的旧 id 挂到新专长的 `aliases` 上，否则旧模板会静默
   丢内容（未知 id 直接跳过）。
+- **首页快捷配置不要求模板，但要求至少一个专长**：输入栏下区「项目文件夹」右侧是
+  `ProviderPicker` / `ModelPicker` / `ReasoningToggles`（思考默认 on、强度默认 low），
+  下方居中专长 badge 多选；未选专长发送会弹「选择专长 / 新建会话」，不要恢复旧
+  「先选模板」逻辑。`ModelPicker` / `ReasoningToggles` 都是公共组件（聊天面板复用），
+  改布局/菜单行为时两处一起看。首页专长 badge 用 `ExpertiseBadges(dense: true)`：
+  背景/字号对齐「项目文件夹」胶囊，别再加边框或加粗。
 - **复制提示词只写不读**：管理页用 `Clipboard.setData`（Android 上 `Clipboard.getData`
   会被逐应用权限挡掉，见 §27），详情弹层与行内图标共用同一份文案。
 - **badge 视觉约定**：装在描边容器里（与提示词输入框同宽、同款 OutlineInputBorder），

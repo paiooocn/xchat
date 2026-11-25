@@ -12,6 +12,7 @@ import '../../core/app_brand.dart';
 import '../../core/app_paths.dart';
 import '../../core/app_version.dart';
 import '../../models/archive_group.dart';
+import '../../models/expertise.dart';
 import '../../models/external_doc.dart';
 import '../../models/project.dart';
 import '../../models/sidebar_filter.dart';
@@ -22,7 +23,6 @@ import '../../models/message_attachment.dart';
 import '../../models/provider_config.dart';
 import '../../models/session_message.dart';
 import '../../models/session_params.dart';
-import '../../models/session_template.dart';
 import '../../models/task_item.dart';
 import '../../session/session_controller.dart';
 import '../../session/session_ops.dart';
@@ -34,9 +34,12 @@ import '../widgets/file_drop_zone.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/input_area.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/model_picker.dart';
+import '../widgets/reasoning_toggles.dart';
 import '../widgets/project_dialog.dart';
 import '../widgets/session_info_dialog.dart';
 import '../widgets/task_session_view.dart';
+import '../widgets/system_prompt_config.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/tool_call_block.dart';
 import '../widgets/note_list.dart';
@@ -83,6 +86,27 @@ class HomePage extends StatefulWidget {
 ///
 /// 笔记**不是独立路由** —— 它是左栏的一个 Tab，主区随 Tab 切换。
 enum _WorkspaceTab { session, note }
+
+/// 首页快捷配置：AI专长集合 + 厂家（provider）+ 模型 + 思考强度。
+class _QuickStartConfig {
+  const _QuickStartConfig({
+    required this.expertiseIds,
+    required this.providerId,
+    required this.model,
+    required this.thinking,
+    required this.reasoningEffort,
+  });
+
+  final Set<String> expertiseIds;
+  final String providerId;
+  final String model;
+
+  /// 思考开关（默认 on）。
+  final ThinkingSwitch thinking;
+
+  /// '' = 不显式传入（用服务默认）。
+  final String reasoningEffort;
+}
 
 class _HomePageState extends State<HomePage> {
   String? _selectedId;
@@ -613,14 +637,15 @@ class _HomePageState extends State<HomePage> {
                             )
                           : selected == null
                               ? _WelcomeView(
+                              onNewSession: () => _newSession(context),
                               onSend: (text, attachments,
-                                      {SessionTemplate? template,
+                                      {required _QuickStartConfig config,
                                       required AgentMode mode,
                                       String? projectPath}) =>
                                   _startSession(
                                 text,
                                 attachments,
-                                template: template,
+                                config: config,
                                 mode: mode,
                                 projectPath: projectPath,
                               ),
@@ -930,10 +955,9 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// 欢迎页发起的第一轮：建会话并直接发送。
+  /// 欢迎页发起的第一轮：按快捷配置建会话并直接发送。
   ///
-  /// [template] 非空时按模板建会话（沿用模板的系统提示词 / 模型 / 工具），
-  /// [mode] 是欢迎页选择的执行模式。
+  /// [config] 是首页选择的 AI专长 / 厂家 / 模型 / 思考强度；[mode] 是执行模式；
   /// [projectPath] 非空时在指定文件夹下建项目，并在该项目内建会话。
   ///
   /// 会话先在内存中建好并立即切换到聊天面板，落盘在后台完成——
@@ -941,7 +965,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _startSession(
     String text,
     List<MessageAttachment> attachments, {
-    SessionTemplate? template,
+    required _QuickStartConfig config,
     AgentMode mode = AgentMode.auto,
     String? projectPath,
   }) async {
@@ -954,18 +978,23 @@ class _HomePageState extends State<HomePage> {
       projectId = project.id;
       sandbox = project.sandbox;
     }
-    final session = template != null
-        ? state.createFromTemplateDraft(
-            template,
-            projectId: projectId,
-            sandbox: sandbox,
-            mode: mode,
-          )
-        : state.createSessionDraft(
-            mode: mode,
-            projectId: projectId,
-            sandbox: sandbox,
-          );
+    // 系统提示词只由选中的 AI专长组合；未选专长时为空（不再依赖会话模板）。
+    final params = state.config.defaultParams.copyWith()
+      ..thinking = config.thinking
+      ..reasoningEffort =
+          config.reasoningEffort.isEmpty ? null : config.reasoningEffort;
+    final session = state.createSessionDraft(
+      mode: mode,
+      providerId: config.providerId.isEmpty ? null : config.providerId,
+      model: config.model.trim(),
+      systemPrompt: composeExpertisePrompt(config.expertiseIds, state.expertises),
+      params: params,
+      tools: List<String>.of(state.config.defaultTools),
+      toolCallsLimit: state.config.defaultToolCallsLimit,
+      thinkingReplyMode: ThinkingReplyMode.auto,
+      projectId: projectId,
+      sandbox: sandbox,
+    );
     if (!mounted) {
       unawaited(state.persistSession(session));
       return;
@@ -1009,20 +1038,23 @@ class _MoreMenuItem extends StatelessWidget {
   }
 }
 
-/// 欢迎页（尚未选中会话）：品牌水印 + 问候语 + 居中输入卡 + 快捷入口。
+/// 欢迎页（尚未选中会话）：品牌水印 + 问候语 + 居中输入卡 + 快捷配置。
 class _WelcomeView extends StatefulWidget {
-  const _WelcomeView({required this.onSend});
+  const _WelcomeView({required this.onSend, required this.onNewSession});
 
   /// Called with the first user message; the page creates the session.
-  /// [template] 非空时按模板建会话，[mode] 是用户在欢迎页选择的执行模式，
+  /// [config] 是快捷配置（AI专长 / 厂家 / 模型 / 思考强度），[mode] 是执行模式，
   /// [projectPath] 非空时在指定文件夹（项目）内建会话。
   final Future<void> Function(
     String text,
     List<MessageAttachment> attachments, {
-    SessionTemplate? template,
+    required _QuickStartConfig config,
     required AgentMode mode,
     String? projectPath,
   }) onSend;
+
+  /// 未选专长时提供「新建会话」入口（走创建向导）。
+  final Future<void> Function() onNewSession;
 
   @override
   State<_WelcomeView> createState() => _WelcomeViewState();
@@ -1038,37 +1070,40 @@ class _WelcomeViewState extends State<_WelcomeView> {
   /// 指定的项目文件夹；空串 = 未指定（建全局会话）。
   String _projectPath = '';
 
-  /// 用户在首页手动选择的会话模板；为空时用设置里的默认模板。
-  SessionTemplate? _selectedTemplate;
+  /// 快捷配置：选中的 AI专长 id。
+  final Set<String> _expertiseIds = <String>{};
 
-  /// 模板选择弹窗是否打开——防止重复弹窗 / 重复发送。
-  bool _asking = false;
+  /// 快捷配置：厂家 / 模型 / 思考开关（默认 on）/ 思考强度（默认 low）。
+  late String _providerId;
+  late String _model;
+  ThinkingSwitch _thinking = ThinkingSwitch.on;
+  String _effort = 'low';
 
-  /// 当前生效的模板：手动选择的优先，其次是设置里的默认模板。
-  SessionTemplate? _effectiveTemplate(AppState state) {
-    final selected = _selectedTemplate;
-    // 手动选择的模板可能已被删除——此时回落到默认模板。
-    if (selected != null &&
-        state.templates.any((t) => t.id == selected.id)) {
-      return selected;
-    }
-    return state.defaultTemplate;
+  @override
+  void initState() {
+    super.initState();
+    final config = context.read<AppState>().config;
+    _providerId = config.currentProviderId;
+    _model = config.currentModel;
   }
 
-  /// 发送第一轮对话：先确定模板，再建会话并发送。
+  /// 当前生效的快捷配置。
+  _QuickStartConfig get _config => _QuickStartConfig(
+        expertiseIds: Set<String>.of(_expertiseIds),
+        providerId: _providerId,
+        model: _model,
+        thinking: _thinking,
+        reasoningEffort: _effort,
+      );
+
+  /// 发送第一轮对话：直接用快捷配置建会话并发送（不再需要会话模板）。
   ///
-  /// 返回 false 表示消息未被接受（缺少模板），输入框会保留草稿。
-  bool _send(
-    String text,
-    List<MessageAttachment> attachments, {
-    SessionTemplate? template,
-  }) {
+  /// 返回 false 表示消息未被接受，输入框会保留草稿。
+  bool _send(String text, List<MessageAttachment> attachments) {
     if (_busy) return false;
-    final state = context.read<AppState>();
-    final effective = template ?? _effectiveTemplate(state);
-    if (effective == null) {
-      // 既没选模板，也没配置默认模板：让用户先选一个。
-      if (!_asking) unawaited(_askTemplate(text, attachments));
+    // 未选专长时不直接建会话：提示去点选，或改走「新建会话」向导。
+    if (_expertiseIds.isEmpty) {
+      unawaited(_askExpertiseOrNewSession());
       return false;
     }
     setState(() => _busy = true);
@@ -1077,7 +1112,7 @@ class _WelcomeViewState extends State<_WelcomeView> {
           .onSend(
             text,
             attachments,
-            template: effective,
+            config: _config,
             mode: _mode,
             projectPath: _projectPath,
           )
@@ -1088,43 +1123,15 @@ class _WelcomeViewState extends State<_WelcomeView> {
     return true;
   }
 
-  /// 未选模板时的提示：列出可选模板，或跳到设置里配置默认模板。
-  ///
-  /// 直接在弹窗里选模板后立即用该模板重发本次消息。
-  Future<void> _askTemplate(
-    String text,
-    List<MessageAttachment> attachments,
-  ) async {
-    final state = context.read<AppState>();
-    if (!mounted) return;
-    final pageContext = context;
-    setState(() => _asking = true);
-    final picked = await showDialog<Object>(
-      context: pageContext,
+  /// 未选专长时的提示：去输入栏下方点选，或改走「新建会话」向导。
+  Future<void> _askExpertiseOrNewSession() async {
+    final action = await showDialog<String>(
+      context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('请先选择会话模板'),
-        // 模板数量不定，内容必须可滚动，否则会溢出弹窗。
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('发送对话需要一个会话模板：请选择一个模板，或在「设置」里配置默认会话模板。'),
-              const SizedBox(height: 12),
-              if (state.templates.isEmpty)
-                const Text('当前还没有任何会话模板，请先到「模板」页创建。')
-              else
-                for (final template in state.templates)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      template.name.isEmpty ? '(未命名模板)' : template.name,
-                    ),
-                    onTap: () => Navigator.of(dialogContext).pop(template),
-                  ),
-            ],
-          ),
+        title: const Text('请选择 AI 专长'),
+        content: const Text(
+          '未选择任何 AI 专长：可在下方直接点选至少一项；'
+          '也可以进入「新建会话」向导，用模板与更多参数创建。',
         ),
         actions: [
           TextButton(
@@ -1132,39 +1139,29 @@ class _WelcomeViewState extends State<_WelcomeView> {
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(_goToSettings),
-            child: const Text('去设置'),
+            onPressed: () => Navigator.of(dialogContext).pop('pick'),
+            child: const Text('选择专长'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop('new'),
+            child: const Text('新建会话'),
           ),
         ],
       ),
     );
-    if (!mounted) {
-      return;
-    }
-    setState(() => _asking = false);
-    if (picked == _goToSettings) {
-      // 去设置里配置默认会话模板。
-      if (!pageContext.mounted) return;
-      await Navigator.of(pageContext).push(
-        MaterialPageRoute(builder: (_) => const SettingsPage()),
-      );
-      return;
-    }
-    if (picked is! SessionTemplate) return;
-    setState(() => _selectedTemplate = picked);
-    _send(text, attachments, template: picked);
+    if (action == 'new' && mounted) await widget.onNewSession();
   }
 
-  /// Dialog result that asks the caller to open the settings page.
-  static const _goToSettings = '__go_to_settings__';
-
-  /// 快捷会话：模板页开启了「快捷会话」的模板。
-  List<SessionTemplate> _quickTemplates(AppState state) =>
-      state.templates.where((t) => t.quickEnabled).toList();
-
-  /// 选中模板（手动选择优先于设置里的默认模板），并刷新界面。
-  void _selectTemplate(SessionTemplate? template) {
-    setState(() => _selectedTemplate = template);
+  /// 切换厂家：模型重置为该厂家第一个模型，思考强度回到默认 low。
+  void _changeProvider(String id) {
+    final models =
+        context.read<AppState>().config.providerById(id)?.models ??
+            const <String>[];
+    setState(() {
+      _providerId = id;
+      _model = models.isNotEmpty ? models.first : '';
+      _effort = 'low';
+    });
   }
 
   /// 按时段问候，跟参考界面一致。
@@ -1177,12 +1174,50 @@ class _WelcomeViewState extends State<_WelcomeView> {
     return '晚上好呀';
   }
 
+  /// 选中/取消专长（输入栏下方直接点选）。
+  void _toggleExpertise(String id) => setState(() {
+        if (!_expertiseIds.remove(id)) _expertiseIds.add(id);
+      });
+
+  /// 输入栏下方的 AI专长选择区（居中、无围框）。
+  Widget _buildExpertiseSection(AppState state) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    if (state.expertises.isEmpty) {
+      return Center(
+        child: Text(
+          SystemPromptConfig.emptyLibraryText,
+          style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        Center(
+          child: Text(
+            'AI专长',
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w400),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ExpertiseBadges(
+          expertises: state.expertises,
+          selectedIds: _expertiseIds,
+          onToggle: _toggleExpertise,
+          framed: false,
+          centered: true,
+          dense: true,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final state = context.watch<AppState>();
-    final quickTemplates = _quickTemplates(state);
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
@@ -1226,54 +1261,48 @@ class _WelcomeViewState extends State<_WelcomeView> {
                 afterMode: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _TemplatePicker(
-                      selected: _selectedTemplate,
-                      defaultTemplate: state.defaultTemplate,
-                      onChanged: _selectTemplate,
-                    ),
-                    const SizedBox(width: 6),
                     _ProjectFolderPicker(
                       path: _projectPath,
                       onChanged: (path) => setState(() => _projectPath = path),
                     ),
+                    if (state.config.providers.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      ProviderPicker(
+                        providers: state.config.providers,
+                        value: _providerId,
+                        onChanged: _changeProvider,
+                      ),
+                      const SizedBox(width: 6),
+                      ModelPicker(
+                        provider: state.config.providers.firstWhere(
+                          (item) => item.id == _providerId,
+                          orElse: () => state.config.providers.first,
+                        ),
+                        model: _model,
+                        onChanged: (value) => setState(() => _model = value),
+                      ),
+                      const SizedBox(width: 6),
+                      ReasoningToggles(
+                        thinking: _thinking,
+                        onThinkingChanged: (value) =>
+                            setState(() => _thinking = value),
+                        effort: _effort,
+                        effortOptions: reasoningEffortOptionsFor(
+                          state.config.providers.firstWhere(
+                            (item) => item.id == _providerId,
+                            orElse: () => state.config.providers.first,
+                          ),
+                          _model,
+                        ),
+                        onEffortChanged: (value) =>
+                            setState(() => _effort = value),
+                      ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(height: 14),
-              if (quickTemplates.isNotEmpty)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final template in quickTemplates)
-                      ActionChip(
-                        avatar: Icon(
-                          Icons.bolt,
-                          size: 16,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                        label: Text(
-                          template.name.isEmpty ? '(未命名模板)' : template.name,
-                        ),
-                        // 快捷会话只是「选中模板」：真正的会话在发送消息时创建。
-                        onPressed: () => _selectTemplate(template),
-                        backgroundColor:
-                            _selectedTemplate?.id == template.id
-                                ? scheme.primary.withValues(alpha: 0.12)
-                                : scheme.surfaceContainerLowest,
-                        side: BorderSide(
-                          color: _selectedTemplate?.id == template.id
-                              ? scheme.primary
-                              : scheme.outlineVariant,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppTheme.radiusMedium),
-                        ),
-                      ),
-                  ],
-                ),
+              _buildExpertiseSection(state),
             ],
           ),
         ),
@@ -2278,115 +2307,6 @@ class _SessionMenu extends StatelessWidget {
   }
 }
 
-/// 常用模板下拉：列出用户的会话模板，选中即按模板建会话。
-class _TemplatePicker extends StatelessWidget {
-  const _TemplatePicker({
-    required this.selected,
-    required this.defaultTemplate,
-    required this.onChanged,
-  });
-
-  /// 用户手动选择的模板；为空时用 [defaultTemplate]。
-  final SessionTemplate? selected;
-
-  /// 设置里配置的默认模板（未配置时为空）。
-  final SessionTemplate? defaultTemplate;
-
-  /// Called with the newly selected template, or null to fall back to the
-  /// default template.
-  final void Function(SessionTemplate? template) onChanged;
-
-  /// The template that will actually be used for the next session.
-  SessionTemplate? _effective(List<SessionTemplate> templates) {
-    final selected = this.selected;
-    // 手动选择的模板可能已被删除——此时回落到默认模板。
-    if (selected != null && templates.any((t) => t.id == selected.id)) {
-      return selected;
-    }
-    return defaultTemplate;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final templates = context.watch<AppState>().templates;
-    final effective = _effective(templates);
-    if (templates.isEmpty) {
-      return const ToolbarPill(
-        icon: Icons.dashboard_customize_outlined,
-        label: '暂无模板',
-      );
-    }
-    return PopupMenuButton<String>(
-      tooltip: '会话模板',
-      onSelected: (id) {
-        if (id == _clearValue) {
-          onChanged(null);
-          return;
-        }
-        final template = templates.firstWhere(
-          (t) => t.id == id,
-          orElse: () => templates.first,
-        );
-        onChanged(template);
-      },
-      itemBuilder: (context) => [
-        // 回到「使用默认模板」。
-        if (selected != null)
-          const PopupMenuItem(
-            value: _clearValue,
-            child: Row(
-              children: [
-                Icon(Icons.settings_suggest_outlined, size: 18),
-                SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    '使用默认模板',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        for (final template in templates)
-          PopupMenuItem(
-            value: template.id,
-            child: Row(
-              children: [
-                const Icon(Icons.dashboard_customize_outlined, size: 18),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    template.name.isEmpty ? '(未命名模板)' : template.name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (template.id == defaultTemplate?.id)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Text(
-                      '默认',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
-      child: ToolbarPill(
-        icon: Icons.dashboard_customize_outlined,
-        label: effective == null
-            ? '会话模板'
-            : (effective.name.isEmpty ? '(未命名模板)' : effective.name),
-        trailing: true,
-        active: effective != null,
-      ),
-    );
-  }
-
-  /// Menu value that clears the manual selection.
-  static const _clearValue = '__clear__';
-}
-
 /// 项目文件夹选择器：未指定（建全局会话）或具体路径（用最后一级目录名建项目）。
 ///
 /// 选中的路径只在建会话时落库：项目不存在时按目录名新建项目，会话建在项目内。
@@ -3202,68 +3122,10 @@ class _ModelSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final session = controller.session!;
-    final provider = controller.activeProvider;
-    final models = <String>{
-      ...provider.models,
-      if (session.model.isNotEmpty) session.model,
-    }.toList();
-    final label = session.model.isNotEmpty ? session.model : provider.name;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final full = '${provider.name} · $label';
-    if (models.isEmpty) {
-      return ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 220),
-        child: Text(
-          full,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-    return PopupMenuButton<String>(
-      tooltip: '切换模型（限同一提供商）',
-      onSelected: (value) => controller.setModel(value),
-      itemBuilder: (context) => [
-        for (final model in models)
-          CheckedPopupMenuItem(
-            value: model,
-            checked: model == session.model,
-            child: Text(model),
-          ),
-      ],
-      child: Tooltip(
-        message: full,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.memory, size: 15, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: Text(
-                  full,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              Icon(Icons.arrow_drop_down, size: 16, color: scheme.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
+    return ModelPicker(
+      provider: controller.activeProvider,
+      model: session.model,
+      onChanged: controller.setModel,
     );
   }
 }
@@ -3288,74 +3150,24 @@ class _ReasoningControls extends StatelessWidget {
     final params = session.params;
     final efforts = _effortOptions(session);
     final effort = params.reasoningEffort ?? '';
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PopupMenuButton<ThinkingSwitch>(
-          tooltip: '思考开关：${_thinkingLabel(params.thinking)}',
-          onSelected: (value) => controller.setThinking(value),
-          itemBuilder: (context) => [
-            for (final value in ThinkingSwitch.values)
-              CheckedPopupMenuItem(
-                value: value,
-                checked: value == params.thinking,
-                child: Text(_thinkingLabel(value)),
-              ),
-          ],
-          child: _ReasoningIcon(
-            icon: _thinkingIcon(params.thinking),
-            active: params.thinking == ThinkingSwitch.on,
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
-        if (efforts.isNotEmpty)
-          PopupMenuButton<String>(
-            tooltip: '思考强度：${effort.isEmpty ? '默认（不传入）' : effort}'
-                ' · 最大输出tokens：${_maxTokensLabel(session)}',
-            onSelected: (value) => controller.setReasoningEffort(value),
-            itemBuilder: (context) => [
-              CheckedPopupMenuItem(
-                value: '',
-                checked: effort.isEmpty,
-                child: const Text('默认（不传入）'),
-              ),
-              for (final value in efforts)
-                CheckedPopupMenuItem(
-                  value: value,
-                  checked: value == effort,
-                  child: Text(value),
-                ),
-            ],
-            child: _ReasoningIcon(
-              icon: Icons.tune,
-              active: effort.isNotEmpty,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-      ],
+    return ReasoningToggles(
+      thinking: params.thinking,
+      onThinkingChanged: controller.setThinking,
+      effort: effort,
+      effortOptions: efforts,
+      onEffortChanged: controller.setReasoningEffort,
+      effortTooltip: '思考强度：${effort.isEmpty ? '默认（不传入）' : effort}'
+          ' · 最大输出tokens：${_maxTokensLabel(session)}',
     );
   }
-
-  static String _thinkingLabel(ThinkingSwitch value) => switch (value) {
-        ThinkingSwitch.auto => 'auto（由模型决定）',
-        ThinkingSwitch.on => 'on（开启思考）',
-        ThinkingSwitch.off => 'off（关闭思考）',
-      };
-
-  static IconData _thinkingIcon(ThinkingSwitch value) => switch (value) {
-        ThinkingSwitch.on => Icons.psychology,
-        ThinkingSwitch.off => Icons.psychology_outlined,
-        ThinkingSwitch.auto => Icons.auto_awesome,
-      };
 
   /// 思考强度选项：服务开启「同步思考强度」且有同步值时用同步档位，否则用
   /// 会话模板 `reasoning_effort` 的全部候选值（见 [reasoningEffortOptionsFor]）。
   List<String> _effortOptions(Session session) =>
       reasoningEffortOptionsFor(controller.activeProvider, session.model);
 
-  /// 当前会话生效的输出上限：会话（模板）里显式指定的值优先，否则用模型服务
-  /// 的配置（可按思考档位取值）。`null` = 不限制。
+  /// 当前会话生效的输出上限：会话（模板）里显式指定的值优先，否则用模型
+  /// 服务的配置（可按思考档位取值）。`null` = 不限制。
   String _maxTokensLabel(Session session) {
     final value = session.params.maxTokens ??
         controller.activeProvider.maxOutputTokensFor(session.params.reasoningEffort);
@@ -3363,35 +3175,6 @@ class _ReasoningControls extends StatelessWidget {
   }
 }
 
-/// 思考控件用的紧凑图标按钮（32×32）。
-class _ReasoningIcon extends StatelessWidget {
-  const _ReasoningIcon({
-    required this.icon,
-    required this.active,
-    required this.color,
-  });
-
-  final IconData icon;
-  final bool active;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 32,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active
-            ? scheme.primary.withValues(alpha: 0.12)
-            : scheme.surfaceContainerHigh.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-      ),
-      child: Icon(icon, size: 17, color: active ? scheme.primary : color),
-    );
-  }
-}
 
 class _LiveStream extends StatelessWidget {
   const _LiveStream({required this.controller});

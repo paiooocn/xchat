@@ -370,6 +370,21 @@ features:
       - "旧版细粒度内置 id 通过 Expertise.aliases 兼容：组合/选中按本体 id 或别名命中（composeExpertisePrompt / hasUsableExpertiseSelection）"
       - "专长管理入口在侧栏「☰ 更多 → AI专长管理」，提供查看（完整提示词）/复制提示词/添加/编辑/停用/删除，改动经 AppState.saveExpertises 原子写入"
 
+  - id: home_quick_config
+    title: "首页快捷配置（AI专长 + 厂家/模型/思考强度）"
+    files:
+      - "lib/ui/pages/home_page.dart"
+      - "lib/ui/widgets/system_prompt_config.dart"
+      - "lib/ui/widgets/model_picker.dart"
+      - "lib/ui/widgets/reasoning_toggles.dart"
+      - "lib/models/expertise.dart"
+      - "lib/state/app_state.dart"
+    design: "DESIGN.md §11.1"
+    contracts:
+      - "欢迎页输入栏下区「项目文件夹」右侧：厂家/模型胶囊（ProviderPicker / ModelPicker）+ 思考开关（默认 on）+ 思考强度（默认 low，ReasoningToggles）；专长 badge（ExpertiseBadges framed:false、居中）在输入栏下方直接多选"
+      - "未选专长发送时弹窗提示「选择专长 / 新建会话」；建会话走 createSessionDraft：systemPrompt=composeExpertisePrompt(选中id)，provider/model/thinking/effort 取控件值，其余 params/tools/toolCallsLimit 取全局默认"
+      - "不再要求默认模板；模板仍由模板页 / 创建向导使用"
+
   - id: session_ops
     title: "会话操作：编辑重发、克隆、归档、多会话并行"
     files:

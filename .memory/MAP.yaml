@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-24 15:37"
-  git_sha: "8e90456"
+  generated_at: "2026-11-24 17:33"
+  git_sha: "33979ba"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 152
-  line_count: 41956
+  file_count: 154
+  line_count: 42050
 
 modules:
   - id: "agent"
@@ -442,7 +442,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 12404
+    lines: 12180
     deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -458,7 +458,7 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3797
+        lines: 3573
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1174
@@ -510,7 +510,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 5984
+    lines: 6302
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -535,6 +535,9 @@ modules:
       - path: "lib/ui/widgets/message_bubble.dart"
         lines: 331
         symbols: ["MessageBubble"]
+      - path: "lib/ui/widgets/model_picker.dart"
+        lines: 158
+        symbols: ["ProviderPicker", "ModelPicker"]
       - path: "lib/ui/widgets/note_ai_panel.dart"
         lines: 534
         symbols: ["NoteAiMessage", "NoteAiPanel"]
@@ -552,12 +555,15 @@ modules:
       - path: "lib/ui/widgets/project_dialog.dart"
         lines: 215
         symbols: ["ProjectDialogResult", "ProjectDialog"]
+      - path: "lib/ui/widgets/reasoning_toggles.dart"
+        lines: 122
+        symbols: ["ReasoningToggles"]
       - path: "lib/ui/widgets/session_info_dialog.dart"
         lines: 264
         symbols: ["SessionInfoDialog"]
       - path: "lib/ui/widgets/system_prompt_config.dart"
-        lines: 214
-        symbols: ["SystemPromptConfig"]
+        lines: 252
+        symbols: ["SystemPromptConfig", "ExpertiseBadges", "ExpertiseBadge"]
       - path: "lib/ui/widgets/task_session_view.dart"
         lines: 858
         symbols: ["TaskListView", "TaskChatHeader", "showTaskImportDialog", "AutoRunOptions"]
@@ -629,9 +635,9 @@ tests:
   - path: "test/home_flow_test.dart"
     lines: 138
     cases: 2
-  - path: "test/home_template_dialog_test.dart"
-    lines: 106
-    cases: 2
+  - path: "test/home_quick_config_test.dart"
+    lines: 215
+    cases: 5
   - path: "test/index_repository_test.dart"
     lines: 68
     cases: 3
@@ -747,8 +753,8 @@ tests:
     lines: 330
     cases: 26
   - path: "test/template_default_test.dart"
-    lines: 143
-    cases: 5
+    lines: 58
+    cases: 2
   - path: "test/template_expertise_test.dart"
     lines: 236
     cases: 5

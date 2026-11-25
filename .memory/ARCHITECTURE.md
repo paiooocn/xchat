@@ -227,3 +227,11 @@ UI 发消息
    `<root>/expertises.json`（整表覆盖 + `deleted` 墓碑）；管理入口「☰ 更多 → AI专长管理」
    （查看 / 添加 / 编辑 / 停用 / 删除，改动经 `AppState.saveExpertises` 原子写入）。
    内置资源缺失/损坏返回空列表 → UI 显示「暂无可用的 AI 专长。」，不得让模板页崩溃。
+32. **欢迎页用快捷配置直接建会话，不再依赖会话模板**：输入栏下区「项目文件夹」右侧是
+   厂家胶囊 `ProviderPicker`、会话同款 `ModelPicker`（限同一厂家）、思考开关（默认 on）
+   与思考强度（默认 low，`ReasoningToggles`）；输入栏下方居中专长 badge 多选。
+   **未选专长发送会被拦下并弹窗提示**（选择专长 / 新建会话）。发送时经
+   `_HomePageState._startSession` 走 `createSessionDraft`（systemPrompt =
+   `composeExpertisePrompt(ids)`，provider/model/thinking/effort 取控件值，其余
+   params/tools/预算取全局默认）。默认模板 / 模板下拉已从欢迎页移除（模板仍走
+   模板页与创建向导）；`ModelPicker` / `ReasoningToggles` 由聊天面板与首页共用。

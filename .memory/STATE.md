@@ -1,5 +1,65 @@
 # STATE — 进度交接
 
+## 2026-11-17 · 0.9.0 续：首页快捷配置（厂家/模型/思考强度 + 输入栏下专长）代替会话模板下拉
+
+**需求**（用户）
+
+在首页新增「AI专长选择 + 指定模型（含厂家 / 模型 / 思考强度）」的快捷配置，
+**代替原来的「会话模板」下拉菜单**。后续调整：厂家与模型都用会话内同款胶囊样式、
+补思考开关（默认 on）与思考强度（默认 low），四项放到输入栏下区「项目文件夹」右侧；
+专长 badge 移到输入栏下方居中、去围框、去说明；未选专长时弹窗提示。
+
+**做了什么**
+
+- **欢迎页改造**（`home_page.dart` `_WelcomeView`）：删除模板选择 / 默认模板 /
+  快捷会话 chips；发送时直接建会话，不再要求模板。
+- **输入栏下区控件**：「项目文件夹」右侧依次是 `ProviderPicker`（厂家胶囊，同款
+  模型选择布局、无 label）、`ModelPicker`（限同一厂家）、`ReasoningToggles`
+  （思考开关默认 on + 思考强度默认 low）；切厂家自动重置为该厂家第一个模型、
+  强度回 low。思考开关/强度图标与会话内共用同一组件。
+- **专长区**：输入栏下方居中标题「AI专长」（常规字重），badge 无围框、整体居中排布，
+  采用 `dense` 紧凑样式（背景 `surfaceContainerHigh`(0.7)、`labelMedium` 字号，与
+  「项目文件夹」胶囊一致；选中仍为绿色填充），点击多选；去掉原「点选后…」说明。
+- **未选专长拦截**：发送时若未选专长，弹「请选择 AI 专长」对话框，提供
+  「选择专长」（关闭弹窗去点选）与「新建会话」（进创建向导）两个出口。
+- **建会话数据流**：`_startSession` 接收 `_QuickStartConfig`（含 thinking），经
+  `createSessionDraft` 创建——systemPrompt = `composeExpertisePrompt(ids)`，
+  provider/model/thinking/effort 用控件值，params/tools/toolCallsLimit 取全局默认。
+- **测试**：新增 `test/home_quick_config_test.dart`（4 例：默认直建、厂家/模型/
+  思考参数落库、无厂家不崩溃、未选专长弹窗与新建会话入口）；`template_default_test.dart`
+  只保留配置单测；删除过时的 `home_template_dialog_test.dart`。
+
+**改了哪些文件**
+
+- 改：`lib/ui/pages/home_page.dart`、`lib/ui/widgets/system_prompt_config.dart`、
+  `FEATURES.md`（§7 / §9.1）、`DESIGN.md`（§11.1）、`.memory/*`
+- 新增：`lib/ui/widgets/model_picker.dart`（含 `ProviderPicker`）、
+  `lib/ui/widgets/reasoning_toggles.dart`、`test/home_quick_config_test.dart`
+- 删除：`test/home_template_dialog_test.dart`
+- 重写：`test/template_default_test.dart`
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：515 passed, 1 skipped
+```
+
+- 新增用例覆盖：无模板也能发送、专长组合顺序、指定模型与思考强度落进会话、
+  未配置厂家时不崩溃。
+- 真机要点：①输入栏下区「项目文件夹」右侧依次是厂家/模型胶囊、思考开关（默认 on）、
+  思考强度（默认 low）；②输入栏下方居中是 AI专长 badge，点选即生效；③未选专长发送会
+  弹「请选择 AI 专长」，可去点选或进「新建会话」向导；④模板仍可从「更多 / 模板」和
+  创建向导使用。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送；版本仍 0.9.0+1。
+- `config.default_template_id` / `AppState.defaultTemplate` 与设置页「默认会话模板」
+  现在**不再影响欢迎页**（快捷配置完全取代）；字段与设置项暂时保留兼容，后续可清理。
+- 快捷配置里的 provider/model 目前不做持久化记忆（每次进欢迎页取全局当前值）；
+  如需「记住上次选择」可存 SharedPreferences。
+
 ## 2026-11-17 · 0.9.0 续：专长改为领域级（8 个）+ 管理页查看/复制
 
 **需求**（用户）
