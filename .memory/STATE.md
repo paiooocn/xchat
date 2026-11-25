@@ -20,6 +20,10 @@ KGP ≥ 2.4.10，而本项目 `android/` 是**按本地 Flutter 3.47.7 的基线
 **验证**：仅改 YAML；重跑 tag/workflow_dispatch 时 Android job 应直接过校验。
 本地 `bash dist/build_apk.sh -p` 行为不变（版本/依赖一字未动）。
 
+**提交状态**：已提交 `1e91c54`，打 annotated tag **`v0.9.0`**（`caeb91e`）并推送
+`origin main` + tag —— tag 推送会串行触发 android / linux-deb / windows 三个 build
+workflow 与 `publish-gitcode` 发布。工作区干净，`pubspec.yaml` = `0.9.0+1`。
+
 **下一步 / 遗留**：想跟进新稳定版 Flutter 时，按 GOTCHAS §36 的三处一起升级
 （gradle ≥ 9.5.0、AGP ≥ 9.3.1、KGP ≥ 2.4.20 才不会连告警都出）。
 
