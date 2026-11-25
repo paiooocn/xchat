@@ -58,7 +58,7 @@ Future<bool> pumpUntilFound(
 
 void main() {
   group('窄屏底部 Tab', () {
-    testWidgets('底部只有「会话｜笔记」两个 Tab，侧栏不再有分段 Tab', (tester) async {
+    testWidgets('底部是「首页｜会话｜笔记」，默认落首页且侧栏无分段 Tab', (tester) async {
       useViewSize(tester, const Size(400, 800));
       final state = (await tester.runAsync(buildState))!;
       await tester.pumpWidget(
@@ -69,10 +69,15 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 50));
 
-      // 底部 Tab 是唯一入口：'会话' / '笔记' 各只出现一次。
+      // 底部 Tab 是唯一工作区入口：三个目的地各出现一次。
+      expect(find.text('首页'), findsOneWidget);
       expect(find.text('会话'), findsOneWidget);
       expect(find.text('笔记'), findsOneWidget);
       expect(find.byType(NavigationBar), findsOneWidget);
+
+      // 移动端默认落在首页（欢迎页输入框 + 专长 badge）。
+      expect(find.byKey(const Key('welcome-input')), findsOneWidget);
+      expect(find.byKey(const Key('expertise-badge-programming')), findsOneWidget);
     });
 
     testWidgets('切到「笔记」Tab 显示笔记列表空态', (tester) async {

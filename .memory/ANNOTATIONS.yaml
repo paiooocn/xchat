@@ -384,6 +384,8 @@ features:
       - "欢迎页输入栏下区「项目文件夹」右侧：厂家/模型胶囊（ProviderPicker / ModelPicker）+ 思考开关（默认 on）+ 思考强度（默认 low，ReasoningToggles）；专长 badge（ExpertiseBadges framed:false、居中）在输入栏下方直接多选"
       - "未选专长发送时弹窗提示「选择专长 / 新建会话」；建会话走 createSessionDraft：systemPrompt=composeExpertisePrompt(选中id)，provider/model/thinking/effort 取控件值，其余 params/tools/toolCallsLimit 取全局默认"
       - "不再要求默认模板；模板仍由模板页 / 创建向导使用"
+      - "移动端（<820）底部 Tab = 首页｜会话｜笔记（默认落「首页」）：Android 首页直接复用 _WelcomeView，发送/创建后压栈进 _MobileChatPage；侧栏顶行「⌂ 回到首页」经 _goHome 切回"
+      - "移动端首页跳转必须先建会话落盘即跳（_startSession sendFirstTurn:false），首轮发送后台继续；不要在 onSend 里 await 整个 controller.send，否则网络耗时会让用户觉得「没跳转」"
 
   - id: session_ops
     title: "会话操作：编辑重发、克隆、归档、多会话并行"

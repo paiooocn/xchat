@@ -114,6 +114,11 @@ class _HomePageState extends State<HomePage> {
   /// 当前工作区 Tab（会话 / 笔记）。
   _WorkspaceTab _tab = _WorkspaceTab.session;
 
+  /// 窄屏是否停在「首页」（桌面版欢迎页）。仅窄屏生效：宽屏的欢迎页由
+  /// `selected == null` 决定，不受这个开关影响。移动端默认落在首页，
+  /// 「回到首页」按钮与底部「首页」Tab 都切到它。
+  bool _showHome = true;
+
   /// 当前打开的笔记（笔记 Tab）。
   String? _selectedNoteId;
 
@@ -310,6 +315,7 @@ class _HomePageState extends State<HomePage> {
       _tab = _WorkspaceTab.note;
       _selectedNoteId = id;
       _selectedExternalPath = null;
+      _showHome = false;
     });
     if (MediaQuery.sizeOf(context).width < 820) {
       Navigator.of(context).push(
@@ -338,6 +344,7 @@ class _HomePageState extends State<HomePage> {
       _tab = _WorkspaceTab.note;
       _selectedNoteId = null;
       _selectedExternalPath = target;
+      _showHome = false;
     });
     if (MediaQuery.sizeOf(context).width < 820) {
       Navigator.of(context).push(
@@ -392,7 +399,10 @@ class _HomePageState extends State<HomePage> {
     final state = context.read<AppState>();
     await state.openExternalRoot(dir);
     if (!mounted) return;
-    setState(() => _tab = _WorkspaceTab.note);
+    setState(() {
+      _tab = _WorkspaceTab.note;
+      _showHome = false;
+    });
     final error = state.externalScan?.error;
     if (error != null) {
       messenger?.showSnackBar(SnackBar(content: Text('打开目录失败：$error')));
@@ -412,8 +422,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 窄屏底部 Tab（会话｜笔记）—— 唯一的工作区切换入口。
+  /// 窄屏底部 Tab（首页｜会话｜笔记）—— 唯一的工作区切换入口。
+  ///
+  /// 「首页」与桌面欢迎页同一套内容（快捷配置 + 输入栏 + 专长）；切到
+  /// 会话 / 笔记会离开首页（[_showHome] = false），顶行「回到首页」再切回。
   Widget _mobileTabBar(ThemeData theme) {
+    final index = _showHome
+        ? 0
+        : _tab == _WorkspaceTab.session
+            ? 1
+            : 2;
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
@@ -423,11 +441,18 @@ class _HomePageState extends State<HomePage> {
         height: 58,
         backgroundColor: Colors.transparent,
         indicatorColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-        selectedIndex: _tab == _WorkspaceTab.session ? 0 : 1,
-        onDestinationSelected: (index) => setState(() {
-          _tab = index == 0 ? _WorkspaceTab.session : _WorkspaceTab.note;
+        selectedIndex: index,
+        onDestinationSelected: (value) => setState(() {
+          _showHome = value == 0;
+          if (value == 1) _tab = _WorkspaceTab.session;
+          if (value == 2) _tab = _WorkspaceTab.note;
         }),
         destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: '首页',
+          ),
           NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
             selectedIcon: Icon(Icons.chat_bubble),
@@ -443,7 +468,8 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _newSession(BuildContext context, {String? projectId}) async {
+  /// 打开创建向导；返回创建的会话（取消 = null）。窄屏首页可据此直接进聊天。
+  Future<Session?> _newSession(BuildContext context, {String? projectId}) async {
     final state = context.read<AppState>();
     final created = await Navigator.of(context).push<Session>(
       MaterialPageRoute(
@@ -454,6 +480,7 @@ class _HomePageState extends State<HomePage> {
       setState(() => _selectedId = created.id);
       await state.refreshSessions();
     }
+    return created;
   }
 
   Future<void> _newProject(BuildContext context) async {
@@ -541,6 +568,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _selectedId = id;
         _activeTaskId = null;
+        _showHome = false;
       });
     }
   }
@@ -654,64 +682,66 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 )
-              : _Sidebar(
-                  toolbarActions: _sidebarToolbar(context),
-                  titleMenu: _moreMenu(context),
-                  compact: true,
-                  tab: _tab,
-                  onTabChanged: (tab) => setState(() => _tab = tab),
-                  notes: state.notes,
-                  archivedNotes: state.archivedNotes,
-                  selectedNoteId: _selectedNoteId,
-                  onSelectNote: (id) => _openNote(id),
-                  onNewNote: () => _newNote(context),
-                  externalRoot: state.externalRoot,
-                  externalFiles: state.externalFiles,
-                  externalTruncated: state.externalScan?.truncated ?? false,
-                  externalError: state.externalScan?.error,
-                  externalFilePath: state.externalFile,
-                  selectedExternalPath: _selectedExternalPath,
-                  onOpenExternal: _openExternal,
-                  onCloseExternalFile: _closeExternalFile,
-                  onPickExternalFile: _pickExternalFile,
-                  onPickExternalDirectory: _pickExternalDirectory,
-                  onRefreshExternal: () =>
-                      context.read<AppState>().refreshExternalRoot(),
-                  onCloseExternalRoot: _closeExternalRoot,
-                  sessions: sessions,
-                  projects: projects,
-                  selectedId: _selectedId,
-                  runningIds: state.runningSessionIds,
-                  tagFilter: _tagFilter,
-                  onTagToggle: _toggleTag,
-                  searchController: _searchController,
-                  onSearchChanged: () => setState(() {}),
-                  globalSessionsExpanded: _globalSessionsExpanded,
-                  onGlobalExpandedChanged: (expanded) {
-                    setState(() => _globalSessionsExpanded = expanded);
-                    _saveGlobalExpanded(expanded);
-                  },
-                  onRefreshSessions: _refreshSessions,
-                  onRefreshNotes: _refreshNotes,
-                  refreshingSessions: _refreshingSessions,
-                  // 底行工具条已挪到顶行，列表底部只留一点呼吸空间。
-                  bottomInset: 8,
-                  onSelect: (id) async {
-                    await _openSession(context, id);
-                    if (!context.mounted) return;
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => _MobileChatPage(sessionId: id),
-                      ),
-                    );
-                  },
-                  onNewSession: (projectId) =>
-                      _newSession(context, projectId: projectId),
-                  onNewProject: () => _newProject(context),
-                  onEditProject: (p) => _editProject(context, p),
-                  onEditProjectTags: (p) => _editProjectTags(context, p),
-                  onGoHome: _goHome,
-                ),
+              : _showHome
+                  ? _mobileHome()
+                  : _Sidebar(
+                      toolbarActions: _sidebarToolbar(context),
+                      titleMenu: _moreMenu(context),
+                      compact: true,
+                      tab: _tab,
+                      onTabChanged: (tab) => setState(() => _tab = tab),
+                      notes: state.notes,
+                      archivedNotes: state.archivedNotes,
+                      selectedNoteId: _selectedNoteId,
+                      onSelectNote: (id) => _openNote(id),
+                      onNewNote: () => _newNote(context),
+                      externalRoot: state.externalRoot,
+                      externalFiles: state.externalFiles,
+                      externalTruncated: state.externalScan?.truncated ?? false,
+                      externalError: state.externalScan?.error,
+                      externalFilePath: state.externalFile,
+                      selectedExternalPath: _selectedExternalPath,
+                      onOpenExternal: _openExternal,
+                      onCloseExternalFile: _closeExternalFile,
+                      onPickExternalFile: _pickExternalFile,
+                      onPickExternalDirectory: _pickExternalDirectory,
+                      onRefreshExternal: () =>
+                          context.read<AppState>().refreshExternalRoot(),
+                      onCloseExternalRoot: _closeExternalRoot,
+                      sessions: sessions,
+                      projects: projects,
+                      selectedId: _selectedId,
+                      runningIds: state.runningSessionIds,
+                      tagFilter: _tagFilter,
+                      onTagToggle: _toggleTag,
+                      searchController: _searchController,
+                      onSearchChanged: () => setState(() {}),
+                      globalSessionsExpanded: _globalSessionsExpanded,
+                      onGlobalExpandedChanged: (expanded) {
+                        setState(() => _globalSessionsExpanded = expanded);
+                        _saveGlobalExpanded(expanded);
+                      },
+                      onRefreshSessions: _refreshSessions,
+                      onRefreshNotes: _refreshNotes,
+                      refreshingSessions: _refreshingSessions,
+                      // 底行工具条已挪到顶行，列表底部只留一点呼吸空间。
+                      bottomInset: 8,
+                      onSelect: (id) async {
+                        await _openSession(context, id);
+                        if (!context.mounted) return;
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _MobileChatPage(sessionId: id),
+                          ),
+                        );
+                      },
+                      onNewSession: (projectId) =>
+                          _newSession(context, projectId: projectId),
+                      onNewProject: () => _newProject(context),
+                      onEditProject: (p) => _editProject(context, p),
+                      onEditProjectTags: (p) => _editProjectTags(context, p),
+                      onGoHome: _goHome,
+                    ),
         );
       },
     );
@@ -946,13 +976,110 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() {});
   }
 
-  /// 回到欢迎页（取消选中当前会话）。
+  /// 回到首页：宽屏 = 清空选中（主区回落到欢迎页）；窄屏 = 切到底部
+  /// 「首页」Tab，与桌面同一套内容。
   void _goHome() {
-    if (_selectedId == null) return;
     setState(() {
       _selectedId = null;
       _activeTaskId = null;
+      _showHome = true;
     });
+  }
+
+  /// 窄屏压栈进移动端聊天页（调用前应已确认会话存在）。
+  void _openChatOnMobile(String sessionId) {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => _MobileChatPage(sessionId: sessionId)),
+    );
+  }
+
+  /// 窄屏首页：顶行（品牌 + 审批 / 模板 / 新建 / 更多）+ 桌面同款欢迎页内容。
+  ///
+  /// 发送后直接压栈进 `_MobileChatPage`；创建向导建好后同样直接进聊天。
+  Widget _mobileHome() {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 2, 8),
+            child: Row(
+              children: [
+                const BrandMark.solid(size: 22),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    kAppBrandName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                _approvalBadge(),
+                const SizedBox(width: _Sidebar._brandRowGap),
+                _templatesButton(context),
+                const SizedBox(width: _Sidebar._brandRowGap),
+                IconButton.filled(
+                  tooltip: '新建会话',
+                  style: _brandRowIconStyle.merge(
+                    IconButton.styleFrom(
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      backgroundColor: theme.colorScheme.primary,
+                    ),
+                  ),
+                  icon: const Icon(Icons.add),
+                  onPressed: () async {
+                    final created = await _newSession(context);
+                    if (created != null) _openChatOnMobile(created.id);
+                  },
+                ),
+                const SizedBox(width: _Sidebar._brandRowGap),
+                _moreMenu(context),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: theme.colorScheme.outlineVariant),
+          Expanded(
+            child: _WelcomeView(
+              onNewSession: () async {
+                final created = await _newSession(context);
+                if (created != null) _openChatOnMobile(created.id);
+              },
+              onSend: (
+                text,
+                attachments, {
+                required _QuickStartConfig config,
+                required AgentMode mode,
+                String? projectPath,
+              }) async {
+                // 先建会话并落盘，立即跳聊天页；首轮发送在后台继续（网络耗时
+                // 不再拖住跳转，_home 的 busy 也仍覆盖整轮生成）。
+                final session = await _startSession(
+                  text,
+                  attachments,
+                  config: config,
+                  mode: mode,
+                  projectPath: projectPath,
+                  sendFirstTurn: false,
+                );
+                _openChatOnMobile(session.id);
+                if (!mounted) return;
+                await _sendFirstTurn(
+                  context.read<AppState>(),
+                  session,
+                  text,
+                  attachments,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 欢迎页发起的第一轮：按快捷配置建会话并直接发送。
@@ -962,12 +1089,17 @@ class _HomePageState extends State<HomePage> {
   ///
   /// 会话先在内存中建好并立即切换到聊天面板，落盘在后台完成——
   /// 磁盘写入不应延迟界面切换。
-  Future<void> _startSession(
+  ///
+  /// [sendFirstTurn] = false 时**只建会话并落盘就返回**，首轮发送交给调用方
+  /// （窄屏首页：先跳聊天页，再后台发送），避免网络耗时拖住页面跳转。
+  /// 返回新建的会话（窄屏首页据此压栈进聊天页）。
+  Future<Session> _startSession(
     String text,
     List<MessageAttachment> attachments, {
     required _QuickStartConfig config,
     AgentMode mode = AgentMode.auto,
     String? projectPath,
+    bool sendFirstTurn = true,
   }) async {
     final state = context.read<AppState>();
     final path = projectPath?.trim() ?? '';
@@ -997,15 +1129,29 @@ class _HomePageState extends State<HomePage> {
     );
     if (!mounted) {
       unawaited(state.persistSession(session));
-      return;
+      return session;
     }
     // 立即切到新会话，落盘与首轮发送在后台继续。
     setState(() => _selectedId = session.id);
     await state.persistSession(session);
+    if (sendFirstTurn) {
+      await _sendFirstTurn(state, session, text, attachments);
+    }
+    return session;
+  }
+
+  /// 欢迎页建好会话后的首轮发送（空输入则跳过）。
+  ///
+  /// 审批处理先接到全局队列：此时聊天面板可能还没挂载，挂载后会覆盖成等价
+  /// 的处理器，两条路径不会并存。
+  Future<void> _sendFirstTurn(
+    AppState state,
+    Session session,
+    String text,
+    List<MessageAttachment> attachments,
+  ) async {
     if (text.trim().isEmpty && attachments.isEmpty) return;
     final controller = state.controllerFor(session.id);
-    // 面板尚未挂载时也要能审批工具：先把全局审批队列接上（面板挂载后会
-    // 覆盖成等价的处理器）。
     final center = state.approvalCenter;
     controller.approvalHandler = (tool, arguments, note) => center.request(
           sessionId: session.id,

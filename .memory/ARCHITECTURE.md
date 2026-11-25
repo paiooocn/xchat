@@ -136,10 +136,12 @@ UI 发消息
     存 `SharedPreferences`，不做 per-note 覆盖）。预览**必须**走
     `markdownView()`，不要另写渲染器。
 20. **移动端只有底部 Tab 一个工作区入口**：窄屏（`< 820`）由 `HomePage` 的
-    `bottomNavigationBar`（`会话｜笔记`）切换工作区，`_Sidebar(compact: true)`
-    **不再渲染内部分段 Tab**（不做双入口）。笔记内部是栈：列表 →
-    `_MobileNotePage`（`NotesPanel(mobile: true)`）→ AI 底部抽屉；
-    `NotesPanel.mobile` 时**不渲染右侧 AI 边栏**，AI 走 `showModalBottomSheet`。
+    `bottomNavigationBar`（`首页｜会话｜笔记`）切换工作区，默认落「首页」；
+    `_Sidebar(compact: true)` **不再渲染内部分段 Tab**（不做双入口）。「首页」
+    复用桌面 `_WelcomeView`（快捷配置 + 输入栏 + 专长 badge），发送 / 向导建会话后
+    压栈进 `_MobileChatPage`；侧栏顶行「⌂ 回到首页」经 `_goHome` 置 `_showHome`。
+    笔记内部是栈：列表 → `_MobileNotePage`（`NotesPanel(mobile: true)`）→ AI 底部
+    抽屉；`NotesPanel.mobile` 时**不渲染右侧 AI 边栏**，AI 走 `showModalBottomSheet`。
 21. **窄窗口 AI 边栏强制竖轨**：窗口宽度 `< kNoteAiAutoCollapseWidth`（1080）时
     `NotesPanel` 传 `collapsed: true, locked: true`，展开按钮置灰 —— 避免
     侧栏 + 主区 + 320px AI 边栏在 820–1080 区间放不下。

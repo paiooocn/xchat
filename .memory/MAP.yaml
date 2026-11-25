@@ -5,12 +5,12 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-24 17:33"
-  git_sha: "33979ba"
+  generated_at: "2026-11-25 10:07"
+  git_sha: "f225362"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
   file_count: 154
-  line_count: 42050
+  line_count: 42233
 
 modules:
   - id: "agent"
@@ -442,7 +442,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 12180
+    lines: 12333
     deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -458,7 +458,7 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3573
+        lines: 3726
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1174
@@ -510,7 +510,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 6302
+    lines: 6332
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -562,7 +562,7 @@ modules:
         lines: 264
         symbols: ["SessionInfoDialog"]
       - path: "lib/ui/widgets/system_prompt_config.dart"
-        lines: 252
+        lines: 282
         symbols: ["SystemPromptConfig", "ExpertiseBadges", "ExpertiseBadge"]
       - path: "lib/ui/widgets/task_session_view.dart"
         lines: 858
@@ -633,7 +633,7 @@ tests:
     lines: 30
     cases: 0
   - path: "test/home_flow_test.dart"
-    lines: 138
+    lines: 142
     cases: 2
   - path: "test/home_quick_config_test.dart"
     lines: 215
@@ -659,6 +659,9 @@ tests:
   - path: "test/message_attachment_test.dart"
     lines: 94
     cases: 5
+  - path: "test/mobile_home_test.dart"
+    lines: 125
+    cases: 3
   - path: "test/model_selection_test.dart"
     lines: 72
     cases: 2
@@ -675,7 +678,7 @@ tests:
     lines: 295
     cases: 9
   - path: "test/note_mobile_test.dart"
-    lines: 264
+    lines: 269
     cases: 8
   - path: "test/note_storage_test.dart"
     lines: 299

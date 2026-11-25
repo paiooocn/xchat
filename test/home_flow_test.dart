@@ -125,6 +125,10 @@ void main() {
     await tester.runAsync(() async => state = await buildState());
     await pumpHome(tester, state);
 
+    // 窄屏默认落在「首页」，先切到会话列表。
+    await tester.tap(find.text('会话'));
+    await tester.pumpAndSettle();
+
     // Projects start collapsed — expand first.
     await tester.tap(find.text('P1').first);
     await tester.pumpAndSettle();

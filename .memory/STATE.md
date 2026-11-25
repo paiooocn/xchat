@@ -1,5 +1,87 @@
 # STATE — 进度交接
 
+## 2026-11-25 · 修：移动端首页发送后**立即**跳会话页（不再等首轮生成完成）
+
+**真机现象**：Android 首页发送消息后没有跳转到对应会话页。
+
+**根因**：移动端 `_mobileHome.onSend` 里 `await _startSession(...)`，而 `_startSession`
+会一直 `await controller.send(...)`（整个首轮 LLM 往返）。页面跳转被排在首轮生成
+之后——网络一慢就表现为「点了没反应」，失败/超时时更永远不跳。
+
+**改了什么**
+
+- `_startSession` 增加 `sendFirstTurn`（默认 true，宽屏行为不变）：为 false 时
+  建会话 + 落盘后立即返回；首轮发送拆成 `_sendFirstTurn(state, session, text,
+  attachments)`（审批队列接线与 `controller.send` 原样搬过去）。
+- 移动端首页 `onSend`：`sendFirstTurn:false` → 立刻 `_openChatOnMobile(session.id)`
+  → 再后台 `await _sendFirstTurn(...)`；`_WelcomeView` 的 busy 仍覆盖整轮生成，
+  不会因提前返回而可重复发送。
+- `_mobileHome` 去掉未用的 `AppState` 参数。
+
+**验证**：`flutter analyze lib test` No issues；`flutter test` 全量复跑
+518 passed / 1 skipped；`test/mobile_home_test.dart`（首页发送后压栈进聊天页）通过。
+
+**提交**：`f225362`（本节与下一节同属该提交；未打标签、未推送，版本仍 0.9.0+1）。
+
+## 2026-11-25 · 移动端首页：窄屏新增「首页」Tab，复用桌面欢迎页（修 Android 点「首页」无反应）
+
+**需求**（用户）
+
+Android 端「首页」按钮点击后没有对应页面出现；以桌面版为准做移动端首页。
+
+**根因**
+
+窄屏（`< 820`）主区只有 `_Sidebar(compact: true)`，顶行「⌂ 回到首页」（tooltip
+同名）调用 `_goHome`——它只清 `_selectedId`，而移动端的 `_selectedId` 只用于
+「已打开会话」标记、不影响可见页面，所以点了没任何变化；且窄屏根本看不到桌面
+`_WelcomeView`。
+
+**做了什么**
+
+- **底部 Tab 变三个**：`首页｜会话｜笔记`（`_mobileTabBar`），新增
+  `_showHome`（初值 `true`，移动端默认落首页）。选中态：`_showHome ? 0 :
+  _tab==session ? 1 : 2`；切会话/笔记会离开首页。
+- **移动端首页**：新增 `_HomePageState._mobileHome`——顶行（BrandMark + 应用名 +
+  审批 / 模板 / 更多，复用 `_brandRowIconStyle`/`_Sidebar._brandRowGap`）+
+  **直接复用桌面 `_WelcomeView`**（问候 + 输入栏下区快捷配置 + 专长 badge），
+  不另写一份内容。发送经 `_startSession` 拿到 `Session` 后压栈进
+  `_MobileChatPage`；「新建会话」入口同样建好即进聊天。
+- **`_goHome` 重写**：清 `_selectedId` / `_activeTaskId` 并置 `_showHome = true`
+  （宽屏仍是「未选中 → 欢迎页」，不受影响）；删掉原先「已无选中就 return」的短路。
+- **状态清理**：`_openSession` / `_openNote` / `_openExternal` /
+  `_openExternalRoot` 都会 `_showHome = false`（从列表进详情后返回停在列表）。
+- **返回值增强**：`_newSession` 返回 `Future<Session?>`；`_startSession` 返回
+  `Future<Session>`（宽屏调用方忽略返回值，行为不变）。
+
+**改了哪些文件**
+
+- 改：`lib/ui/pages/home_page.dart`、`test/note_mobile_test.dart`、
+  `test/home_flow_test.dart`、`FEATURES.md`（§7 移动端 / §9.1）、`DESIGN.md`（§12）、
+  `.memory/*`
+- 新增：`test/mobile_home_test.dart`（3 例：默认落首页、顶行⌂回首页、首页发送后
+  压栈进聊天页）
+
+**怎么验证**
+
+```sh
+flutter analyze lib test          # 已跑：No issues found
+flutter test                     # 已跑：518 passed, 1 skipped（新增 3 例）
+dart run tool/gen_memory_index.dart   # 已跑：MAP.yaml 刷新
+```
+
+- 真机要点：①冷启动落在「首页」= 桌面欢迎页内容（问候 / 输入栏 / 厂家·模型胶囊 /
+  思考开关 / 专长 badge）；②底部 `首页｜会话｜笔记` 可切换；③会话列表顶行
+  「⌂ 回到首页」切回首页；④在首页选专长 + 输入发送后直接进入聊天页，返回仍回首
+  页；⑤未选专长发送仍弹「请选择 AI 专长」。
+
+**下一步 / 遗留**
+
+- 已随 `f225362` 提交；未打标签、未推送；版本仍 0.9.0+1。
+- 移动端首页与桌面共用 `_WelcomeView`，但**没有**底部「会话/笔记」分段（按不变量
+  20 只有一套入口）；后续若要加「最近会话」卡片到首页需另拍板。
+- `_showHome` 不做持久化：每次冷启动都落首页；如需「记住上次停留 Tab」可存
+  `SharedPreferences`。
+
 ## 2026-11-17 · 0.9.0 续：首页快捷配置（厂家/模型/思考强度 + 输入栏下专长）代替会话模板下拉
 
 **需求**（用户）

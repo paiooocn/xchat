@@ -323,7 +323,7 @@ data for current backend (SkSL). Found stages: Vulkan
   `find.descendant(of: find.byKey(Key('note-editor')), matching: find.byType(TextField))`
   —— AI 边栏里也有 `TextField`，直接 `find.byType(TextField)` 会多匹配。
 
-## 23. 移动端笔记（底部 Tab / AI 抽屉 / 全屏 diff）
+## 23. 移动端（底部 Tab / 首页 / 笔记栈 / AI 抽屉 / 全屏 diff）
 
 - **`DraggableScrollableSheet` 的"上拉"只挂在滚动视图上**：它给 builder 的
   `scrollController` 必须真的传给里面的 `ListView`，否则拖拽完全没反应。
@@ -336,8 +336,18 @@ data for current backend (SkSL). Found stages: Vulkan
 - **按 `MediaQuery` 宽度分叉的弹层，widget test 默认会走窄屏分支**：测试默认
   逻辑尺寸是 800×600，`showNoteDiffDialog` 的阈值是 `< 820` → 断言里不能再指望
   `find.byType(Dialog)`；要覆盖桌面分支需自己把 `tester.view.physicalSize` 调大。
+- **窄屏默认落「首页」，不是会话列表**：`_HomePageState._showHome` 初始为 true，
+  测试直接找 `P1` / `welcome-input` 的可见性前要先点底部「会话」；从 `_MobileChatPage`
+  返回时停在进入前的 Tab（首页发送后压栈聊天，返回仍是首页）。
+- **移动端首页复用 `_WelcomeView`**：不要为窄屏另写一份欢迎页内容——改桌面欢迎页
+  （输入栏下区控件、专长 badge）会同时改到 Android 首页。
+- **移动端「发送后跳转」不能等首轮生成**：`_startSession(sendFirstTurn: false)`
+  只建会话 + 落盘就返回，先跳 `_MobileChatPage` 再后台 `_sendFirstTurn`；
+  直接 `await controller.send`（整个 LLM 往返）会把跳转拖到首轮结束，网络一慢
+  就成了用户反馈的「发送没反应」。
 - **窄屏 `_Sidebar` 必须 `compact: true`**：否则侧栏内分段 Tab 与底部 Tab 同时存在
-  （双入口，违反 D9），测试里 `find.text('会话')` 会 `findsNWidgets(2)`。
+  （双入口，违反 D9）；底部 Tab 现在是 `首页｜会话｜笔记` 三个，且 `_MobileChatPage`
+  的 AppBar 标题也是「会话」，做文本断言时注意多匹配。
 - **AI 强制竖轨只用于桌面**：`NotesPanel.mobile` 分支直接不渲染边栏，别把
   `< 1080 → locked` 的判断套到移动端（移动端整页才 400dp 宽，会永远是竖轨）。
 
