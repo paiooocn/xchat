@@ -63,8 +63,8 @@ flutter test test/tool_batch_test.dart test/file_ops_test.dart test/agent_image_
 
 **下一步 / 遗留**
 
-- 已提交（见下），**未打标签、未推送**；版本 **0.9.6+1**
-  （`dist/bump_version.sh -m 0.9.6 -c`，`pubspec.yaml` + `lib/core/app_version.dart`）。
+- 已提交 `d141000`，打 annotated tag **`v0.9.6`**（`5272a64`）并推送 `origin main` +
+  tag；版本 **0.9.6+1**（`dist/bump_version.sh -m 0.9.6 -c`）。
 - 用户已自行验证：`flutter test test/tool_batch_test.dart` 通过（本轮未再跑）。
 - `ToolRegistry.maxResultCharacters` 仍是 24000，只对 `read_file` 放开；`shell`、
   `grep_file` 等长输出工具若也遇到截断，可在同一处加 per-tool 覆盖。
