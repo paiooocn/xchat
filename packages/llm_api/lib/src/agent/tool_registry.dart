@@ -92,6 +92,13 @@ class ToolRegistry {
   /// the context window.
   int maxResultCharacters = 24000;
 
+  /// Per-tool overrides for [maxResultCharacters]; tools not listed fall back
+  /// to it. File tools set this because their bulk budget (e.g. `read_file`'s
+  /// 200k-char batch budget) is far above the chatty-tool default.
+  final Map<String, int> resultCharacterLimits = <String, int>{};
+
+  int characterLimitFor(String tool) => resultCharacterLimits[tool] ?? maxResultCharacters;
+
   /// Per-call timeout.
   Duration timeout = const Duration(seconds: 60);
 
@@ -161,7 +168,11 @@ class ToolRegistry {
                   throw RequestCancelledException(cancel.reason?.toString())),
             ]);
       final value = await pending.timeout(timeout);
-      return ToolResult.text(call.id, _truncate(ToolResult.encode(value)), name: call.name);
+      return ToolResult.text(
+        call.id,
+        _truncate(ToolResult.encode(value), characterLimitFor(call.name)),
+        name: call.name,
+      );
     } on TimeoutException {
       return ToolResult.error(
         call.id,
@@ -175,10 +186,10 @@ class ToolRegistry {
     }
   }
 
-  String _truncate(String value) {
-    if (value.length <= maxResultCharacters) return value;
-    return '${value.substring(0, maxResultCharacters)}\n…[truncated '
-        '${value.length - maxResultCharacters} characters]';
+  String _truncate(String value, int limit) {
+    if (value.length <= limit) return value;
+    return '${value.substring(0, limit)}\n…[truncated '
+        '${value.length - limit} characters]';
   }
 
   /// Convenience for building a registry from a map.

@@ -25,10 +25,10 @@ import 'webview_tools.dart';
 /// The catalogue of built-in tools and their metadata.
 class BuiltinTools {
   static const descriptions = <String, String>{
-    'read_file': '读取文件内容（限会话沙箱目录；图片文件会作为图像返回给模型）',
-    'write_file': '写入文件（自动创建目录，限沙箱）',
-    'edit_file': '对文件做精确字符串替换编辑',
-    'mv_file': '在沙箱内改名/移动文件或目录',
+    'read_file': '读取文件内容（支持批量 paths；限会话沙箱目录；图片文件会作为图像返回给模型）',
+    'write_file': '写入文件（支持批量 files，自动创建目录，限沙箱）',
+    'edit_file': '对文件做精确字符串替换编辑（支持批量 edits）',
+    'mv_file': '在沙箱内改名/移动文件或目录（支持批量 moves）',
     'grep_file': '在沙箱内按正则检索文件内容（Dart 实现，不依赖外部 grep）',
     'list_dir': '列出目录内容',
     'glob': '按通配符匹配文件路径',
@@ -137,87 +137,377 @@ class BuiltinTools {
         pipCacheDir: pipCacheDir,
       );
 
+  /// `read_file` 单文件默认字符上限（也是批量预算的量级）。
+  static const _readFileDefaultMaxChars = 200000;
+
+  static int? _toInt(Object? value) {
+    if (value is num) return value.toInt();
+    return int.tryParse('${value ?? ''}'.trim());
+  }
+
+  static List<String> _collectPaths(Map<String, Object?> args) {
+    final paths = <String>[];
+    final list = args['paths'];
+    if (list is List) {
+      for (final value in list) {
+        final path = '$value'.trim();
+        if (path.isNotEmpty && !paths.contains(path)) paths.add(path);
+      }
+    }
+    if (paths.isEmpty) {
+      final single = '${args['path'] ?? ''}'.trim();
+      if (single.isNotEmpty) paths.add(single);
+    }
+    return paths;
+  }
+
+  /// 读一个文件：返回 (分节标题, 正文)。正文以 `ERROR` 开头表示该项失败。
+  static Future<({String label, String body})> _readOne(
+    PathGuard guard,
+    String raw, {
+    required int maxChars,
+    int? startLine,
+    int? endLine,
+    int? offset,
+  }) async {
+    final String path;
+    try {
+      path = guard.resolveReal(raw);
+    } on SandboxViolation catch (error) {
+      return (label: raw, body: 'ERROR: ${error.message}');
+    }
+    final label = sandboxLabel(guard, path);
+    final file = File(path);
+    if (!await file.exists()) {
+      return (label: label, body: 'ERROR: file not found: $path');
+    }
+    // Pictures are not text: the engine hangs the image off this tool message,
+    // so answering with a marker (instead of decoded garbage) is what lets the
+    // model actually look at it next turn.
+    if (looksLikeImagePath(path)) {
+      return (
+        label: label,
+        body: 'IMAGE: ${p.basename(path)}（图片已随本条消息附加，可直接查看图像内容；'
+            '如需裁剪/转换请用 shell 处理后再次读取）',
+      );
+    }
+    final bytes = await file.readAsBytes();
+    String content;
+    try {
+      content = utf8.decode(bytes);
+    } on FormatException {
+      return (
+        label: label,
+        body: 'ERROR: $path 不是 UTF-8 文本文件（二进制 ${bytes.length} 字节），无法按文本读取。',
+      );
+    }
+    final totalChars = content.length;
+    final lines = content.split('\n');
+    final totalLines = lines.length;
+
+    var body = content;
+    var note = '';
+    if (startLine != null || endLine != null) {
+      final first = startLine == null || startLine < 1 ? 1 : startLine;
+      if (first > totalLines) {
+        return (label: label, body: 'ERROR: start_line=$first 超出文件行数 $totalLines');
+      }
+      final lastWanted = endLine ?? totalLines;
+      final last = lastWanted > totalLines ? totalLines : lastWanted;
+      final end = last < first ? first : last;
+      body = lines.sublist(first - 1, end).join('\n');
+      note = end < totalLines
+          ? '[行 $first–$end / 共 $totalLines 行（$totalChars 字符）；续读传 start_line=${end + 1}]'
+          : '[行 $first–$end / 共 $totalLines 行（$totalChars 字符），已到末行]';
+    } else if (offset != null) {
+      final from = offset > totalChars ? totalChars : offset;
+      body = content.substring(from);
+      note = from < totalChars
+          ? '[字符 $from–$totalChars / 共 $totalChars；续读传 offset=$totalChars]'
+          : '[已到文件末尾（共 $totalChars 字符）]';
+    }
+
+    if (body.length <= maxChars) {
+      return (label: label, body: note.isEmpty ? body : '$body\n…$note');
+    }
+    final head = body.substring(0, maxChars);
+    final next = (offset ?? 0) + maxChars;
+    return (
+      label: label,
+      body: '$head\n…[已截断 ${body.length - maxChars} 字符；'
+          '续读传 offset=$next，或用 start_line / end_line 缩小范围]',
+    );
+  }
+
+  static Future<String> _writeOne(PathGuard guard, String rawPath, String content) async {
+    final String path;
+    try {
+      path = guard.resolve(rawPath);
+    } on SandboxViolation catch (error) {
+      return 'ERROR: ${error.message}';
+    }
+    try {
+      final file = File(path);
+      await file.parent.create(recursive: true);
+      await file.writeAsString(content, flush: true);
+      return 'OK: wrote ${p.basename(path)} (${content.length} chars)';
+    } catch (error) {
+      return 'ERROR: write failed: $error';
+    }
+  }
+
+  static List<({String path, String content})> _collectWrites(Map<String, Object?> args) {
+    final jobs = <({String path, String content})>[];
+    final list = args['files'];
+    if (list is List) {
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        final path = '${raw['path'] ?? ''}'.trim();
+        if (path.isEmpty) continue;
+        jobs.add((path: path, content: '${raw['content'] ?? ''}'));
+      }
+      if (jobs.isNotEmpty) return jobs;
+    }
+    final path = '${args['path'] ?? ''}'.trim();
+    if (path.isNotEmpty) {
+      jobs.add((path: path, content: '${args['content'] ?? ''}'));
+    }
+    return jobs;
+  }
+
+  static Future<String> _editOne(
+    PathGuard guard,
+    String rawPath,
+    String oldText,
+    String newText,
+    bool all,
+  ) async {
+    final String path;
+    try {
+      path = guard.resolveReal(rawPath);
+    } on SandboxViolation catch (error) {
+      return 'ERROR: ${error.message}';
+    }
+    if (oldText.isEmpty) return 'ERROR: old_string must not be empty';
+    final file = File(path);
+    if (!await file.exists()) return 'ERROR: file not found: $path';
+    final String content;
+    try {
+      content = await file.readAsString();
+    } catch (error) {
+      return 'ERROR: read failed: $error';
+    }
+    if (!content.contains(oldText)) return 'ERROR: old_string not found';
+    final count = all ? oldText.allMatches(content).length : 1;
+    final updated =
+        all ? content.replaceAll(oldText, newText) : content.replaceFirst(oldText, newText);
+    try {
+      await file.writeAsString(updated, flush: true);
+    } catch (error) {
+      return 'ERROR: write failed: $error';
+    }
+    return 'OK: replaced $count occurrence(s)';
+  }
+
+  static List<({String path, String oldString, String newString, bool replaceAll})>
+      _collectEdits(Map<String, Object?> args) {
+    final jobs = <({String path, String oldString, String newString, bool replaceAll})>[];
+    final list = args['edits'];
+    if (list is List) {
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        final path = '${raw['path'] ?? ''}'.trim();
+        if (path.isEmpty) continue;
+        jobs.add((
+          path: path,
+          oldString: '${raw['old_string'] ?? ''}',
+          newString: '${raw['new_string'] ?? ''}',
+          replaceAll: raw['replace_all'] == true,
+        ));
+      }
+      if (jobs.isNotEmpty) return jobs;
+    }
+    final path = '${args['path'] ?? ''}'.trim();
+    if (path.isNotEmpty) {
+      jobs.add((
+        path: path,
+        oldString: '${args['old_string'] ?? ''}',
+        newString: '${args['new_string'] ?? ''}',
+        replaceAll: args['replace_all'] == true,
+      ));
+    }
+    return jobs;
+  }
+
   static LlmTool _readFile(PathGuard guard) => FunctionTool(
         name: 'read_file',
-        description: '读取文件内容。path 为相对沙箱的路径或绝对路径（必须在沙箱内）。'
-            '图片文件（png/jpg/webp/gif/bmp）会被直接作为图像返回给模型，可用于看图识别。',
+        description: '读取文件内容（限会话沙箱目录）。'
+            '支持批量：paths 一次读多个文件（最多 $kToolMaxBatchItems 个），按入参顺序分节返回，'
+            '单个文件失败不影响其余项。'
+            'max_chars 是**每个文件**的字符上限（默认 $_readFileDefaultMaxChars），'
+            '超出会截断并给出续读参数；start_line（1 起）/ end_line / offset（字符偏移）'
+            '只对单文件生效，用来分页读大文件。'
+            '图片文件（png/jpg/webp/gif/bmp）会作为图像返回给模型。',
         parameters: objectSchema(
           properties: {
-            'path': stringSchema(description: '文件路径'),
-            'max_chars': integerSchema(description: '最多返回字符数', minimum: 1),
+            'paths': arraySchema(
+              description: '批量读取的文件路径列表（最多 $kToolMaxBatchItems 个，按序分节返回）',
+              items: stringSchema(),
+            ),
+            'path': stringSchema(description: '单项模式：文件路径（相对沙箱或绝对路径）'),
+            'max_chars': integerSchema(
+              description: '每个文件最多返回的字符数（默认 $_readFileDefaultMaxChars）',
+              minimum: 1,
+            ),
+            'start_line': integerSchema(description: '起始行（1 起，含），仅单文件', minimum: 1),
+            'end_line': integerSchema(description: '结束行（含），仅单文件', minimum: 1),
+            'offset': integerSchema(
+              description: '字符偏移（从 0 起），仅单文件；与 start_line / end_line 互斥',
+              minimum: 0,
+            ),
+            'max_total_chars': integerSchema(
+              description: '批量时所有文件合计的字符预算（默认 $kReadFileMaxTotalChars）',
+              minimum: 1,
+            ),
           },
-          required: ['path'],
         ),
         handler: (args) async {
-          final path = guard.resolveReal('${args['path']}');
-          final file = File(path);
-          if (!await file.exists()) return 'ERROR: file not found: $path';
-          // Pictures are not text: the engine hangs the image off this tool
-          // message, so answering with a marker (instead of decoded garbage)
-          // is what lets the model actually look at it next turn.
-          if (looksLikeImagePath(path)) {
-            return 'IMAGE: ${p.basename(path)}（图片已随本条消息附加，可直接查看图像内容；'
-                '如需裁剪/转换请用 shell 处理后再次读取）';
+          final paths = _collectPaths(args);
+          if (paths.isEmpty) return 'ERROR: 需要 paths 列表，或 path';
+          final tooMany = checkBatchSize(paths.length);
+          if (tooMany != null) return tooMany;
+          final single = paths.length == 1;
+          final startLine = _toInt(args['start_line']);
+          final endLine = _toInt(args['end_line']);
+          final offset = _toInt(args['offset']);
+          if (!single && (startLine != null || endLine != null || offset != null)) {
+            return 'ERROR: start_line / end_line / offset 只支持单文件读取，批量请不带这些参数';
           }
-          final bytes = await file.readAsBytes();
-          String content;
-          try {
-            content = utf8.decode(bytes);
-          } on FormatException {
-            return 'ERROR: $path 不是 UTF-8 文本文件（二进制 ${bytes.length} 字节），无法按文本读取。';
+          final requested = _toInt(args['max_chars']);
+          final maxPerFile =
+              requested == null || requested < 1 ? _readFileDefaultMaxChars : requested;
+          final requestedTotal = _toInt(args['max_total_chars']);
+          var budget = requestedTotal == null || requestedTotal < 1
+              ? kReadFileMaxTotalChars
+              : requestedTotal;
+          final items = <MapEntry<String, String>>[];
+          for (final raw in paths) {
+            final result = await _readOne(
+              guard,
+              raw,
+              maxChars: maxPerFile,
+              startLine: single ? startLine : null,
+              endLine: single ? endLine : null,
+              offset: single && offset != null && offset >= 0 ? offset : null,
+            );
+            if (!result.body.startsWith('ERROR')) {
+              if (result.body.length > budget && items.isNotEmpty) {
+                items.add(MapEntry(
+                  result.label,
+                  'SKIPPED: 本次读取已达总字符预算（$kReadFileMaxTotalChars），'
+                      '请单独读取该文件',
+                ));
+                continue;
+              }
+              budget -= result.body.length;
+            }
+            items.add(MapEntry(result.label, result.body));
           }
-          final max = (args['max_chars'] as num?)?.toInt() ?? 200000;
-          if (content.length <= max) return content;
-          return '${content.substring(0, max)}\n…[truncated ${content.length - max} chars]';
+          return batchReport(items);
         },
       );
 
   static LlmTool _writeFile(PathGuard guard) => FunctionTool(
         name: 'write_file',
-        description: '写入文件（覆盖），自动创建父目录。',
+        description: '写入文件（覆盖），自动创建父目录（限沙箱）。'
+            '支持批量：files 为 [{path, content}] 列表，按数组顺序逐项写入，'
+            '单次最多 $kToolMaxBatchItems 项；也可用单项参数 path + content。'
+            '单项失败不影响其余项，结果逐项返回（不整体回滚）。',
         parameters: objectSchema(
           properties: {
-            'path': stringSchema(description: '文件路径'),
-            'content': stringSchema(description: '文件内容'),
+            'files': arraySchema(
+              description: '批量写入列表（最多 $kToolMaxBatchItems 项，按序执行）',
+              items: objectSchema(
+                properties: {
+                  'path': stringSchema(description: '文件路径'),
+                  'content': stringSchema(description: '文件内容'),
+                },
+                required: ['path', 'content'],
+              ),
+            ),
+            'path': stringSchema(description: '单项模式：文件路径'),
+            'content': stringSchema(description: '单项模式：文件内容'),
           },
-          required: ['path', 'content'],
         ),
         handler: (args) async {
-          final path = guard.resolve('${args['path']}');
-          final file = File(path);
-          await file.parent.create(recursive: true);
-          final content = '${args['content'] ?? ''}';
-          await file.writeAsString(content, flush: true);
-          return 'OK: wrote ${p.basename(path)} (${content.length} chars)';
+          final jobs = _collectWrites(args);
+          if (jobs.isEmpty) return 'ERROR: 需要 files 列表，或 path + content';
+          final tooMany = checkBatchSize(jobs.length);
+          if (tooMany != null) return tooMany;
+          var budget = kWriteFileMaxTotalChars;
+          final items = <MapEntry<String, String>>[];
+          for (final job in jobs) {
+            final label = sandboxLabel(guard, job.path);
+            if (job.content.length > budget && items.isNotEmpty) {
+              items.add(MapEntry(
+                label,
+                'SKIPPED: 本次写入已达总字符预算（$kWriteFileMaxTotalChars），请分批写入',
+              ));
+              continue;
+            }
+            budget -= job.content.length;
+            items.add(MapEntry(label, await _writeOne(guard, job.path, job.content)));
+          }
+          return batchReport(items);
         },
       );
 
   static LlmTool _editFile(PathGuard guard) => FunctionTool(
         name: 'edit_file',
-        description: '在文件中用 new_string 精确替换 old_string（默认仅第一处）。',
+        description: '在文件中用 new_string 精确替换 old_string（默认仅第一处）。'
+            '支持批量：edits 为 [{path, old_string, new_string, replace_all}] 列表，'
+            '按数组顺序逐项应用（同一文件的多次编辑按顺序生效），'
+            '单次最多 $kToolMaxBatchItems 项；也可用单项参数 path + old_string + new_string。'
+            '单项失败不影响其余项，结果逐项返回。',
         parameters: objectSchema(
           properties: {
-            'path': stringSchema(description: '文件路径'),
-            'old_string': stringSchema(description: '被替换的文本'),
-            'new_string': stringSchema(description: '替换后的文本'),
-            'replace_all': booleanSchema(description: '是否替换全部（默认 false）'),
+            'edits': arraySchema(
+              description: '批量编辑列表（最多 $kToolMaxBatchItems 项，按序应用）',
+              items: objectSchema(
+                properties: {
+                  'path': stringSchema(description: '文件路径'),
+                  'old_string': stringSchema(description: '被替换的文本'),
+                  'new_string': stringSchema(description: '替换后的文本'),
+                  'replace_all': booleanSchema(description: '是否替换全部（默认 false）'),
+                },
+                required: ['path', 'old_string', 'new_string'],
+              ),
+            ),
+            'path': stringSchema(description: '单项模式：文件路径'),
+            'old_string': stringSchema(description: '单项模式：被替换的文本'),
+            'new_string': stringSchema(description: '单项模式：替换后的文本'),
+            'replace_all': booleanSchema(description: '单项模式：是否替换全部（默认 false）'),
           },
-          required: ['path', 'old_string', 'new_string'],
         ),
         handler: (args) async {
-          final path = guard.resolveReal('${args['path']}');
-          final file = File(path);
-          if (!await file.exists()) return 'ERROR: file not found: $path';
-          final content = await file.readAsString();
-          final old = '${args['old_string'] ?? ''}';
-          final replacement = '${args['new_string'] ?? ''}';
-          if (old.isEmpty) return 'ERROR: old_string must not be empty';
-          if (!content.contains(old)) return 'ERROR: old_string not found';
-          final all = args['replace_all'] == true;
-          final updated = all ? content.replaceAll(old, replacement) : content.replaceFirst(old, replacement);
-          await file.writeAsString(updated, flush: true);
-          final count = all ? old.allMatches(content).length : 1;
-          return 'OK: replaced $count occurrence(s)';
+          final jobs = _collectEdits(args);
+          if (jobs.isEmpty) {
+            return 'ERROR: 需要 edits 列表，或 path + old_string + new_string';
+          }
+          final tooMany = checkBatchSize(jobs.length);
+          if (tooMany != null) return tooMany;
+          final items = <MapEntry<String, String>>[];
+          for (var i = 0; i < jobs.length; i++) {
+            final job = jobs[i];
+            final label = jobs.length == 1
+                ? sandboxLabel(guard, job.path)
+                : '#${i + 1} ${sandboxLabel(guard, job.path)}';
+            items.add(MapEntry(
+              label,
+              await _editOne(guard, job.path, job.oldString, job.newString, job.replaceAll),
+            ));
+          }
+          return batchReport(items);
         },
       );
 

@@ -1,5 +1,78 @@
 # STATE — 进度交接
 
+## 2026-11-26 · 文件类工具批量化 + 修「20K 以上大文件读不全」
+
+**需求**（用户）
+
+1. `read_file` / `write_file` / `edit_file` / `mv_file` 改为**批量执行**，最大批量在
+   工具中设定；传给模型的 schema 同步改。
+2. `read_file` 的 `max_chars` 遇到 20K 以上的文件读不全 —— 要解决。
+3. 拍板：分页用 `start_line`/`end_line`（字符 `offset` 兜底）；批量时不支持分页参数；
+   超批量直接 ERROR（不静默截断）。
+
+**根因（关键发现）**
+
+「20K 读不全」不在 `read_file` 自己身上：它默认 `max_chars = 200000` 且全文回填。
+真因是 `packages/llm_api/lib/src/agent/tool_registry.dart` 的
+`ToolRegistry.maxResultCharacters = 24000`，`invoke()` 对**所有**工具结果统一
+`_truncate`，而 `AgentEngine` 走的就是 `registry.invoke` —— 于是 200k 的预算形同虚设。
+
+**做了什么**
+
+- `llm_api` 的 `ToolRegistry` 新增 `resultCharacterLimits`（per-tool 覆盖）+
+  `characterLimitFor(name)`；`_truncate(value, limit)` 改为按工具名取上限。
+- `file_ops.dart` 新增共享件：`kToolMaxBatchItems = 20`、
+  `kReadFileMaxTotalChars = 200000`、`kWriteFileMaxTotalChars = 4M`、
+  `kReadFileMaxResultChars = 240000`、`checkBatchSize()`、`batchReport()`（单项原样返回 /
+  多项 `=== label ===` 分节 + `summary: N ok, N failed, N skipped`）、`sandboxLabel()`。
+- `mv_file` 批量：参数 `moves[{source,destination,overwrite}]`（兼容 `source+destination`），
+  逐项 `_moveOne()`，单项失败内联。
+- `read_file` 批量：`paths[]`（兼容 `path`）；新增 `start_line`/`end_line`/`offset`/
+  `max_total_chars`；`max_chars` 明确为**每文件**上限；截断尾注给续读参数
+  （`offset=<next>` 或 `start_line=<next>`）；超总预算的文件标 `SKIPPED`。
+  分页参数只在单文件时生效，批量带这些参数直接 ERROR。
+- `write_file` 批量：`files[{path,content}]`；`edit_file` 批量：
+  `edits[{path,old_string,new_string,replace_all}]`（同文件多次按序生效，逐次读写）。
+- `AgentEngine`：创建 registry 后 `registry.resultCharacterLimits['read_file'] =
+  kReadFileMaxResultChars`（否则大文件仍被 24k 截断）。
+- 图片链路：`image_attach.dart` 的 `toolImagePath` → `toolImagePaths`（解析 `paths` +
+  `path`，去重、只留图片扩展名）；`ToolImageAttachment` 增加 `notes`（非致命提示）；
+  `_attachToolImage` 逐张校验后**一次性**交给 `_storeAttachments`（分批调用会撞名覆盖），
+  部分失败只把提示**追加**到工具正文后（不替换正文）。
+- 同步文案：`BuiltinTools.descriptions` 四个工具、`FEATURES.md` §5.1、`DESIGN.md` §10.1。
+
+**改了哪些文件**
+
+- 改：`packages/llm_api/lib/src/agent/tool_registry.dart`、
+  `lib/agent/tools/file_ops.dart`、`lib/agent/tools/builtin_tools.dart`、
+  `lib/agent/tools/image_attach.dart`、`lib/agent/agent_engine.dart`、
+  `FEATURES.md`、`DESIGN.md`、`.memory/*`
+- 新增：`test/tool_batch_test.dart`（批量读/写/编辑/移动、单项兼容、超上限、
+  分页续读、总预算 SKIPPED、`toolImagePaths`、per-tool 结果上限）
+
+**怎么验证**
+
+```sh
+flutter analyze lib test
+flutter test test/tool_batch_test.dart test/file_ops_test.dart test/agent_image_attach_test.dart
+```
+
+- 真机要点：①让模型读 30K+ 的文件，应能一次读完（不再停在 20K）；②读超 `max_chars`
+  的文件，尾注给出 `offset=` / `start_line=` 续读参数；③一次读 5 个文件应返回分节 +
+  `summary`；④一次传 21 项应直接 ERROR；⑤批量里混入图片时图片仍能挂上。
+
+**下一步 / 遗留**
+
+- 已提交（见下），**未打标签、未推送**；版本 **0.9.6+1**
+  （`dist/bump_version.sh -m 0.9.6 -c`，`pubspec.yaml` + `lib/core/app_version.dart`）。
+- 用户已自行验证：`flutter test test/tool_batch_test.dart` 通过（本轮未再跑）。
+- `ToolRegistry.maxResultCharacters` 仍是 24000，只对 `read_file` 放开；`shell`、
+  `grep_file` 等长输出工具若也遇到截断，可在同一处加 per-tool 覆盖。
+- 批量执行是**串行**（按数组顺序），未并行化；`write_file`/`edit_file`/`mv_file`
+  的单项失败不整体回滚（文件系统层面不做事务）。
+- `mv_file` 批量结果的标签用 `source -> destination`，若 destination 是目录（实际移入
+  `dir/basename`）标签不反映最终路径（正文 `OK: moved a -> dir/a` 是准的）。
+
 ## 2026-11-25 · **0.9.1**：shell 未登记命令默认 2 级（可设 2/3）+「清理/删除」任务当轮临时升 3 级
 
 **需求**（用户）

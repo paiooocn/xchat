@@ -445,9 +445,10 @@ user 输入
 
 | 工具                | 平台   | 说明                                        |
 | ------------------- | ------ | ------------------------------------------- |
-| `read_file`         | 全平台 | 读取文件（限沙箱）                          |
-| `write_file`        | 全平台 | 写入文件（自动建目录）                      |
-| `edit_file`         | 全平台 | 搜索替换式编辑                              |
+| `read_file`         | 全平台 | 读取文件（限沙箱）；支持批量 `paths`，超大文件可用 `start_line`/`end_line`/`offset` 分页 |
+| `write_file`        | 全平台 | 写入文件（自动建目录）；支持批量 `files` |
+| `edit_file`         | 全平台 | 搜索替换式编辑；支持批量 `edits`（同文件按序生效） |
+| `mv_file`           | 全平台 | 沙箱内移动/改名；支持批量 `moves` |
 | `list_dir` / `glob` | 全平台 | 目录列举 / 模式匹配                         |
 | `shell`             | 桌面   | 执行命令（工作目录 = 沙箱）                 |
 | `http_fetch`        | 全平台 | 抓取 URL 文本                               |
@@ -462,7 +463,12 @@ user 输入
 
 - 工具集合按会话 `tools` 字段启用；模板可预置。
 - 每个工具结果写入独立 `<tool>` 元素（CDATA）。
-- 结果过长截断（默认 24k 字符，`llm_api.ToolRegistry.maxResultCharacters`）。
+- 结果过长截断（默认 24k 字符，`llm_api.ToolRegistry.maxResultCharacters`）；
+  可按工具覆盖 `ToolRegistry.resultCharacterLimits`，`read_file` 覆盖为 240k
+  （与其批量预算对齐，否则大文件会被这一层再截一刀）。
+- 文件类工具（`read_file`/`write_file`/`edit_file`/`mv_file`）支持批量：
+  `kToolMaxBatchItems = 20`，超限直接报错；结果按 `=== 路径 ===` 分节 +
+  `summary: N ok, N failed, N skipped`；单项失败内联、不整体回滚。
 
 ### 10.1.1 Agent 自产图片（`attach_image`）
 

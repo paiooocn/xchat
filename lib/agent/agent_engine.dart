@@ -24,6 +24,7 @@ import '../models/shell_policy.dart';
 import '../models/token_usage.dart';
 import 'agent_events.dart';
 import 'tools/builtin_tools.dart';
+import 'tools/file_ops.dart';
 import 'tools/image_attach.dart';
 import 'tools/path_guard.dart';
 
@@ -133,6 +134,10 @@ class AgentEngine {
       pipCacheDir: AppPaths.isReady ? AppPaths.instance.pipCacheDir : null,
       maxAttachmentBytes: config.maxAttachmentBytes,
     ));
+    // `read_file` 的批量预算（200k 字符）远高于 ToolRegistry 默认的 24000 字符
+    // 结果上限——不在这里单独放开，读 20K 以上的文件就会被 registry 这层再
+    // 截一刀（这正是大文件读不全的根因）。
+    registry.resultCharacterLimits['read_file'] = kReadFileMaxResultChars;
 
     final turnStartedAt = DateTime.now();
     // shell「未登记命令」的基础等级：默认取配置（2 级，可设 3 级）；清理/删除
@@ -302,13 +307,20 @@ class AgentEngine {
           // image part next turn.
           final toolId = _shortId();
           final attached = await _attachToolImage(toolId, call);
+          // 部分图片没附加成功时，把原因**追加**在正文后面（不能替换正文，
+          // 否则整批的文字结果会一起消失）。
+          final toolContent = attached.error != null
+              ? attached.error!
+              : (attached.notes.isEmpty
+                  ? result.content
+                  : '${result.content}\n\n${attached.notes}');
           session.messages.add(SessionMessage(
             role: MessageRole.tool,
             id: toolId,
             taskId: taskId,
             toolCallId: call.id,
             toolName: call.name,
-            content: attached.error ?? result.content,
+            content: toolContent,
             isError: result.isError || attached.error != null,
             attachments: attached.stored,
           ));
@@ -504,29 +516,52 @@ class AgentEngine {
     return '';
   }
 
-  /// Resolves the `path` of an image-carrying tool call (`attach_image`, or
-  /// `read_file` on a picture) and stores the image in the session sandbox.
-  /// Re-validated here (not trusted from the tool) so a refused image can
-  /// never end up silently attached with an "ok" result.
+  /// Resolves the images an image-carrying tool call asks for (`attach_image`,
+  /// or `read_file` — including a batched `paths` list with several pictures)
+  /// and stores them in the session sandbox. Re-validated here (not trusted
+  /// from the tool) so a refused image can never end up silently attached with
+  /// an "ok" result.
+  ///
+  /// Partial failure is *not* fatal: the images that validate are attached and
+  /// the rest are reported through [ToolImageAttachment.notes], so one bad path
+  /// cannot swallow the whole batch's text result.
   Future<ToolImageAttachment> _attachToolImage(
     String messageId,
     ToolCallData call,
   ) async {
-    final raw = toolImagePath(call.name, call.arguments);
-    if (raw == null) {
+    final raws = toolImagePaths(call.name, call.arguments);
+    if (raws.isEmpty) {
       return const ToolImageAttachment(<MessageAttachment>[], null);
     }
-    final result = await resolveAttachableImage(
-      guard: PathGuard(session.sandbox),
-      maxBytes: config.maxAttachmentBytes,
-      rawPath: raw,
-    );
-    if (!result.ok) return ToolImageAttachment(const <MessageAttachment>[], result.error);
-    final stored = await _storeAttachments(messageId, [result.attachment!]);
+    final guard = PathGuard(session.sandbox);
+    final picked = <MessageAttachment>[];
+    final failures = <String>[];
+    for (final raw in raws) {
+      final result = await resolveAttachableImage(
+        guard: guard,
+        maxBytes: config.maxAttachmentBytes,
+        rawPath: raw,
+      );
+      if (!result.ok) {
+        failures.add(result.error ?? 'ERROR: 图片未能附加: $raw');
+        continue;
+      }
+      picked.add(result.attachment!);
+    }
+    if (picked.isEmpty) {
+      return ToolImageAttachment(const <MessageAttachment>[], failures.join('\n'));
+    }
+    // 一次交给 _storeAttachments，让它按同一 messageId 顺序编号（分批调用会
+    // 撞名覆盖）。
+    final stored = await _storeAttachments(messageId, picked);
     if (stored.isEmpty) {
       return const ToolImageAttachment(<MessageAttachment>[], 'ERROR: 图片读取失败，未能附加');
     }
-    return ToolImageAttachment(stored, null);
+    if (stored.length < picked.length) {
+      failures.add('ERROR: 有 ${picked.length - stored.length} 张图片未能附加'
+          '（读取失败或体积超限）');
+    }
+    return ToolImageAttachment(stored, null, notes: failures.join('\n'));
   }
 
   /// Copies the picked files into `<sandbox>/attachments/` and returns the

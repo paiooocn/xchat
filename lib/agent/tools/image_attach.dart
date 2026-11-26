@@ -21,26 +21,37 @@ const _imageExtensions = <String>{
 bool looksLikeImagePath(String path) =>
     _imageExtensions.contains(p.extension(path).toLowerCase());
 
-/// The image a tool call asked the model to look at, or `null` when the call
-/// carries no image.
+/// The sandbox paths a tool call asked the model to *look at*, or an empty list
+/// when the call carries no image.
 ///
-/// Both `attach_image` and `read_file` are image-capable: reading a picture
-/// is a request to *see* it, not to get its bytes as text.
-String? toolImagePath(String tool, String arguments) {
-  if (tool != 'attach_image' && tool != 'read_file') return null;
-  final path = _stringArg(arguments, 'path');
-  if (path.isEmpty || !looksLikeImagePath(path)) return null;
-  return path;
-}
-
-String _stringArg(String arguments, String key) {
+/// `attach_image` and `read_file` are image-capable: reading a picture is a
+/// request to see it, not to get its bytes as text. Batched `read_file` calls
+/// (`paths: [...]`) may carry several pictures — the engine attaches each one.
+List<String> toolImagePaths(String tool, String arguments) {
+  if (tool != 'attach_image' && tool != 'read_file') return const <String>[];
+  final Map? decoded;
   try {
-    final decoded = jsonDecode(arguments);
-    if (decoded is Map && decoded[key] is String) return decoded[key] as String;
+    final parsed = jsonDecode(arguments);
+    decoded = parsed is Map ? parsed : null;
   } catch (_) {
     // Malformed JSON: the tool reports it; nothing to attach.
+    return const <String>[];
   }
-  return '';
+  if (decoded == null) return const <String>[];  final paths = <String>[];
+  void add(Object? value) {
+    final path = '${value ?? ''}'.trim();
+    if (path.isEmpty || !looksLikeImagePath(path) || paths.contains(path)) return;
+    paths.add(path);
+  }
+
+  final list = decoded['paths'];
+  if (list is List) {
+    for (final value in list) {
+      add(value);
+    }
+  }
+  add(decoded['path']);
+  return paths;
 }
 
 /// The outcome of validating a candidate image for attachment.
@@ -118,8 +129,12 @@ String _mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
 /// What the engine resolved for an `attach_image` tool call: the copies it
 /// stored in the session sandbox, or the reason it refused.
 class ToolImageAttachment {
-  const ToolImageAttachment(this.stored, this.error);
+  const ToolImageAttachment(this.stored, this.error, {this.notes = ''});
 
   final List<MessageAttachment> stored;
   final String? error;
+
+  /// 非致命提示（批量读里某张图没能附加）：有内容时**追加**在工具正文之后，
+  /// 而不是替换正文——否则一张失败会让整批的文字结果一起消失。
+  final String notes;
 }

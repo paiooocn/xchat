@@ -260,9 +260,10 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
-| `read_file` | path, max_chars | 读文件（限沙箱；图片文件返回图像） |
-| `write_file` | path, content | 覆盖写，自动建父目录 |
-| `edit_file` | path, old_string, new_string, replace_all | 精确字符串替换 |
+| `read_file` | paths[], path, max_chars, start_line, end_line, offset, max_total_chars | 读文件（限沙箱；图片返回图像）。**支持批量**（≤20 个文件，按序分节返回）；`max_chars` 是每文件上限，超出截断并给出 `offset`/`start_line` 续读参数 |
+| `write_file` | files[{path,content}], path, content | 覆盖写，自动建父目录。**支持批量**（≤20 项，合计 4M 字符预算） |
+| `edit_file` | edits[{path,old_string,new_string,replace_all}], path, old_string, new_string, replace_all | 精确字符串替换。**支持批量**（≤20 项，同文件多次编辑按序生效） |
+| `mv_file` | moves[{source,destination,overwrite}], source, destination, overwrite | 沙箱内移动/改名。**支持批量**（≤20 项，单项失败不影响其余，不整体回滚） |
 | `list_dir` | path | 列目录 |
 | `glob` | pattern, max_results | glob 匹配文件 |
 | `shell` | command, timeout_seconds | 执行命令，工作目录=沙箱（桌面端；需启用+审批） |
@@ -278,6 +279,19 @@ Documents/XChat/                  # 数据根（AppPaths）
 
 - 工具按会话 `tools` 字段启用；结果过长截断（默认 24k 字符）。
 - 每个工具结果写独立 `<tool>` 元素。
+- **文件类工具支持批量**（`read_file` / `write_file` / `edit_file` / `mv_file`）：
+  批量上限 `kToolMaxBatchItems = 20`（超过直接 ERROR，**不静默截断**）；单项参数
+  （`path` / `path+content` / `source+destination` …）保持旧的单次行为。批量结果按
+  `=== 路径 ===` 分节，末尾 `summary: N ok, N failed, N skipped`；单项失败内联
+  `ERROR:`，不影响其余项，**不整体回滚**。`read_file` 另有合计字符预算
+  `kReadFileMaxTotalChars = 200000`，超出预算的项标记 `SKIPPED`（请分批再读）。
+- **大文件读取**：`read_file` 的 `max_chars` 是**每文件**上限（默认 200000），超长会
+  截断并在尾注给续读参数（`offset=<字符>` 或 `start_line` / `end_line` 行范围，仅单文件
+  可用）。`read_file` 在 `ToolRegistry.resultCharacterLimits` 里单独放开到
+  `kReadFileMaxResultChars = 240000`，否则会被 registry 默认的 24k 字符上限吞掉
+  （这正是「20K 以上的文件读不全」的根因）。
+- 批量 `read_file` 里含图片时，引擎逐张附加（`toolImagePaths` 解析 `paths` + `path`）；
+  部分图片校验失败只作提示追加在正文后，不替换正文。
 
 ### 5.2 沙箱安全
 

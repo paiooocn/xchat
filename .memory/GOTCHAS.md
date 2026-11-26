@@ -654,3 +654,28 @@ data for current backend (SkSL). Found stages: Vulkan
   Kotlin（`org.jetbrains.kotlin.android`）版本；否则同一套 CI 立刻复现本坑。
 - 想临时确认本地基线：`grep -n "Version(" \
   $FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/DependencyVersionChecker.kt`。
+
+## §37 工具结果有两层截断，`max_chars` 不是最终上限
+
+- **两层**：①工具自己（`read_file` 的 `max_chars`，默认 200000）；②
+  `llm_api.ToolRegistry.maxResultCharacters`（默认 **24000**），`invoke()` 里对所有
+  工具结果统一 `_truncate`。`AgentEngine` 走 `registry.invoke`，所以 ② 才是模型实际
+  看到的天花板 —— 「20K 以上的文件读不全」就是这么来的，跟 `read_file` 无关。
+- **改法**：`registry.resultCharacterLimits['read_file'] = kReadFileMaxResultChars`
+  （240k，与批量预算对齐）。要放宽别的长输出工具（`shell` / `grep_file`）就在同一处
+  加条目，别去动全局 `maxResultCharacters`（那会顺带放大所有闲聊型工具）。
+- **不要**只在工具里调大 `max_chars` 就以为修好了：改动不生效，会浪费一整轮排查。
+
+## §38 文件类工具是批量的，改它们时守住这几条
+
+- 上限 `kToolMaxBatchItems = 20`（`file_ops.dart`），超限**直接 ERROR** 让模型分批 ——
+  静默截断会让模型以为剩下的项也执行了。
+- 单项参数（`path` / `path+content` / `source+destination` …）必须保留：`batchReport`
+  在只有一项时**原样返回正文**，这是既有测试与人读日志的兼容点。
+- `read_file` 的分页参数（`start_line`/`end_line`/`offset`）**只在单文件生效**，批量时
+  带这些参数一律 ERROR（否则「20 个文件各自从 offset 起读」语义混乱）。
+- 批量结果 `summary` 的失败判定是正文前缀 `ERROR` / `SKIPPED`：文件内容本身以
+  `ERROR` 开头时统计会偏（只影响计数，不影响内容）。
+- 批量 `read_file` 含图片时：`toolImagePaths` 会解析 `paths`，引擎必须把**所有**图片
+  一次性交给 `_storeAttachments`（它按 `$messageId-$index` 命名，分批调用会撞名覆盖）；
+  部分失败用 `ToolImageAttachment.notes` **追加**正文，别用 `error`（会替换掉整批正文）。
