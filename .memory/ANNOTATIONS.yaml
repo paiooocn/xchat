@@ -260,14 +260,19 @@ features:
       - "resolve 拦 ../ 越界；resolveReal 额外跟随符号链接防软链逃逸"
 
   - id: shell_tool
-    title: "shell 工具：命令分级与可配置启动器"
+    title: "shell 工具：命令分级、未登记命令基础等级与可配置启动器"
     files:
       - "lib/models/shell_policy.dart"
       - "lib/models/shell_exec.dart"
       - "lib/agent/tools/builtin_tools.dart"
+      - "lib/agent/agent_engine.dart"
+      - "lib/ui/pages/tools_page.dart"
+      - "lib/ui/widgets/shell_escalation_dialog.dart"
     design: "FEATURES.md §5.3"
     contracts:
       - "命令字符串映射到审批级别；启动器可配可执行文件与 {command} 模板"
+      - "未登记命令按 AppConfig.shellBaseLevel（2/3，默认 2）；消息命中 isCleanupDeleteTask 时该轮临时用 3 级，不落盘"
+      - "发送前若命中清理/删除任务且为 2 级 → 红色提级确认框；取消则整条消息不发送（InputArea.onSend 已改为异步 bool）"
 
   - id: file_tools
     title: "文件工具：read/write/glob/grep/mv"

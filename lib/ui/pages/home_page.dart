@@ -33,6 +33,7 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/file_drop_zone.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/input_area.dart';
+import '../widgets/shell_escalation_dialog.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/model_picker.dart';
 import '../widgets/reasoning_toggles.dart';
@@ -1244,14 +1245,22 @@ class _WelcomeViewState extends State<_WelcomeView> {
 
   /// 发送第一轮对话：直接用快捷配置建会话并发送（不再需要会话模板）。
   ///
-  /// 返回 false 表示消息未被接受，输入框会保留草稿。
-  bool _send(String text, List<MessageAttachment> attachments) {
+  /// 返回 false 表示消息未被接受，输入框会保留草稿（未选专长 / 用户在
+  /// shell 提级警告里点了「取消」）。
+  Future<bool> _send(String text, List<MessageAttachment> attachments) async {
     if (_busy) return false;
     // 未选专长时不直接建会话：提示去点选，或改走「新建会话」向导。
     if (_expertiseIds.isEmpty) {
       unawaited(_askExpertiseOrNewSession());
       return false;
     }
+    // 清理/删除类任务且 shell 未登记命令还是 2 级时，先红色警告再发送。
+    final proceed = await confirmShellEscalationIfNeeded(
+      context,
+      text: text,
+      config: context.read<AppState>().config,
+    );
+    if (!proceed || !mounted) return false;
     setState(() => _busy = true);
     unawaited(
       widget
@@ -2726,6 +2735,12 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
   ///
   /// Seeding lives in the controller so 「自动执行」 uses the exact same rule.
   Future<void> _startTask(SessionController controller, TaskItem task) async {
+    // 任务内容命中「清理/删除」字样且 shell 仍是 2 级 → 先红色提级确认。
+    final proceed = await _confirmShellEscalationForResend(
+      text: '${task.title}\n${task.content}',
+      taskId: task.id,
+    );
+    if (!proceed || !mounted) return;
     if (!await controller.seedTaskMessage(task)) return;
     if (!mounted) return;
     await controller.resend(taskId: task.id);
@@ -3040,7 +3055,11 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
               onRetry: controller.error != null &&
                       !controller.isRunning &&
                       !taskDone
-                  ? () => _controller?.resend(taskId: widget.taskId)
+                  ? () async {
+                      // 重发的还是那轮对话：同样要先过清理/删除的提级确认。
+                      if (!await _confirmShellEscalationForResend()) return;
+                      await _controller?.resend(taskId: widget.taskId);
+                    }
                   : null,
             ),
           Padding(
@@ -3053,8 +3072,16 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
               lockedHint: taskDone
                   ? '任务已完成：取消「完成」后才能继续发送'
                   : null,
-              onSend: (text, attachments) {
+              onSend: (text, attachments) async {
                 if (taskDone) return false;
+                // 清理/删除类任务且 shell 未登记命令还是 2 级 → 先红色警告；
+                // 点「取消」则不发送（草稿保留在输入框）。
+                final proceed = await confirmShellEscalationIfNeeded(
+                  context,
+                  text: text,
+                  config: context.read<AppState>().config,
+                );
+                if (!proceed || !mounted) return false;
                 controller.send(
                   text,
                   attachments: attachments,
@@ -3152,6 +3179,27 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
     }
   }
 
+  /// 重发前的 shell 提级确认（重试 / 编辑后重发 / 任务「立即发送」共用）。
+  ///
+  /// 判定文本：显式传入的 [text]（编辑后的新内容、任务内容）优先，否则取本轮
+  /// 范围内的最后一条 user 消息。返回 false = 用户在红色提级框里取消，**不得重发**。
+  Future<bool> _confirmShellEscalationForResend({String? text, String? taskId}) async {
+    var probe = text;
+    if (probe == null) {
+      final session = _controller?.session;
+      if (session != null) {
+        final index =
+            SessionOps.lastUserIndex(session, onlyTaskId: taskId ?? widget.taskId);
+        if (index >= 0) probe = session.messages[index].content;
+      }
+    }
+    return confirmShellEscalationIfNeeded(
+      context,
+      text: probe,
+      config: context.read<AppState>().config,
+    );
+  }
+
   Future<void> _editLastUser(BuildContext context, Session session) async {
     final index = SessionOps.lastUserIndex(session, onlyTaskId: widget.taskId);
     if (index < 0) return;
@@ -3174,6 +3222,12 @@ class _SessionChatPanelState extends State<SessionChatPanel> {
       ),
     );
     if (text == null) return;
+    // 编辑后的内容命中「清理/删除」字样且 shell 仍是 2 级 → 先红色提级确认。
+    final proceed = await _confirmShellEscalationForResend(
+      text: text,
+      taskId: widget.taskId,
+    );
+    if (!proceed || !mounted) return;
     if (SessionOps.editLastUser(session, text, onlyTaskId: widget.taskId)) {
       await _controller?.resend(taskId: widget.taskId);
       setState(() {});
@@ -3228,6 +3282,11 @@ class _Header extends StatelessWidget {
                 duration: totalDuration.inSeconds > 0 ? totalDuration : null,
               ),
               const Spacer(),
+              _ShellLevelIcon(
+                baseLevel: controller.effectiveShellBaseLevel,
+                escalated: controller.shellEscalatedThisTurn,
+              ),
+              const SizedBox(width: 4),
               Text(
                 '工具 ${session.toolCalls}/${session.toolCallsLimit == 0 ? '禁用' : session.toolCallsLimit}',
                 style: Theme.of(context).textTheme.labelSmall,
@@ -3255,6 +3314,46 @@ class _Header extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// 「未登记 shell 命令」的审批等级标识：2 级 = `gpp_maybe`，3 级 = `gpp_good`。
+///
+/// 显示的是**会话本轮实际生效**的等级（`SessionController.effectiveShellBaseLevel`）：
+/// 在红色提级框里点「确认并发送」后，本轮立刻变成 3 级对应的图标，本轮结束
+/// （用户又能发送新消息时）自动回到 2 级。悬停（移动端长按）给出说明。
+class _ShellLevelIcon extends StatelessWidget {
+  const _ShellLevelIcon({required this.baseLevel, this.escalated = false});
+
+  /// 当前生效的等级（2 或 3）。
+  final int baseLevel;
+
+  /// 是否本轮因「清理/删除」类任务临时提级。
+  final bool escalated;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final high = baseLevel >= 3;
+    return Tooltip(
+      message: high
+          ? (escalated
+              ? '本轮已临时提到 3 级：shell 未登记命令按 3 级审批'
+                  '（「清理 / 删除 文件 / 文件夹 / 目录 / 邮件 / 邮箱」类任务）。\n'
+                  '本轮结束后自动回到 2 级。'
+              : 'shell 未登记命令：3 级（总是审批，托管模式也不例外）。\n'
+                  '可在「工具管理 → shell ⓘ」改为 2 级。')
+          : 'shell 未登记命令：2 级（普通/自动模式需审批，托管模式自动执行）。\n'
+              '「清理 / 删除 文件 / 文件夹 / 目录 / 邮件 / 邮箱」类任务的这一轮会临时'
+              '提到 3 级，本轮结束后回到 2 级。\n'
+              '可在「工具管理 → shell ⓘ」改为 3 级。',
+      child: Icon(
+        high ? Icons.gpp_good : Icons.gpp_maybe,
+        size: 14,
+        color: theme.colorScheme.onSurfaceVariant,
+        semanticLabel: 'shell 未登记命令 $baseLevel 级',
       ),
     );
   }

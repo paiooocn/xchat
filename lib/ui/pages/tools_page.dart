@@ -114,6 +114,8 @@ class _ToolsPageState extends State<ToolsPage> {
       // Approvals merge (a partial file keeps the other tools' levels); the
       // shell lists are self-contained and get replaced wholesale.
       if (parsed.approvals != null) config.toolApprovals.addAll(parsed.approvals!);
+      // shell 的基础等级只有 2/3 两档（导入的旧配置可能是别的值）。
+      config.toolApprovals['shell'] = config.shellBaseLevel;
       if (parsed.level1 != null) config.shellLevel1Commands = parsed.level1!;
       if (parsed.level2 != null) config.shellLevel2Commands = parsed.level2!;
       if (parsed.denied != null) config.shellDeniedCommands = parsed.denied!;
@@ -219,52 +221,81 @@ class _ToolsPageState extends State<ToolsPage> {
     }
   }
 
-  /// Popup panel describing how the shell tool is classified for approval.
-  void _showShellApprovalInfo(BuildContext context, AppConfig config) {
+  /// Popup panel describing how the shell tool is classified for approval,
+  /// with the picker for the base level of unregistered commands (2 / 3).
+  void _showShellApprovalInfo(BuildContext context, AppState state, AppConfig config) {
     final theme = Theme.of(context);
+    var baseLevel = config.shellBaseLevel;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('shell 审批详情', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 12),
-              Text(
-                'shell 的基础审批等级固定为 3（不可在工具里调整）。'
-                '每条命令按不区分大小写的正则对整条命令匹配，'
-                '命中多个名单时按 F级 > 2级 > 1级 的优先级取等级。',
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              _infoRow(theme, 'F级（拒绝）', '命中即永不执行，无需审批。'),
-              _infoRow(theme, '2级', '审批等级 2 → 普通/自动模式需审批，托管模式自动执行。'),
-              _infoRow(theme, '1级', '审批等级 1 → 仅普通模式需审批，自动/托管模式自动执行。'),
-              _infoRow(theme, '未命中', '按基础等级 3 → 普通/自动/托管 均需审批；'
-                  '审批弹窗会提示，可将该命令追加到 1级/2级名单以放宽。'),
-              const SizedBox(height: 16),
-              Text(
-                '当前名单：1级 ${config.shellLevel1Commands.length} 条 · '
-                '2级 ${config.shellLevel2Commands.length} 条 · '
-                'F级 ${config.shellDeniedCommands.length} 条。',
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                config.shellCommandsConfigured
-                    ? '任一名单为空时 shell 将被禁用。'
-                    : '存在空名单，shell 工具当前已被禁用。',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: config.shellCommandsConfigured ? null : Colors.orange,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('shell 审批详情', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 12),
+                const Text(
+                  '每条命令按不区分大小写的正则对整条命令匹配，'
+                  '命中多个名单时按 F级 > 2级 > 1级 的优先级取等级。',
+                  style: TextStyle(fontSize: 13),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                _infoRow(theme, 'F级（拒绝）', '命中即永不执行，无需审批。'),
+                _infoRow(theme, '2级', '审批等级 2 → 普通/自动模式需审批，托管模式自动执行。'),
+                _infoRow(theme, '1级', '审批等级 1 → 仅普通模式需审批，自动/托管模式自动执行。'),
+                const SizedBox(height: 4),
+                Text(
+                  '未登记命令的基础等级',
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 2, label: Text('2级 · 普通/自动审批')),
+                    ButtonSegment(value: 3, label: Text('3级 · 总是审批')),
+                  ],
+                  selected: {baseLevel},
+                  onSelectionChanged: (value) async {
+                    final picked = value.first;
+                    setSheetState(() => baseLevel = picked);
+                    state.config.toolApprovals['shell'] = picked;
+                    await state.saveConfig();
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '未命中任何名单的命令按该等级处理（当前 $baseLevel 级）。'
+                  '当用户消息里出现「清理 / 删除 文件 / 文件夹 / 目录 / 邮件 / 邮箱」'
+                  '这类任务字样时，若这里是 2 级，则该轮对话临时提到 3 级，'
+                  '本轮结束后自动回到 2 级。'
+                  '审批弹窗会提示原因，可将该命令追加到 1级/2级名单以放宽。',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '当前名单：1级 ${config.shellLevel1Commands.length} 条 · '
+                  '2级 ${config.shellLevel2Commands.length} 条 · '
+                  'F级 ${config.shellDeniedCommands.length} 条。',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  config.shellCommandsConfigured
+                      ? '任一名单为空时 shell 将被禁用。'
+                      : '存在空名单，shell 工具当前已被禁用。',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: config.shellCommandsConfigured ? null : Colors.orange,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -540,7 +571,8 @@ class _ToolsPageState extends State<ToolsPage> {
             child: Text(
               '审批等级 0..3 决定不同模式（普通/自动/托管）下是否需要在执行前确认：\n'
               '0 都不审批 · 1 普通审批 · 2 普通/自动审批 · 3 都审批\n'
-              '（shell 的基础等级固定为 3，点右侧 ⓘ 查看其审批详情）\n'
+              '（shell 对未登记命令按「基础等级」处理，默认 2 级、可设为 3 级，'
+              '点右侧 ⓘ 查看详情并调整）\n'
               '工具配置（审批等级与 Shell 名单）可通过右上角按钮导入 / 导出，'
               '导出为 JSON 文件，便于备份或迁移到其他设备。',
               style: TextStyle(fontSize: 12),
@@ -562,9 +594,9 @@ class _ToolsPageState extends State<ToolsPage> {
                     ),
                     entry.key == 'shell'
                         ? IconButton(
-                            tooltip: '审批详情',
+                            tooltip: '审批详情（未登记命令 ${config.shellBaseLevel} 级）',
                             icon: const Icon(Icons.info_outline),
-                            onPressed: () => _showShellApprovalInfo(context, config),
+                            onPressed: () => _showShellApprovalInfo(context, state, config),
                           )
                         : DropdownButton<int>(
                             value: config.toolApprovalLevel(entry.key).clamp(0, 3),
@@ -591,6 +623,8 @@ class _ToolsPageState extends State<ToolsPage> {
           const SizedBox(height: 4),
           Text(
             '1级 → 审批等级1；2级 → 审批等级2；F级 → 全局拒绝执行。\n'
+            '未命中任何名单 → 基础等级（默认 2 级，可在 ⓘ 里改为 3 级；'
+            '「清理/删除」类任务当轮临时用 3 级）。\n'
             '任一名单（1级/2级/F级）为空时 shell 工具不可调用。',
             style: const TextStyle(fontSize: 12),
           ),

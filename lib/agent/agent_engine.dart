@@ -37,6 +37,7 @@ class AgentEngine {
     required this.repository,
     this.onApproval,
     this.taskId,
+    this.shellBaseLevelOverride,
   });
 
   final Session session;
@@ -49,6 +50,11 @@ class AgentEngine {
   /// conversation. `null` for a normal session. It never filters what is sent
   /// to the model — the whole session history is always sent.
   final String? taskId;
+
+  /// 本轮 shell「未登记命令」的基础等级。由 `SessionController` 用
+  /// `AppConfig.shellBaseLevelFor(本轮用户消息)` 算好后传进来（清理/删除类任务
+  /// 在 2 级时临时提到 3 级）；`null` = 直接用配置值。**不要**写回配置。
+  final int? shellBaseLevelOverride;
 
   /// Optional user-consent hook. Returns `true` to run the tool, `false` to
   /// deny it. Invoked for tools whose approval level demands it under the
@@ -72,7 +78,6 @@ class AgentEngine {
   }
 
   /// Locates the Python 3 interpreter (bundled first, then the system one).
-  ///
   /// Returns `null` when no interpreter is available — the shell tool then
   /// simply runs without the Python additions.
   Future<PythonRuntime?> _locatePython() async {
@@ -130,6 +135,10 @@ class AgentEngine {
     ));
 
     final turnStartedAt = DateTime.now();
+    // shell「未登记命令」的基础等级：默认取配置（2 级，可设 3 级）；清理/删除
+    // 类任务由调用方（SessionController）算好 override 传进来，本轮临时 3 级。
+    // 只存活于这一次 run（engine 每轮重建），本轮结束后即回落到配置值。
+    final shellBaseLevel = shellBaseLevelOverride ?? config.shellBaseLevel;
     // Aggregator of the round currently streaming — kept outside the loop so a
     // mid-stream failure can still salvage what the model already produced.
     llm.ChatStreamAggregator? inflight;
@@ -223,14 +232,16 @@ class AgentEngine {
 
         for (final call in calls) {
           token.throwIfCancelled();
-          // shell 的基础等级锁定为 3：未命中任一名单的命令默认总是审批。
-          final baseLevel = call.name == 'shell' ? 3 : config.toolApprovalLevel(call.name);
+          // 未登记命令（未命中任何名单）按 [shellBaseLevel] 处理。
+          final baseLevel =
+              call.name == 'shell' ? shellBaseLevel : config.toolApprovalLevel(call.name);
           var level = baseLevel;
           var forcedDeny = false;
           String? approvalNote;
           if (call.name == 'shell') {
+            final command = _shellCommand(call.arguments);
             final classification = classifyShellCommand(
-              _shellCommand(call.arguments),
+              command,
               level1: config.shellLevel1Commands,
               level2: config.shellLevel2Commands,
               denied: config.shellDeniedCommands,
@@ -243,21 +254,42 @@ class AgentEngine {
               ShellMatch.level2 => '该命令命中 Shell「2级」名单（高影响命令）。',
               ShellMatch.level1 => '该命令命中 Shell「1级」名单。',
               ShellMatch.base =>
-                '该命令未命中任何 Shell 名单，按工具默认审批等级（shell=$baseLevel）处理。\n'
+                '该命令未命中任何 Shell 名单，按未登记命令的基础审批等级'
+                    '（shell=$baseLevel'
+                    '${shellBaseLevel > config.shellBaseLevel ? '，本轮因「清理/删除」类任务临时提到 3 级' : ''}'
+                    '）处理。\n'
                     '如需更精细控制，可在「工具管理」将该命令追加到 1级/2级名单。',
             };
+            // 调试版留痕：说明这条命令为什么（不）需要审批，排查「为什么直接
+            // 执行了」时看这一行——match 是命中来源，base 是本轮基础等级。
+            if (kDebugMode) {
+              debugPrint('[shell] level=$level match=${classification.match.name} '
+                  'base=$shellBaseLevel mode=${session.mode.label} '
+                  '${requiresApproval(level, session.mode) ? '需审批' : '免审批'}');
+            }
           }
           var denied = forcedDeny;
-          if (!forcedDeny && requiresApproval(level, session.mode) && onApproval != null) {
-            final approved = await _awaitApproval(call.name, call.arguments, approvalNote, token);
-            denied = !approved;
+          String? denyReason;
+          if (!forcedDeny && requiresApproval(level, session.mode)) {
+            if (onApproval == null) {
+              // fail-closed：需要审批却没有审批入口（例如没有接审批中心的
+              // 后台轮次）时**不执行**，绝不静默放行高危命令。
+              denied = true;
+              denyReason = 'No approval handler is attached, so "${call.name}" '
+                  '(approval level $level, mode ${session.mode.label}) was not executed.';
+            } else {
+              final approved =
+                  await _awaitApproval(call.name, call.arguments, approvalNote, token);
+              denied = !approved;
+            }
           }
           final result = denied
               ? llm.ToolResult.error(
                   call.id,
                   forcedDeny
                       ? 'Command refused: it matches the F级 deny list and is never executed.'
-                      : 'User denied execution of "${call.name}" (approval level $level, mode ${session.mode.label}).',
+                      : denyReason ??
+                          'User denied execution of "${call.name}" (approval level $level, mode ${session.mode.label}).',
                   name: call.name,
                 )
               : await registry.invoke(

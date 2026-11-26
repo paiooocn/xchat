@@ -5,6 +5,7 @@ import 'provider_config.dart';
 import 'search_engine_config.dart';
 import 'session_message.dart';
 import 'session_params.dart';
+import 'shell_policy.dart';
 import 'shell_exec.dart';
 
 /// Preset desktop window sizes (`宽x高`), applied on the next launch.
@@ -22,6 +23,21 @@ const int kDefaultNoteAutoSaveSeconds = 10;
 /// 自动保存间隔的上下限（秒），防止填 0 / 负数 / 天文数字。
 const int kMinNoteAutoSaveSeconds = 1;
 const int kMaxNoteAutoSaveSeconds = 3600;
+
+/// `shell` 未登记命令的基础审批等级：默认 2，可设为 3。
+const int kShellBaseLevelDefault = 2;
+const int kShellBaseLevelMin = 2;
+const int kShellBaseLevelMax = 3;
+
+/// 可在「工具管理」里选择的 shell 基础等级（升序）。
+const List<int> kShellBaseLevels = <int>[kShellBaseLevelMin, kShellBaseLevelMax];
+
+/// 把任意等级夹到 shell 基础等级的合法范围 `[2, 3]`。
+int clampShellBaseLevel(int level) {
+  if (level < kShellBaseLevelMin) return kShellBaseLevelMin;
+  if (level > kShellBaseLevelMax) return kShellBaseLevelMax;
+  return level;
+}
 
 /// Parses a `宽x高` window-size string; returns `null` when malformed.
 ({int width, int height})? parseWindowSize(String value) {
@@ -233,6 +249,24 @@ class AppConfig {
 
   int toolApprovalLevel(String tool) => toolApprovals[tool] ?? 0;
 
+  /// 本轮**实际生效**的 shell 基础等级（未登记命令用）。
+  ///
+  /// 清理 / 删除类任务（`isCleanupDeleteTask`：消息里同时出现「清理/删除」动作词
+  /// 与「文件/文件夹/目录/邮件/邮箱」对象词）在基础等级为 2 时，**这一轮**临时
+  /// 提到 3 级；调用方只把结果用于本次 `AgentEngine`，不要写回配置。
+  int shellBaseLevelFor(String? userText) {
+    final base = shellBaseLevel;
+    if (base >= kShellBaseLevelMax) return base;
+    return isCleanupDeleteTask(userText) ? kShellBaseLevelMax : base;
+  }
+
+  /// `shell` 未登记命令的基础审批等级：默认 2 级，可设为 3 级。
+  ///
+  /// 只对**未命中任何名单**的命令生效（命中名单按 F > 2 > 1 取等级）。
+  /// 用户在「清理/删除 文件/文件夹/目录/邮件/邮箱」类任务里发消息时，这一轮
+  /// 会临时提到 3 级（见 `AgentEngine.run`），轮次结束自然回落。
+  int get shellBaseLevel => clampShellBaseLevel(toolApprovalLevel('shell'));
+
   ProviderConfig? providerById(String id) {
     for (final provider in providers) {
       if (provider.id == id) return provider;
@@ -393,6 +427,8 @@ class AppConfig {
       final level = asInt(v);
       if (level != null) out[key] = level.clamp(0, 3);
     });
+    // `shell` 的基础等级只允许 2/3（旧配置里可能是 0/1 或越界值）。
+    out['shell'] = clampShellBaseLevel(out['shell'] ?? kShellBaseLevelDefault);
     return out;
   }
 
@@ -414,7 +450,7 @@ class AppConfig {
 
   /// Default approval levels: read-only / network tools run unattended; file
   /// writes ask in 普通/自动 mode; `mv_file` (rename/move) asks in 普通 mode
-  /// only; shell always asks.
+  /// only; `shell` 未登记命令默认 2 级（普通/自动审批），可设为 3 级。
   static Map<String, int> defaultToolApprovals() => <String, int>{
         'read_file': 0,
         'list_dir': 0,
@@ -431,7 +467,7 @@ class AppConfig {
         'webview_script_unmount': 1,
         'write_file': 2,
         'edit_file': 2,
-        'shell': 3,
+        'shell': kShellBaseLevelDefault,
       };
 
   /// Suggested default shell command lists (applied with one click).

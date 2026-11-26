@@ -5,21 +5,21 @@
 #
 # 生成方式: dart run tool/gen_memory_index.dart
 meta:
-  generated_at: "2026-11-25 10:07"
-  git_sha: "f225362"
+  generated_at: "2026-11-26 15:23"
+  git_sha: "e8f13af"
   generator: "tool/gen_memory_index.dart"
   module_count: 15
-  file_count: 154
-  line_count: 42233
+  file_count: 155
+  line_count: 42617
 
 modules:
   - id: "agent"
     path: "lib/agent"
-    lines: 680
+    lines: 712
     deps: ["core", "data", "llm", "models", "pkg.llm_api"]
     files:
       - path: "lib/agent/agent_engine.dart"
-        lines: 578
+        lines: 610
         symbols: ["AgentEngine"]
       - path: "lib/agent/agent_events.dart"
         lines: 102
@@ -212,7 +212,7 @@ modules:
         lines: 77
   - id: "models"
     path: "lib/models"
-    lines: 5001
+    lines: 5109
     deps: ["core"]
     files:
       - path: "lib/models/agent_mode.dart"
@@ -220,8 +220,8 @@ modules:
         doc: "Session execution mode controlling when tool calls require approval."
         symbols: ["AgentMode", "requiresApproval"]
       - path: "lib/models/app_config.dart"
-        lines: 577
-        symbols: ["ContinueMode", "AppConfig"]
+        lines: 613
+        symbols: ["clampShellBaseLevel", "ContinueMode", "AppConfig"]
       - path: "lib/models/archive_group.dart"
         lines: 141
         symbols: ["ArchiveBadge", "ArchiveProjectGroup"]
@@ -285,9 +285,9 @@ modules:
         doc: "Configurable shell launcher for the agent's `shell` tool."
         symbols: ["ShellFamily", "shellFamilyFor", "commandSyntaxNotes", "decodeShellOutput", "ShellExecPreset", "ShellExecConfig", "ResolvedShellExec"]
       - path: "lib/models/shell_policy.dart"
-        lines: 66
+        lines: 138
         doc: "Shell command policy: maps a command string to an approval level, or marks"
-        symbols: ["ShellMatch", "ShellClassification"]
+        symbols: ["ShellMatch", "ShellClassification", "isCleanupDeleteTask", "splitShellSegments"]
       - path: "lib/models/sidebar_filter.dart"
         lines: 84
         symbols: ["SidebarSearchMode", "SidebarSearch", "parseSidebarSearch", "projectMatchesSearch", "sessionMatchesSearch", "matchesTagQuery"]
@@ -420,11 +420,11 @@ modules:
         symbols: ["TransportRequest", "TransportResponse", "HttpTransport"]
   - id: "session"
     path: "lib/session"
-    lines: 621
+    lines: 645
     deps: ["agent", "core", "data", "models"]
     files:
       - path: "lib/session/session_controller.dart"
-        lines: 516
+        lines: 540
         symbols: ["SessionController"]
       - path: "lib/session/session_ops.dart"
         lines: 105
@@ -442,7 +442,7 @@ modules:
         symbols: ["ApprovalRequest", "ApprovalCenter"]
   - id: "ui.pages"
     path: "lib/ui/pages"
-    lines: 12333
+    lines: 12466
     deps: ["agent.tools", "app", "core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.theme", "ui.widgets", "util"]
     files:
       - path: "lib/ui/pages/archive_page.dart"
@@ -458,7 +458,7 @@ modules:
         lines: 219
         symbols: ["showFontTestDialog", "FontTestPanel"]
       - path: "lib/ui/pages/home_page.dart"
-        lines: 3726
+        lines: 3825
         symbols: ["HomePage", "SessionChatPanel"]
       - path: "lib/ui/pages/notes_panel.dart"
         lines: 1174
@@ -491,7 +491,7 @@ modules:
         lines: 436
         symbols: ["TemplatesPage"]
       - path: "lib/ui/pages/tools_page.dart"
-        lines: 804
+        lines: 838
         symbols: ["ToolsPage"]
       - path: "lib/ui/pages/xml_editor_page.dart"
         lines: 107
@@ -510,7 +510,7 @@ modules:
         symbols: ["AppTheme"]
   - id: "ui.widgets"
     path: "lib/ui/widgets"
-    lines: 6332
+    lines: 6419
     deps: ["core", "data", "llm", "models", "pkg.llm_api", "session", "state", "ui.pages", "ui.theme", "util"]
     files:
       - path: "lib/ui/widgets/brand_mark.dart"
@@ -523,7 +523,7 @@ modules:
         lines: 111
         symbols: ["FileDropZone"]
       - path: "lib/ui/widgets/input_area.dart"
-        lines: 604
+        lines: 617
         symbols: ["InputArea", "InputAreaState", "ToolbarPill"]
       - path: "lib/ui/widgets/markdown_view.dart"
         lines: 230
@@ -561,6 +561,9 @@ modules:
       - path: "lib/ui/widgets/session_info_dialog.dart"
         lines: 264
         symbols: ["SessionInfoDialog"]
+      - path: "lib/ui/widgets/shell_escalation_dialog.dart"
+        lines: 74
+        symbols: ["confirmShellEscalation"]
       - path: "lib/ui/widgets/system_prompt_config.dart"
         lines: 282
         symbols: ["SystemPromptConfig", "ExpertiseBadges", "ExpertiseBadge"]
@@ -728,12 +731,15 @@ tests:
   - path: "test/session_xml_test.dart"
     lines: 135
     cases: 4
+  - path: "test/shell_escalation_dialog_test.dart"
+    lines: 100
+    cases: 6
   - path: "test/shell_exec_test.dart"
     lines: 202
     cases: 22
   - path: "test/shell_policy_test.dart"
-    lines: 53
-    cases: 6
+    lines: 173
+    cases: 17
   - path: "test/sidebar_filter_test.dart"
     lines: 111
     cases: 10

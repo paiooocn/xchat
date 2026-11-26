@@ -40,6 +40,19 @@ class SessionController extends ChangeNotifier {
   AgentEngine? _engine;
   bool _running = false;
 
+  /// 本轮 shell「未登记命令」的基础等级（清理/删除类任务临时 3 级）。
+  /// 只在一次 [_run] 内有效，结束后清空 —— 用户下次能发送时即回到配置值。
+  int? _shellBaseLevelOverride;
+
+  /// 本轮实际生效的 shell「未登记命令」等级：临时提级时是 3，否则取配置值。
+  ///
+  /// 供 UI 与会话同步显示（标题栏盾牌图标）——提级只在当前这一轮有效，
+  /// 本轮结束后自动回到配置值。
+  int get effectiveShellBaseLevel => _shellBaseLevelOverride ?? config.shellBaseLevel;
+
+  /// 本轮是否因「清理/删除」类任务临时把未登记命令提到了 3 级。
+  bool get shellEscalatedThisTurn => _shellBaseLevelOverride != null;
+
   /// Task item the running turn belongs to (`null` = normal session, or a
   /// task-style session's turn that is somehow untagged).
   String? _runningTaskId;
@@ -161,6 +174,9 @@ class SessionController extends ChangeNotifier {
     if (text.trim().isEmpty && files.isEmpty) return;
     _error = null;
     _notice = null;
+    // 本轮 shell「未登记命令」的基础等级：清理/删除类任务在 2 级时临时提到 3 级，
+    // 本轮结束后自动回落到配置值（只在这一次 _run 里生效，不落盘）。
+    _shellBaseLevelOverride = config.shellBaseLevelFor(text);
     await _run(
       () => _engine!.run(userText: text, attachments: files),
       taskId: taskId,
@@ -178,6 +194,11 @@ class SessionController extends ChangeNotifier {
     }
     _error = null;
     _notice = null;
+    // 重发没有新的用户文本：按本轮范围的最后一条 user 消息判定是否提级。
+    final lastUser = SessionOps.lastUserIndex(session, onlyTaskId: taskId);
+    _shellBaseLevelOverride = config.shellBaseLevelFor(
+      lastUser >= 0 ? session.messages[lastUser].content : null,
+    );
     await repository.write(session);
     await _run(() => _engine!.run(), taskId: taskId);
   }
@@ -392,6 +413,7 @@ class SessionController extends ChangeNotifier {
       repository: repository,
       onApproval: approvalHandler,
       taskId: taskId,
+      shellBaseLevelOverride: _shellBaseLevelOverride,
     );
     _engine = engine;
 
@@ -405,6 +427,8 @@ class SessionController extends ChangeNotifier {
       _runningTaskId = null;
       _engine = null;
       _roundStartedAt = null;
+      // 提级只属于这一轮：用户重新能发送时恢复配置的基础等级。
+      _shellBaseLevelOverride = null;
       notifyListeners();
     }
   }

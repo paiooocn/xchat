@@ -55,6 +55,22 @@ OpenAI 兼容端点要求 `assistant` 的 `tool_calls` 后**恰好**跟一条对
 - 命令分级（哪些命令要审批）由 `shell_policy` 的正则名单决定，与启动器无关。
 - 启动器（可执行文件 + `{command}` 模板）由 `shell_exec` 决定，Windows/POSIX 语法不同。
 - 输出解码要考虑编码与截断（曾因截断导致结果不可用）。
+- 未登记命令的基础等级在 `AppConfig.shellBaseLevel`（2/3，默认 2）；「清理/删除 +
+  文件/文件夹/目录/邮件/邮箱」类消息由 `isCleanupDeleteTask` 判定，该轮临时提到 3 级
+  （只活在 `AgentEngine.run` 的局部变量里，**不要**写回 config）。
+- **等级 2 ≠ 一定审批**：`requiresApproval` 里托管模式(mode=3)只认等级 3，所以 2 级
+  命令（含未登记命令）在托管模式下**自动执行**。排查「为什么 rm 直接执行了」先看
+  debug 日志 `[shell] level=… match=level2|level1|base base=… mode=…`：
+  `match=level2` = 命中 2 级名单（默认名单含 `\brm\b`/`\bmv\b`/`\bcp\b`，要让它算
+  「未登记」必须删掉该条目）；`match=base` 且 `base=2` = 提级没传到 engine。
+- **提级只能有一个来源**：`AppConfig.shellBaseLevelFor(text)`（就绪于
+  `SessionController.send/resend` → `AgentEngine.shellBaseLevelOverride`，
+  `_run` 结束清空）。**不要**再在 engine 里自己推断用户消息，否则两处判定会漂移。
+- **名单是按「子命令」匹配的**（`splitShellSegments` 切 `&& || ; | & 换行`，`2>&1`
+  不算分隔符），复合命令取各段最严等级。曾经的 bug：整条命令做 `hasMatch`，于是
+  `rm x && ls`（ls 登记在 1 级）整条被压到 1 级，清理任务里的 rm 因此免审批 → 实际
+  直接执行。改动后只有「该段未登记」才按 base/提级算。
+- `onApproval == null` 时需审批的工具按 **fail-closed 拒绝执行**（不再静默执行）。
 → `lib/models/shell_policy.dart`、`lib/models/shell_exec.dart`。
 
 ## 7. index.json 是缓存，不是事实

@@ -1,5 +1,170 @@
 # STATE — 进度交接
 
+## 2026-11-25 · **0.9.1**：shell 未登记命令默认 2 级（可设 2/3）+「清理/删除」任务当轮临时升 3 级
+
+**需求**（用户）
+
+1. shell **未登记命令**的等级由固定 3 级改为**默认 2 级**，且可在 [2,3] 之间设置。
+2. 当用户对话消息里出现「清理-删除 文件/文件夹/目录/邮件/邮箱」等任务字样时，
+   若未登记命令是 2 级，则**该轮**临时提到 3 级，本轮结束后调回 2 级。
+
+**做了什么**
+
+- `AppConfig`：`defaultToolApprovals()['shell']` 由 3 改 `kShellBaseLevelDefault`(2)；
+  新增 `kShellBaseLevelMin/Max`(2/3)、`kShellBaseLevels`、getter
+  `shellBaseLevel`（clamp 2..3）；`_decodeApprovals` 把 `shell` 夹到 [2,3]
+  （旧配置的 0/1 读出为 2，3 保持 3）。
+- `shell_policy.dart`：新增 `isCleanupDeleteTask(text)` —— 动作词
+  （清理/清除/清空/删除/删掉/移除/clean/delete/remove/purge/wipe/erase/del…）与
+  对象词（文件/文件夹/目录/邮件/邮箱/收件箱/file(s)/folder(s)/dir(s)/directory/
+  mail/mailbox/email(s)/inbox）**同时**出现才命中；英文按 `\b` 词边界，`profile`
+  不误伤 `file`。
+- `AgentEngine.run`：本轮 `shellBaseLevel = config.shellBaseLevel`，命中
+  `isCleanupDeleteTask` 且配置为 2 时用 3（`_shellBaseLevelFor(userText)`；`userText`
+  为 null 的重发取 `SessionOps.lastUserIndex` 那条 user 消息）。**只是局部变量**，
+  engine 每轮重建，所以本轮结束后自然回到 2 级，不落盘、不改配置。审批提示在
+  `ShellMatch.base` 分支注明「本轮因『清理/删除』类任务临时提到 3 级」。
+- `tools_page.dart`：shell 行的 ⓘ tooltip 显示当前基础等级；「shell 审批详情」
+  弹层新增 `SegmentedButton`（2级 · 普通/自动审批 / 3级 · 总是审批，改动即
+  `saveConfig`），并改写说明文案（含临时提级规则）；页首与「Shell 命令名单」
+  说明同步；导入工具配置后把 `shell` 夹到 [2,3]。
+
+**改了哪些文件**
+
+- 改：`lib/models/app_config.dart`、`lib/models/shell_policy.dart`、
+  `lib/agent/agent_engine.dart`、`lib/ui/pages/tools_page.dart`、
+  `test/shell_policy_test.dart`（+2 组用例）、`pubspec.yaml` +
+  `lib/core/app_version.dart`（**0.9.1+1**）、`FEATURES.md`（§4.3 / §5.3 / §7 /
+  §8）、`.memory/*`
+
+**怎么验证**
+
+```sh
+flutter analyze lib test
+flutter test test/shell_policy_test.dart test/app_version_test.dart
+```
+
+- 单测覆盖：清理/删除类消息识别（中文/英文/词边界/反例）、默认 2 级、
+  设 3 级、越界夹紧、JSON 往返与旧值 0/1 读出为 2。
+- 真机要点：①「工具管理 → shell ⓘ」可切 2/3 级并即时保存；②普通模式下两者都审批；
+  自动模式下 2 级**不**审批（3 级审批）；③发一条「帮我清理临时文件」→ 该轮未登记
+  命令弹审批且提示「临时提到 3 级」，下一轮新消息恢复正常等级；④旧 config.json
+  里 `shell: 3` 的用户不受影响。
+
+**追加（同版 0.9.1）：发送前「提级」红色确认框**
+
+- 新增 `lib/ui/widgets/shell_escalation_dialog.dart`：
+  `needsShellEscalationPrompt(text, config)`（命中 `isCleanupDeleteTask` 且
+  `config.shellBaseLevel < 3`）、`confirmShellEscalationIfNeeded(context, text:, config:)`、
+  `confirmShellEscalation(context)` —— 红色警告框（error 色图标/标题/文字、红底 +
+  红边、`FilledButton` 红底白字），标题「高危操作提示」，「确认并发送」/「取消」，
+  按钮 Key `shell-escalation-confirm` / `shell-escalation-cancel`，弹窗 Key
+  `shell-escalation-dialog`。
+- `InputArea.onSend` 改为 **`Future<bool> Function(...)`**，`_send()` async 化并用
+  `_sending` 挡住弹框期间的重复 Enter / 点击；只有 accepted 才清空草稿。
+- 接线：会话输入栏（`home_page.dart` `_SessionChatPanel` 的 `InputArea.onSend`，
+  在 `taskDone` 判断之后）与首页欢迎页（`_WelcomeViewState._send` 改为
+  `Future<bool>`，在「未选专长」判断之后、建会话之前）。**取消 ⇒ 不发送**：
+  会话内草稿保留，首页连会话都不会建。
+- 测试：新增 `test/shell_escalation_dialog_test.dart`（判定函数 3 例 + 弹框
+  取消/确认/未命中 3 例，含红色断言）。
+
+**修（同版 0.9.1）：托管模式下删除类 shell 命令被直接执行**
+
+- 现象：debug 版在托管模式下发 `rm todel && ls -la todel …` 直接执行；rm 不在
+  1级/2级名单里。
+- 根因：未登记 → base 2 级；`requiresApproval(2, managed)` = false（托管只认 3 级），
+  属既有分级语义，不是名单匹配 bug。此前只有「用户消息含 清理/删除+文件…」才提到
+  3 级，而这条消息是命令文本，不含中文对象词。
+- 修：新增 `isDestructiveShellCommand(command)`（rm/rmdir/del/erase/shred/unlink/
+  truncate/Remove-Item/`find -delete`/`git clean`，词边界），`AgentEngine` 的 shell
+  分支里对**含删除动作的命令**强制 `level = 3`（不论命中名单或未登记），审批提示
+  注明原因 ⇒ 托管模式也必须审批。非删除类命令的分级与基础等级**不变**。
+- 测试：`test/shell_policy_test.dart` 新增一组用例（识别 + 「base 2 在托管不审批 /
+  提到 3 级后必须审批」）。feat 文档见 `FEATURES.md` §5.3。
+- **返工（用户纠正）**：上一节的「删除类命令强制 3 级（`isDestructiveShellCommand`）」
+  与「默认名单里 rm 算已登记」的推断**都不成立**（用户环境已把 rm 从 2 级名单剔除，
+  测的就是当轮提级）。已删除 `isDestructiveShellCommand` 及其用法/测试，恢复
+  「2 级语义不变、提级只作用于未登记命令」。
+- **提级改为单点判定**（此前 engine 自己从 `userText` 再推断一次，与 UI 弹框判定可能
+  漂移）：
+  - `AppConfig.shellBaseLevelFor(userMessage)`：2 级 + `isCleanupDeleteTask` → 3，否则配置值。
+  - `SessionController`：`send` 用新文本、`resend` 用本轮最后一条 user 消息算出
+    `_shellBaseLevelOverride`，经 `AgentEngine.shellBaseLevelOverride` 传入；
+    `_run` 的 `finally` 里清空 ⇒ 该轮结束、用户能再发送时回到 2 级。
+  - `AgentEngine` 删掉私有 `_shellBaseLevelFor`（不再自行推断）。
+- 保留：`onApproval == null` 时 **fail-closed** 拒绝执行（不再静默放行需要审批的工具）。
+- 保留：debug 版每次 shell 调用打一行
+  `[shell] level=… match=level2|level1|base base=… mode=… 需/免审批`，用于判定等级来源。
+- 测试：`test/shell_policy_test.dart` 的该组改为 `AppConfig.shellBaseLevelFor`
+  （2 级+删除类消息→3；普通消息/命令文本/null→2；配置 3 级无副作用）与
+  `requiresApproval(2/3, managed)` 的对照断言。
+
+## 2026-11-25 · 0.9.1 补：重发也要过提级确认
+
+**需求**（用户）：重发消息也要做删除检查并弹提权窗口。
+
+**做了什么**（都在 `lib/ui/pages/home_page.dart` 的 `_SessionChatPanelState`）
+
+- 新增 `_confirmShellEscalationForResend({text, taskId})`：判定文本 = 显式给的 `text`
+  优先，否则取本轮范围内最后一条 user 消息（`SessionOps.lastUserIndex`），再交给
+  `confirmShellEscalationIfNeeded`。
+- 接入三条重发入口：①错误状态栏「重试」(`onRetry`)；②「编辑最近一次用户消息 →
+  保存并重发」（用**编辑后的新文本**判定，且确认在 `editLastUser` 之前）；③任务
+  「立即发送」`_startTask`（用 `标题 + 内容` 判定，确认在 `seedTaskMessage` 之前）。
+- 取消 ⇒ 直接 return，不写消息、不重发。
+
+## 2026-11-25 · 0.9.1 补：会话顶部显示「未登记 shell 等级」图标
+
+**需求**（用户）：主区顶部「工具调用次数」那栏，在它前面用一个图标标识当前会话
+未登记 shell 等级；2 级用 `gpp_good`、3 级用 `gpp_maybe`，悬停给说明。
+
+**做了什么**
+
+- `lib/ui/pages/home_page.dart` `_Header`：`文本「工具 n/上限」` 前插入
+  `_ShellLevelIcon(baseLevel: context.watch<AppState>().config.shellBaseLevel)`。
+- 新增私有 widget `_ShellLevelIcon`：`Tooltip` + `Icon(14, onSurfaceVariant)`；
+  **2 级 `Icons.gpp_maybe` / 3 级 `Icons.gpp_good`**（用户指定的对应关系，与最初
+  那版相反）；tooltip 说明含义、当轮临时提级规则与「工具管理 → shell ⓘ」改法；
+  `semanticLabel` 供无障碍。
+- **与会话同步**：`SessionController` 新增 `effectiveShellBaseLevel`
+  （`_shellBaseLevelOverride ?? config.shellBaseLevel`）与 `shellEscalatedThisTurn`；
+  图标读这两个值 ⇒ 红色提级框点「确认并发送」后本轮立即变 3 级图标（`gpp_good`），
+  `_run` 结束后 override 清空、图标回到 2 级（`gpp_maybe`）。提级中的 tooltip
+  会注明「本轮已临时提到 3 级…本轮结束后自动回到 2 级」。
+- 预览用的临时文件（`test/_shell_icon_preview_test.dart`、根目录
+  `shell_icon_candidates.png`）已删除。做法备忘：沙箱没有 chromium / PIL 且
+  `flutter test` 默认要联网 pub get，用 `flutter test --no-pub` + `RepaintBoundary
+  .toImage` 可离线渲染 PNG。
+
+**下一步 / 遗留**
+
+- **根因（用户日志确认）**：`[shell] level=1 match=level1 base=3 mode=托管 免审批`
+  —— 提级本身生效了（base=3），但 `classifyShellCommand` 拿**整条命令**去 `hasMatch`，
+  复合命令里 `ls`/`file`/`true` 命中 1 级名单 → 整条按 1 级（1 级在 base 之前判定），
+  于是 rm 段也跟着免审批。
+- 修：`splitShellSegments` 按 `&& || ; | & 换行` 切分（`>&`/`<&` 打码保护），
+  `classifyShellCommand` 改为**逐段判定后取最严**（任一段 F → 整条拒绝；否则各段
+  level 取 max）。只提「未登记」命令的语义不变：全部段都命中 1 级名单时仍是 1 级。
+- 测试：`test/shell_policy_test.dart` 新增「复合命令逐段判定」组（含用户那两条命令：
+  rm 段未登记 → 3 级需审批；ls+file 全 1 级 → 仍 1 级）。
+
+**下一步 / 遗留**
+
+- 未提交、未打标签、未推送；版本 **0.9.1+1**。
+- 「自动执行」队列（`SessionController.autoRun` → `_runTaskTurn` → `resend`）**没有**
+  弹提级确认框：它在 controller 里跑，没有 `BuildContext`；该轮仍会按 engine 侧提级
+  到 3 级执行。如需逐项确认，得给 controller 注入一个 `Future<bool> Function()` 钩子。
+- `AgentEngine.onApproval == null` 时（没有任何审批处理器，正常发送流程都会接上
+  `approvalHandler`）需要审批的命令仍会直接执行——删除类命令也不例外；若以后出现
+  无处理器的后台轮次，需要补兜底。
+- 「清理/删除」判定是**纯文本启发式**（动作词 + 对象词同时出现），误报只会多一次
+  审批；若日后要更精确（如只认「删除文件」紧邻搭配）改 `isCleanupDeleteTask` 即可。
+- 临时提级按 **turn** 生效（一次 `AgentEngine.run`，含工具往返与预算续判）；
+  「恢复 2 级」的时机口径 = **该轮结束、用户重新可以发送消息时**：`send`/`resend`
+  会新建 `AgentEngine`，重新读 `config.shellBaseLevel` 判定；提级不写回 config、
+  不缓存到 `SessionController`。任务式会话的自动执行每轮都按该轮 user 消息重新判定。
+
 ## 2026-11-25 · 修：GitHub Actions Android 构建失败（Flutter 3.50 抬高 Gradle 最低版本）
 
 **现象**：tag 触发的 `Build Android (apk)` 在 flutter-gradle-plugin 处失败：

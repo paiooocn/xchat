@@ -54,9 +54,12 @@ class InputArea extends StatefulWidget {
   });
 
   /// Sends the message. Returns false when the message was *not* accepted
-  /// (e.g. the welcome view still needs a session template): the draft text
-  /// and the staged attachments are then kept so the user can retry.
-  final bool Function(String text, List<MessageAttachment> attachments) onSend;
+  /// (e.g. the welcome view still needs a session template, or the user
+  /// cancelled a pre-send confirmation): the draft text and the staged
+  /// attachments are then kept so the user can retry.
+  ///
+  /// 异步是因为发送前可能要弹确认框（如 shell 提级警告）。
+  final Future<bool> Function(String text, List<MessageAttachment> attachments) onSend;
   final VoidCallback onStop;
   final bool running;
   final AgentMode mode;
@@ -126,6 +129,9 @@ class InputAreaState extends State<InputArea> {
   /// Files staged for the next send. Cleared once the message is handed off.
   final List<MessageAttachment> _pending = <MessageAttachment>[];
 
+  /// True while a send is awaiting a pre-send confirmation dialog.
+  bool _sending = false;
+
   @override
   void initState() {
     super.initState();
@@ -156,20 +162,27 @@ class InputAreaState extends State<InputArea> {
   /// 发送被锁定时统一的说法（按钮 tooltip / 输入框提示共用）。
   String get _lockedMessage => widget.lockedHint ?? '已锁定：取消「完成」后才能发送';
 
-  void _send() {
+  Future<void> _send() async {
     final text = _controller.text.trim();
     if (widget.running) return;
     // 锁定时连桌面端 Enter 也发不出去（Enter 走的就是这里）。
     if (widget.sendLocked) return;
     if (text.isEmpty && _pending.isEmpty) return;
-    final files = List<MessageAttachment>.of(_pending);
-    // The message is only cleared when it is actually accepted: a rejected
-    // send (missing session template) keeps the draft for a retry.
-    final accepted = widget.onSend(text, files);
-    if (!accepted) return;
-    _controller.clear();
-    setState(_pending.clear);
-    _focus.requestFocus();
+    // 发送前可能要弹确认框（shell 提级）：期间忽略重复的 Enter / 点击。
+    if (_sending) return;
+    _sending = true;
+    try {
+      final files = List<MessageAttachment>.of(_pending);
+      // The message is only cleared when it is actually accepted: a rejected
+      // send (missing session template) keeps the draft for a retry.
+      final accepted = await widget.onSend(text, files);
+      if (!accepted || !mounted) return;
+      _controller.clear();
+      setState(_pending.clear);
+      _focus.requestFocus();
+    } finally {
+      _sending = false;
+    }
   }
 
   /// Opens the system picker and stages whatever comes back.
